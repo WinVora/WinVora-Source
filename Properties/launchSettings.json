@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DAFFARD (Unpackaged)": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}

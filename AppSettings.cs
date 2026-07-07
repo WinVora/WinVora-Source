@@ -1,0 +1,74 @@
+using System;
+using System.IO;
+using System.Text.Json;
+
+namespace WinVora
+{
+    public class AppSettings
+    {
+        // Alpha-Wert (0-64) für die Deckkraft der Glas-Karten. 24 = Standard.
+        public int GlassIntensity { get; set; } = 18;
+
+        // Ob das Mica-Backdrop des Fensters genutzt werden soll.
+        public bool UseMica { get; set; } = true;
+
+        // Ob Ein-/Ausblend-Animationen beim Seitenwechsel reduziert werden sollen.
+        public bool ReducedMotion { get; set; } = false;
+
+        // Ob die Oberfläche im dunklen (true) oder hellen (false) Modus dargestellt wird.
+        public bool DarkMode { get; set; } = true;
+
+        // Ob WinVora automatisch mit Windows starten soll.
+        public bool AutoStartWithWindows { get; set; } = false;
+
+        // Welche Seite beim Start angezeigt wird: "Übersicht", "System", "Updates" oder "Storage".
+        public string StartupPage { get; set; } = "Übersicht";
+
+        // Intervall in Sekunden für die Live-CPU/RAM-Anzeige.
+        public int LiveUpdateIntervalSeconds { get; set; } = 2;
+
+        // Ob vor dem Löschen von Storage-Kategorien ein Bestätigungsdialog erscheint.
+        public bool ShowDeleteConfirmations { get; set; } = true;
+
+        private static string SettingsFilePath =>
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WinVora",
+                "settings.json");
+
+        public static AppSettings Load()
+        {
+            try
+            {
+                if (File.Exists(SettingsFilePath))
+                {
+                    var json = File.ReadAllText(SettingsFilePath);
+                    var loaded = JsonSerializer.Deserialize<AppSettings>(json);
+                    if (loaded != null) return loaded;
+                }
+            }
+            catch
+            {
+                // Bei beschädigter/fehlender Datei einfach mit Standardwerten starten
+            }
+
+            return new AppSettings();
+        }
+
+        public void Save()
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(SettingsFilePath);
+                if (dir != null) Directory.CreateDirectory(dir);
+
+                var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(SettingsFilePath, json);
+            }
+            catch
+            {
+                // Nicht kritisch, falls das Speichern fehlschlägt (z.B. keine Schreibrechte)
+            }
+        }
+    }
+}
