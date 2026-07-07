@@ -1,0 +1,25 @@
+# Build-Ausgaben
+bin/
+obj/
+publish/
+*.zip
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Windows App SDK / MSIX (falls später mal aktiviert)
+AppPackages/
+BundleArtifacts/
+*.appx
+*.appxbundle
+*.appxupload
+
+# Log-/Einstellungsdateien, die lokal pro Rechner entstehen
+*.log
+
+# Sonstiges
+*.tmp
+Thumbs.db
+desktop.ini
