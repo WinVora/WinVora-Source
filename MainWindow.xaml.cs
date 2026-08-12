@@ -195,6 +195,8 @@ namespace WinVora
             NavUpdatesButton.Content = Localization.T("Nav.Updates");
             NavCleanerButton.Content = Localization.T("Nav.Files");
             NavUninstallButton.Content = Localization.T("Nav.Uninstall");
+            NavHistoryButton.Content = Localization.CurrentLanguage == "en" ? "History" : "Verlauf";
+            NavAutostartButton.Content = "Autostart";
             LblNavSettings.Text = Localization.T("Nav.Settings");
             LblNavContact.Text = Localization.T("Nav.Contact");
             LblNavChangelogHint.Text = Localization.T("Nav.ChangelogHint");
@@ -952,6 +954,8 @@ namespace WinVora
                 (NavUpdatesButton, "Updates"),
                 (NavCleanerButton, "Storage"),
                 (NavUninstallButton, "Uninstall"),
+                (NavHistoryButton, "History"),
+                (NavAutostartButton, "Autostart"),
             };
 
             foreach (var (button, page) in navButtons)
@@ -970,6 +974,8 @@ namespace WinVora
             "Updates" => Localization.T("PageTitle.Updates"),
             "Storage" => Localization.T("PageTitle.Storage"),
             "Uninstall" => Localization.T("PageTitle.Uninstall"),
+            "History" => Localization.CurrentLanguage == "en" ? "History" : "Verlauf",
+            "Autostart" => "Autostart",
             _ => internalKey
         };
 
@@ -984,6 +990,8 @@ namespace WinVora
             ContentArea.Visibility = title == "Updates" ? Visibility.Visible : Visibility.Collapsed;
             StoragePanel.Visibility = title == "Storage" ? Visibility.Visible : Visibility.Collapsed;
             UninstallPanel.Visibility = title == "Uninstall" ? Visibility.Visible : Visibility.Collapsed;
+            HistoryPanel.Visibility = title == "History" ? Visibility.Visible : Visibility.Collapsed;
+            AutostartPanel.Visibility = title == "Autostart" ? Visibility.Visible : Visibility.Collapsed;
 
             UpdateActiveNavHighlight(title);
 
@@ -1008,6 +1016,8 @@ namespace WinVora
                 "Updates" => ContentArea,
                 "Storage" => StoragePanel,
                 "Uninstall" => UninstallPanel,
+                "History" => HistoryPanel,
+                "Autostart" => AutostartPanel,
                 _ => null
             });
         }
@@ -1179,6 +1189,101 @@ namespace WinVora
             var rightInset = titleBar.RightInset > 0 ? titleBar.RightInset : 140;
             var dragWidth = Math.Max(width - rightInset, 0);
             titleBar.SetDragRectangles(new[] { new Windows.Graphics.RectInt32(0, 0, dragWidth, 40) });
+        }
+
+        private void History_Click(object sender, RoutedEventArgs e)
+        {
+            SetPage("History");
+            RenderHistoryPage();
+        }
+
+        private void HistoryFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (HistoryListPanel != null) RenderHistoryPage();
+        }
+
+        private void RenderHistoryPage()
+        {
+            HistoryListPanel.Children.Clear();
+            string filter = (HistoryFilterBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "All";
+            var entries = _settings.ActivityLog.Where(entry => filter == "All" || entry.Result == filter).ToList();
+            PageSubtitle.Text = Localization.CurrentLanguage == "en"
+                ? $"{entries.Count} entries"
+                : $"{entries.Count} Einträge";
+
+            foreach (var entry in entries)
+            {
+                string text = Localization.CurrentLanguage == "en" ? entry.TextEn : entry.TextDe;
+                string details = string.Join(" · ", new[]
+                {
+                    entry.PackageId,
+                    !string.IsNullOrWhiteSpace(entry.OldVersion) ? $"{entry.OldVersion} → {entry.NewVersion}" : null,
+                    entry.ExitCode is int exitCode && exitCode != 0 ? $"0x{unchecked((uint)exitCode):X8}" : null,
+                    entry.TimestampUtc.ToLocalTime().ToString("g")
+                }.Where(value => !string.IsNullOrWhiteSpace(value)));
+                HistoryListPanel.Children.Add(MakeInfoCard(text, details));
+            }
+
+            if (entries.Count == 0)
+                HistoryListPanel.Children.Add(MakeInfoCard(
+                    Localization.CurrentLanguage == "en" ? "No matching entries" : "Keine passenden Einträge", ""));
+        }
+
+        private async void ExportHistory_Click(object sender, RoutedEventArgs e)
+        {
+            var lines = _settings.ActivityLog.Select(entry =>
+                $"{entry.TimestampUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} | {entry.TextDe} | {entry.PackageId} | " +
+                $"{entry.OldVersion} -> {entry.NewVersion} | {entry.Result} | Exit={entry.ExitCode}");
+            await ReportExportService.SaveTextAsync(this, $"WinVora-Verlauf-{DateTime.Now:yyyyMMdd}", string.Join(Environment.NewLine, lines));
+        }
+
+        private async void ExportSystemReport_Click(object sender, RoutedEventArgs e)
+        {
+            _cachedSnapshot ??= await SystemInfoProvider.GetFullSnapshotAsync();
+            var s = _cachedSnapshot;
+            string report = string.Join(Environment.NewLine + Environment.NewLine, new[]
+            {
+                "WINVORA SYSTEMBERICHT",
+                $"Erstellt: {DateTime.Now:g}",
+                SystemInfoFormatter.Device(s), SystemInfoFormatter.OperatingSystem(s),
+                SystemInfoFormatter.Cpu(s, Localization.CurrentLanguage == "en"),
+                SystemInfoFormatter.Ram(s, Localization.CurrentLanguage == "en"),
+                SystemInfoFormatter.Board(s), SystemInfoFormatter.Security(s),
+                "Grafik:" + Environment.NewLine + SystemInfoFormatter.Gpus(s),
+                "Laufwerke:" + Environment.NewLine + SystemInfoFormatter.Drives(s),
+                "Netzwerk:" + Environment.NewLine + SystemInfoFormatter.Network(s),
+                "Akku: " + SystemInfoFormatter.Battery(s)
+            });
+            await ReportExportService.SaveTextAsync(this, $"WinVora-Systembericht-{DateTime.Now:yyyyMMdd}", report);
+        }
+
+        private void Autostart_Click(object sender, RoutedEventArgs e)
+        {
+            SetPage("Autostart");
+            RenderAutostartPage();
+        }
+
+        private void RenderAutostartPage()
+        {
+            AutostartListPanel.Children.Clear();
+            var entries = AutostartService.GetEntries();
+            PageSubtitle.Text = $"{entries.Count} Autostart-Programme";
+            foreach (var entry in entries)
+            {
+                var toggle = new ToggleSwitch { IsOn = entry.Enabled, OnContent = "An", OffContent = "Aus" };
+                toggle.Toggled += (_, __) =>
+                {
+                    try { AutostartService.SetEnabled(entry, toggle.IsOn); }
+                    catch (Exception ex) { Logger.LogError($"Autostart {entry.Name}", ex); }
+                };
+                AutostartListPanel.Children.Add(new ToolkitControls.SettingsCard
+                {
+                    Header = entry.Name,
+                    Description = entry.Command,
+                    Content = toggle,
+                    CornerRadius = new CornerRadius(16)
+                });
+            }
         }
 
         private void SaveSecondaryWindowPlacement(Window window, bool settingsWindow)
@@ -1768,6 +1873,12 @@ namespace WinVora
     "• Der Aktivitätsverlauf enthält jetzt Programm, Version und Ergebnis\n" +
     "• Windows-Benachrichtigung nach abgeschlossenen Programm-Updates\n" +
     "• Systeminformationen lassen sich pro Bereich bequem kopieren\n" +
+    "• Updates können für 1, 7 oder 30 Tage zurückgestellt oder dauerhaft\n" +
+    "  ignoriert und später gesammelt wieder eingeblendet werden\n" +
+    "• Neue Verlaufsseite mit Ergebnisfiltern und Export als Textdatei\n" +
+    "• Kompletter Systembericht lässt sich als übersichtliche Datei exportieren\n" +
+    "• Neue Autostart-Verwaltung zum sicheren Aktivieren und Deaktivieren von\n" +
+    "  Programmen im eigenen Windows-Benutzerkonto\n" +
     "• Einstellungen und Changelog öffnen zuverlässig im Vordergrund und merken\n" +
     "  sich Größe und Position\n" +
     "• Der Ladebildschirm läuft beim Verschieben deutlich flüssiger, behält aber\n" +
@@ -1783,6 +1894,12 @@ namespace WinVora
     "• Activity history now includes program, version and result\n" +
     "• Windows notification after program updates finish\n" +
     "• System information can be copied by section\n" +
+    "• Updates can be postponed for 1, 7 or 30 days or ignored permanently\n" +
+    "  and restored together later\n" +
+    "• New history page with result filters and text export\n" +
+    "• Complete system report can be exported as a readable file\n" +
+    "• New startup manager for safely enabling and disabling programs for the\n" +
+    "  current Windows user\n" +
     "• Settings and changelog reliably open in front and remember size and position\n" +
     "• The loading screen stays smooth while moving and keeps its diagonal hex wave\n" +
     "• Internal components were cleaned up for more reliable future updates"
@@ -3181,9 +3298,32 @@ namespace WinVora
             _wingetRows.Clear();
 
             bool en = Localization.CurrentLanguage == "en";
+            DateTime now = DateTime.UtcNow;
+            _settings.DeferredUpdates.RemoveAll(entry => entry.HiddenUntilUtc.HasValue && entry.HiddenUntilUtc <= now);
+            var hiddenIds = _settings.DeferredUpdates.Select(entry => entry.PackageId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            int hiddenCount = packages.Count(package => hiddenIds.Contains(package.Id));
+            packages = packages.Where(package => !hiddenIds.Contains(package.Id)).ToList();
+            _settings.Save();
             var publisherLabel = Localization.T("Winget.Publisher");
             var sizeLabel = Localization.T("Winget.Size");
             var loadingLabel = Localization.T("Winget.Loading");
+
+            if (hiddenCount > 0)
+            {
+                var restoreButton = new Button
+                {
+                    Content = en ? $"Show {hiddenCount} hidden update(s)" : $"{hiddenCount} ausgeblendete Update(s) wieder anzeigen",
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                restoreButton.Click += (_, __) =>
+                {
+                    _settings.DeferredUpdates.Clear();
+                    _settings.Save();
+                    if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
+                };
+                ContentArea.Children.Add(restoreButton);
+            }
 
             if (packages.Count == 0)
             {
@@ -3199,9 +3339,10 @@ namespace WinVora
                 return;
             }
 
-            PageSubtitle.Text = packages.Count == 1
+            PageSubtitle.Text = (packages.Count == 1
                 ? (en ? "1 app has an update" : "1 App hat ein Update")
-                : (en ? $"{packages.Count} apps have updates" : $"{packages.Count} Apps haben Updates");
+                : (en ? $"{packages.Count} apps have updates" : $"{packages.Count} Apps haben Updates")) +
+                (hiddenCount > 0 ? (en ? $" · {hiddenCount} hidden" : $" · {hiddenCount} ausgeblendet") : "");
 
             HealthUpdatesText.Text = packages.Count.ToString();
             UpdateDashboardStatusSummary();
@@ -3217,12 +3358,39 @@ namespace WinVora
                     en ? $"Select update for {pkg.Name}" : $"Update für {pkg.Name} auswählen");
                 var baseDescription = $"{pkg.Id}  •  {pkg.Version} → {pkg.Available}  •  {pkg.Source}";
 
+                var deferButton = new Button
+                {
+                    Content = "⋯",
+                    Width = 40,
+                    Height = 34,
+                    Padding = new Thickness(0)
+                };
+                ToolTipService.SetToolTip(deferButton,
+                    en ? "Postpone or ignore update" : "Update zurückstellen oder ignorieren");
+                var deferMenu = new MenuFlyout();
+                foreach (var option in new (string Label, int? Days)[]
+                {
+                    (en ? "Hide for 1 day" : "1 Tag zurückstellen", 1),
+                    (en ? "Hide for 7 days" : "7 Tage zurückstellen", 7),
+                    (en ? "Hide for 30 days" : "30 Tage zurückstellen", 30),
+                    (en ? "Ignore permanently" : "Dauerhaft ignorieren", null)
+                })
+                {
+                    var menuItem = new MenuFlyoutItem { Text = option.Label };
+                    menuItem.Click += (_, __) => DeferUpdate(pkg, option.Days);
+                    deferMenu.Items.Add(menuItem);
+                }
+                deferButton.Flyout = deferMenu;
+                var cardActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+                cardActions.Children.Add(toggle);
+                cardActions.Children.Add(deferButton);
+
                 var card = new ToolkitControls.SettingsCard
                 {
                     Header = pkg.Name,
                     Description = $"{baseDescription}  •  {publisherLabel}: {loadingLabel}  •  {sizeLabel}: {loadingLabel}",
                     HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter-App-Icon
-                    Content = toggle,
+                    Content = cardActions,
                     BorderThickness = new Thickness(1),
                     BorderBrush = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"] // startet ausgewählt
                 };
@@ -3259,6 +3427,19 @@ namespace WinVora
             // Programme (es werden nur Updates aufgelistet) - wir suchen sie anhand
             // des Namens in der Registry und extrahieren ihr echtes Icon.
             _ = LoadWingetIconsInBackground(_wingetRows.ToList());
+        }
+
+        private void DeferUpdate(WingetPackage package, int? days)
+        {
+            _settings.DeferredUpdates.RemoveAll(entry =>
+                entry.PackageId.Equals(package.Id, StringComparison.OrdinalIgnoreCase));
+            _settings.DeferredUpdates.Add(new DeferredUpdateEntry
+            {
+                PackageId = package.Id,
+                HiddenUntilUtc = days.HasValue ? DateTime.UtcNow.AddDays(days.Value) : null
+            });
+            _settings.Save();
+            if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
         }
 
         private async Task LoadWingetIconsInBackground(

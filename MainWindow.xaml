@@ -122,7 +122,16 @@
         FontSize="18"
         FontWeight="SemiBold"
         MinHeight="56"
-        Padding="18,14"/>
+        Padding="18,14"
+        Margin="0,0,0,12"/>
+
+                        <Button x:Name="NavHistoryButton" Content="Verlauf"
+        Click="History_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+        FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,0,0,12"/>
+
+                        <Button x:Name="NavAutostartButton" Content="Autostart"
+        Click="Autostart_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+        FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14"/>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -1019,6 +1028,26 @@
                             </Expander>
 
                             <Border Height="28"/>
+                        </StackPanel>
+
+                        <StackPanel x:Name="HistoryPanel" Spacing="14" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <ComboBox x:Name="HistoryFilterBox" Width="220" SelectedIndex="0" SelectionChanged="HistoryFilter_SelectionChanged">
+                                    <ComboBoxItem Content="Alle Ergebnisse" Tag="All"/>
+                                    <ComboBoxItem Content="Erfolgreich" Tag="Successful"/>
+                                    <ComboBoxItem Content="Fehlgeschlagen" Tag="Failed"/>
+                                    <ComboBoxItem Content="Abgebrochen" Tag="Cancelled"/>
+                                    <ComboBoxItem Content="Neustart erforderlich" Tag="RestartRequired"/>
+                                </ComboBox>
+                                <Button Content="Verlauf exportieren" Click="ExportHistory_Click"/>
+                                <Button Content="Systembericht exportieren" Click="ExportSystemReport_Click"/>
+                            </StackPanel>
+                            <StackPanel x:Name="HistoryListPanel" Spacing="10"/>
+                        </StackPanel>
+
+                        <StackPanel x:Name="AutostartPanel" Spacing="12" Visibility="Collapsed">
+                            <TextBlock Text="Programme, die automatisch mit Windows starten" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                            <StackPanel x:Name="AutostartListPanel" Spacing="10"/>
                         </StackPanel>
 
                         <!-- WINGET -->

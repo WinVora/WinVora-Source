@@ -18,6 +18,12 @@ namespace WinVora
         public int? ExitCode { get; set; }
     }
 
+    public class DeferredUpdateEntry
+    {
+        public string PackageId { get; set; } = "";
+        public DateTime? HiddenUntilUtc { get; set; }
+    }
+
     public class AppSettings
     {
         // Alpha-Wert (0-64) für die Deckkraft der Glas-Karten. 24 = Standard.
@@ -57,6 +63,7 @@ namespace WinVora
         // Verlauf der letzten Aktionen (Bereinigung, Updates, Deinstallation) -
         // wird auf der Dashboard-Seite als kleine Liste angezeigt.
         public System.Collections.Generic.List<ActivityLogEntry> ActivityLog { get; set; } = new();
+        public System.Collections.Generic.List<DeferredUpdateEntry> DeferredUpdates { get; set; } = new();
 
         public int? WindowX { get; set; }
         public int? WindowY { get; set; }
@@ -119,6 +126,8 @@ namespace WinVora
             ChangelogWindowWidth = Math.Clamp(ChangelogWindowWidth, 480, 1920);
             ChangelogWindowHeight = Math.Clamp(ChangelogWindowHeight, 520, 1440);
             ActivityLog ??= new();
+            DeferredUpdates ??= new();
+            DeferredUpdates.RemoveAll(entry => string.IsNullOrWhiteSpace(entry.PackageId));
         }
 
         public void Save()
