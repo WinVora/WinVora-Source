@@ -195,7 +195,7 @@ namespace WinVora
             NavUpdatesButton.Content = Localization.T("Nav.Updates");
             NavCleanerButton.Content = Localization.T("Nav.Files");
             NavUninstallButton.Content = Localization.T("Nav.Uninstall");
-            NavHistoryButton.Content = Localization.CurrentLanguage == "en" ? "History" : "Verlauf";
+            LblNavHistory.Text = Localization.CurrentLanguage == "en" ? "History" : "Verlauf";
             NavAutostartButton.Content = "Autostart";
             LblNavSettings.Text = Localization.T("Nav.Settings");
             LblNavContact.Text = Localization.T("Nav.Contact");
@@ -228,8 +228,6 @@ namespace WinVora
             LblHistoryCpu.Text = Localization.T("Stat.Cpu");
             LblHistoryRam.Text = Localization.T("Stat.Ram");
             LblHistoryGpu.Text = Localization.T("Stat.Gpu");
-            ActivityLogCard.Header = Localization.T("Dash.ActivityHeader");
-            RenderActivityLog();
 
             // "Nicht verfügbar"-Platzhalter neu setzen, falls sie gerade aktiv sind
             if (DashTempText.Text is "Nicht verfügbar" or "Not available")
@@ -584,90 +582,6 @@ namespace WinVora
                 _settings.ActivityLog.RemoveAt(_settings.ActivityLog.Count - 1);
 
             _settings.Save();
-            RenderActivityLog();
-        }
-
-        // Baut die Liste der letzten Aktionen auf dem Dashboard neu auf.
-        private void RenderActivityLog()
-        {
-            if (ActivityLogPanel == null) return;
-
-            ActivityLogPanel.Children.Clear();
-            bool en = Localization.CurrentLanguage == "en";
-
-            if (_settings.ActivityLog.Count == 0)
-            {
-                var emptyState = new StackPanel
-                {
-                    Spacing = 6,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 8, 0, 4)
-                };
-                emptyState.Children.Add(new FontIcon
-                {
-                    Glyph = "\uE823",
-                    FontSize = 22,
-                    Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
-                });
-                emptyState.Children.Add(new TextBlock
-                {
-                    Text = en ? "Your recent actions will appear here." : "Deine letzten Aktionen erscheinen später hier.",
-                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
-                    FontSize = 13,
-                    TextAlignment = TextAlignment.Center
-                });
-                ActivityLogPanel.Children.Add(emptyState);
-                return;
-            }
-
-            foreach (var entry in _settings.ActivityLog.Take(6))
-            {
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-
-                row.Children.Add(new FontIcon
-                {
-                    Glyph = entry.IconGlyph,
-                    FontSize = 15,
-                    Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"],
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Width = 20
-                });
-
-                var textPanel = new StackPanel { Spacing = 2 };
-                textPanel.Children.Add(new TextBlock
-                {
-                    Text = en ? entry.TextEn : entry.TextDe,
-                    FontSize = 14,
-                    Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"],
-                    TextWrapping = TextWrapping.Wrap
-                });
-                textPanel.Children.Add(new TextBlock
-                {
-                    Text = FormatLastCleanup(entry.TimestampUtc),
-                    FontSize = 11,
-                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
-                });
-
-                if (!string.IsNullOrWhiteSpace(entry.PackageId))
-                {
-                    string versionText = !string.IsNullOrWhiteSpace(entry.OldVersion) && !string.IsNullOrWhiteSpace(entry.NewVersion)
-                        ? $"{entry.OldVersion} → {entry.NewVersion}"
-                        : entry.PackageId;
-                    string exitText = entry.ExitCode is int exitCode && exitCode != 0
-                        ? $" · Exit 0x{unchecked((uint)exitCode):X8}"
-                        : "";
-                    textPanel.Children.Add(new TextBlock
-                    {
-                        Text = $"{entry.PackageId} · {versionText}{exitText}",
-                        FontSize = 11,
-                        Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
-                        TextWrapping = TextWrapping.Wrap
-                    });
-                }
-
-                row.Children.Add(textPanel);
-                ActivityLogPanel.Children.Add(row);
-            }
         }
 
         // Zentrale Stelle für den Hell-/Dunkel-Modus-Wechsel. Setzt sowohl unsere
@@ -2960,7 +2874,6 @@ namespace WinVora
             }
 
             UpdateDashboardStatusSummary();
-            RenderActivityLog();
         }
 
         // Aktualisiert ein minimalistisches Verlaufsdiagramm (wie ein kleines
@@ -3830,7 +3743,6 @@ namespace WinVora
             while (_settings.ActivityLog.Count > 20)
                 _settings.ActivityLog.RemoveAt(_settings.ActivityLog.Count - 1);
             _settings.Save();
-            RenderActivityLog();
         }
 
         private async Task ShowUpdateSummaryAsync(
