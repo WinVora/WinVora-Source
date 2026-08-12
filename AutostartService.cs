@@ -1,6 +1,8 @@
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
 
 namespace WinVora
 {
@@ -29,6 +31,16 @@ namespace WinVora
             string command = source?.GetValue(entry.Name)?.ToString() ?? entry.Command;
             target.SetValue(entry.Name, command, RegistryValueKind.String);
             source?.DeleteValue(entry.Name, throwOnMissingValue: false);
+        }
+
+        public static bool CommandTargetExists(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command)) return false;
+            string expanded = Environment.ExpandEnvironmentVariables(command.Trim());
+            string path = expanded.StartsWith('"')
+                ? expanded[1..].Split('"')[0]
+                : Regex.Match(expanded, @"^.*?\.(exe|cmd|bat|com)(?=\s|$)", RegexOptions.IgnoreCase).Value;
+            return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
         }
 
         private static void ReadKey(string path, bool enabled, List<AutostartEntry> result)

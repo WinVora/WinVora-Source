@@ -56,6 +56,7 @@ namespace WinVora
         // das Einstellungen-Fenster nicht nochmal extra suchen muss.
         private UpdateInfo? _pendingUpdateInfo;
         private string _currentPageKey = "Übersicht";
+        private string _historyFilter = "All";
 
 
         public MainWindow()
@@ -192,11 +193,11 @@ namespace WinVora
             // Sidebar-Navigation
             LblNavDashboard.Text = Localization.T("Nav.Dashboard");
             LblNavSystem.Text = Localization.T("Nav.System");
-            LblNavUpdates.Text = Localization.CurrentLanguage == "en" ? "Program Updates" : "Programm-Updates";
+            LblNavUpdates.Text = Localization.CurrentLanguage == "en" ? "Updates" : "Updates";
             LblNavFiles.Text = Localization.T("Nav.Files");
             LblNavUninstall.Text = Localization.T("Nav.Uninstall");
             LblNavHistory.Text = Localization.CurrentLanguage == "en" ? "History" : "Verlauf";
-            NavAutostartButton.Content = "Autostart";
+            LblNavAutostart.Text = "Autostart";
             LblNavSettings.Text = Localization.T("Nav.Settings");
             LblNavContact.Text = Localization.T("Nav.Contact");
             LblNavChangelogHint.Text = Localization.T("Nav.ChangelogHint");
@@ -232,13 +233,6 @@ namespace WinVora
             // "Nicht verfügbar"-Platzhalter neu setzen, falls sie gerade aktiv sind
             if (DashTempText.Text is "Nicht verfügbar" or "Not available")
                 DashTempText.Text = Localization.T("Dash.NotAvailable");
-
-            // Schnellzugriff
-            QuickAccessCard.Header = Localization.T("Quick.Header");
-            LblQuickHardware.Text = Localization.T("Quick.Hardware");
-            LblQuickUpdates.Text = Localization.T("Quick.UpdatePrograms");
-            LblQuickClean.Text = Localization.T("Quick.Clean");
-            LblQuickSettings.Text = Localization.T("Quick.Settings");
 
             // Systeminfo: Action-Bar + Abschnitts-Überschriften
             RefreshSystemInfoButton.Content = Localization.T("System.Refresh");
@@ -874,7 +868,12 @@ namespace WinVora
 
             foreach (var (button, page) in navButtons)
             {
-                button.Background = page == title ? accentOverlay : transparent;
+                bool active = page == title;
+                button.Background = active ? accentOverlay : transparent;
+                button.BorderBrush = active
+                    ? (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                    : transparent;
+                button.BorderThickness = active ? new Thickness(4, 0, 0, 0) : new Thickness(0);
             }
         }
 
@@ -1111,16 +1110,36 @@ namespace WinVora
             RenderHistoryPage();
         }
 
-        private void HistoryFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void HistoryChip_Click(object sender, RoutedEventArgs e)
         {
-            if (HistoryListPanel != null) RenderHistoryPage();
+            if (sender is Button button && button.Tag is string filter)
+            {
+                _historyFilter = filter;
+                RenderHistoryPage();
+            }
+        }
+
+        private void ShowInfo(string message, InfoBarSeverity severity = InfoBarSeverity.Informational)
+        {
+            AppInfoBar.Message = message;
+            AppInfoBar.Severity = severity;
+            AppInfoBar.IsOpen = true;
         }
 
         private void RenderHistoryPage()
         {
             HistoryListPanel.Children.Clear();
-            string filter = (HistoryFilterBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "All";
-            var entries = _settings.ActivityLog.Where(entry => filter == "All" || entry.Result == filter).ToList();
+            var entries = _settings.ActivityLog.Where(entry => _historyFilter == "All" || entry.Result == _historyFilter).ToList();
+            foreach (var button in new[] { HistoryAllButton, HistorySuccessButton, HistoryFailedButton, HistoryCancelledButton, HistoryRestartButton })
+            {
+                bool active = Equals(button.Tag?.ToString(), _historyFilter);
+                button.Background = active
+                    ? (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"]
+                    : (SolidColorBrush)RootGrid.Resources["AppOverlay10"];
+                button.BorderBrush = active
+                    ? (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                    : (SolidColorBrush)RootGrid.Resources["AppOverlay28"];
+            }
             PageSubtitle.Text = Localization.CurrentLanguage == "en"
                 ? $"{entries.Count} entries"
                 : $"{entries.Count} Einträge";
@@ -1152,8 +1171,10 @@ namespace WinVora
             }
 
             if (entries.Count == 0)
-                HistoryListPanel.Children.Add(MakeInfoCard(
-                    Localization.CurrentLanguage == "en" ? "No matching entries" : "Keine passenden Einträge", ""));
+                HistoryListPanel.Children.Add(MakeEmptyState(
+                    "\uE81C",
+                    Localization.CurrentLanguage == "en" ? "No matching entries" : "Keine passenden Einträge",
+                    Localization.CurrentLanguage == "en" ? "Choose another filter to see more entries." : "Wähle einen anderen Filter, um weitere Einträge zu sehen."));
         }
 
         private async void ExportHistory_Click(object sender, RoutedEventArgs e)
@@ -1161,7 +1182,8 @@ namespace WinVora
             var lines = _settings.ActivityLog.Select(entry =>
                 $"{entry.TimestampUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} | {entry.TextDe} | {entry.PackageId} | " +
                 $"{entry.OldVersion} -> {entry.NewVersion} | {entry.Result} | Exit={entry.ExitCode}");
-            await ReportExportService.SaveTextAsync(this, $"WinVora-Verlauf-{DateTime.Now:yyyyMMdd}", string.Join(Environment.NewLine, lines));
+            if (await ReportExportService.SaveTextAsync(this, $"WinVora-Verlauf-{DateTime.Now:yyyyMMdd}", string.Join(Environment.NewLine, lines)))
+                ShowInfo(Localization.CurrentLanguage == "en" ? "History exported." : "Verlauf wurde exportiert.", InfoBarSeverity.Success);
         }
 
         private async void ExportSystemReport_Click(object sender, RoutedEventArgs e)
@@ -1181,7 +1203,8 @@ namespace WinVora
                 "Netzwerk:" + Environment.NewLine + SystemInfoFormatter.Network(s),
                 "Akku: " + SystemInfoFormatter.Battery(s)
             });
-            await ReportExportService.SaveTextAsync(this, $"WinVora-Systembericht-{DateTime.Now:yyyyMMdd}", report);
+            if (await ReportExportService.SaveTextAsync(this, $"WinVora-Systembericht-{DateTime.Now:yyyyMMdd}", report))
+                ShowInfo(Localization.CurrentLanguage == "en" ? "System report exported." : "Systembericht wurde exportiert.", InfoBarSeverity.Success);
         }
 
         private void Autostart_Click(object sender, RoutedEventArgs e)
@@ -1197,20 +1220,54 @@ namespace WinVora
             PageSubtitle.Text = $"{entries.Count} Autostart-Programme";
             foreach (var entry in entries)
             {
-                var toggle = new ToggleSwitch { IsOn = entry.Enabled, OnContent = "An", OffContent = "Aus" };
+                bool targetExists = AutostartService.CommandTargetExists(entry.Command);
+                var toggle = new ToggleSwitch
+                {
+                    IsOn = entry.Enabled,
+                    OnContent = Localization.CurrentLanguage == "en" ? "Active" : "Aktiv",
+                    OffContent = Localization.CurrentLanguage == "en" ? "Disabled" : "Deaktiviert"
+                };
                 toggle.Toggled += (_, __) =>
                 {
-                    try { AutostartService.SetEnabled(entry, toggle.IsOn); }
+                    try
+                    {
+                        AutostartService.SetEnabled(entry, toggle.IsOn);
+                        ShowInfo(toggle.IsOn
+                            ? $"{entry.Name} wurde aktiviert."
+                            : $"{entry.Name} wurde deaktiviert.", InfoBarSeverity.Success);
+                    }
                     catch (Exception ex) { Logger.LogError($"Autostart {entry.Name}", ex); }
                 };
+                var statusPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+                statusPanel.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Background = new SolidColorBrush(targetExists
+                        ? Windows.UI.Color.FromArgb(0x28, 0x4C, 0xD9, 0x73)
+                        : Windows.UI.Color.FromArgb(0x28, 0xFF, 0x6B, 0x6B)),
+                    Child = new TextBlock
+                    {
+                        Text = targetExists ? "OK" : (Localization.CurrentLanguage == "en" ? "File missing" : "Datei fehlt"),
+                        Foreground = new SolidColorBrush(targetExists
+                            ? Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73)
+                            : Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
+                    }
+                });
+                statusPanel.Children.Add(toggle);
                 AutostartListPanel.Children.Add(new ToolkitControls.SettingsCard
                 {
                     Header = entry.Name,
-                    Description = entry.Command,
-                    Content = toggle,
+                    Description = (Localization.CurrentLanguage == "en" ? "Path: " : "Pfad: ") + entry.Command,
+                    Content = statusPanel,
                     CornerRadius = new CornerRadius(16)
                 });
             }
+            if (entries.Count == 0)
+                AutostartListPanel.Children.Add(MakeEmptyState(
+                    "\uE768",
+                    Localization.CurrentLanguage == "en" ? "No startup programs" : "Keine Autostart-Programme",
+                    Localization.CurrentLanguage == "en" ? "No programs start automatically for this user." : "Für diesen Benutzer starten keine Programme automatisch."));
         }
 
         private void SaveSecondaryWindowPlacement(Window window, bool settingsWindow)
@@ -2593,6 +2650,18 @@ namespace WinVora
             SystemInfoCopyButton.Attach(SysCardBattery,
                 () => FromSnapshot(SystemInfoFormatter.Battery));
 
+            foreach (var value in new[]
+            {
+                SysComputerName, SysUserName, SysManufacturerModel, SysSerialNumber, SysArchitecture,
+                SysEdition, SysVersionBuild, SysInstallDate, SysLastUpdate, SysActivation, SysUptime,
+                SysDotNet, SysDirectX, SysCpuName, SysCpuDetails, SysRamDetails, SysMainboard, SysBios,
+                SysSecureBoot, SysTpm, SysVirtualization, SysDefender, SysFirewall, SysBitLocker, SysBattery
+            })
+            {
+                value.MaxWidth = 620;
+                value.Margin = new Thickness(0, 0, 18, 0);
+            }
+
         }
 
         private async void System_Click(object sender, RoutedEventArgs e)
@@ -2765,6 +2834,56 @@ namespace WinVora
 
             item.Child = panel;
             return item;
+        }
+
+        private Border MakeEmptyState(
+            string glyph,
+            string title,
+            string description,
+            string? actionText = null,
+            Func<Task>? action = null)
+        {
+            var panel = new StackPanel
+            {
+                Spacing = 10,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(20)
+            };
+            panel.Children.Add(new FontIcon
+            {
+                Glyph = glyph,
+                FontSize = 30,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+            });
+            panel.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = 18,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
+            panel.Children.Add(new TextBlock
+            {
+                Text = description,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap
+            });
+            if (action != null && !string.IsNullOrWhiteSpace(actionText))
+            {
+                var button = new Button { Content = actionText, HorizontalAlignment = HorizontalAlignment.Center };
+                button.Click += async (_, __) => await action();
+                panel.Children.Add(button);
+            }
+            return new Border
+            {
+                CornerRadius = new CornerRadius(16),
+                Padding = new Thickness(20),
+                Background = (SolidColorBrush)RootGrid.Resources["AppOverlay10"],
+                BorderBrush = (SolidColorBrush)RootGrid.Resources["AppOverlay22"],
+                BorderThickness = new Thickness(1),
+                Child = panel
+            };
         }
 
 
@@ -3257,11 +3376,12 @@ namespace WinVora
                 HealthUpdatesText.Text = Localization.T("Common.None");
                 WingetSelectAllButton.Content = Localization.T("Common.DeselectAll");
 
-                ContentArea.Children.Add(new TextBlock
-                {
-                    Text = en ? "No updates found." : "Keine Updates gefunden.",
-                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray)
-                });
+                ContentArea.Children.Add(MakeEmptyState(
+                    "\uE895",
+                    en ? "Everything is up to date" : "Alles ist aktuell",
+                    en ? "No program updates were found." : "Es wurden keine Programm-Updates gefunden.",
+                    en ? "Check again" : "Erneut prüfen",
+                    async () => await LoadWinget(forceRefresh: true)));
                 return;
             }
 
@@ -3282,7 +3402,9 @@ namespace WinVora
                 var toggle = new ToggleSwitch { IsOn = true, OnContent = "", OffContent = "" };
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle,
                     en ? $"Select update for {pkg.Name}" : $"Update für {pkg.Name} auswählen");
-                var baseDescription = $"{pkg.Version}  →  {pkg.Available}\n{pkg.Id}  •  {pkg.Source}";
+                var baseDescription = en
+                    ? $"VERSION   {pkg.Version}  →  {pkg.Available}\nPACKAGE   {pkg.Id}  ·  {pkg.Source}"
+                    : $"VERSION   {pkg.Version}  →  {pkg.Available}\nPAKET   {pkg.Id}  ·  {pkg.Source}";
 
                 var deferButton = new Button
                 {
@@ -3326,7 +3448,7 @@ namespace WinVora
                 var card = new ToolkitControls.SettingsCard
                 {
                     Header = pkg.Name,
-                    Description = $"{baseDescription}  •  {publisherLabel}: {loadingLabel}  •  {sizeLabel}: {loadingLabel}",
+                    Description = $"{baseDescription}\n{publisherLabel.ToUpperInvariant()}   {loadingLabel}     {sizeLabel.ToUpperInvariant()}   {loadingLabel}",
                     HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter-App-Icon
                     Content = cardActions,
                     BorderThickness = new Thickness(1),
@@ -3378,6 +3500,9 @@ namespace WinVora
             });
             _settings.Save();
             if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
+            ShowInfo(days.HasValue
+                ? $"{package.Name} wurde für {days.Value} Tag(e) zurückgestellt."
+                : $"{package.Name} wird dauerhaft ignoriert.");
         }
 
         private async Task LoadWingetIconsInBackground(
@@ -3441,7 +3566,7 @@ namespace WinVora
                         var (publisher, size) = await GetWingetDetailsAsync(
                             row.Package.Id, row.Package.Name, installedPrograms);
                         pending.Enqueue((row.Card,
-                            $"{row.BaseDescription}  •  {publisherLabel}: {publisher}  •  {sizeLabel}: {size}"));
+                            $"{row.BaseDescription}\n{publisherLabel.ToUpperInvariant()}   {publisher}     {sizeLabel.ToUpperInvariant()}   {size}"));
                     }
                     finally
                     {
