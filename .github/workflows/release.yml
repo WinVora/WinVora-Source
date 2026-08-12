@@ -60,7 +60,7 @@ jobs:
 
       - name: Build installer
         shell: pwsh
-        run: '& $env:INNO_COMPILER WinVoraSetup.iss'
+        run: '& $env:INNO_COMPILER Packaging\WinVoraSetup.iss'
 
       - name: Create checksum
         shell: pwsh
