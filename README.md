@@ -2,11 +2,11 @@
 
 WinVora bündelt Programm-Updates, Systeminformationen, Dateibereinigung, Autostart-Verwaltung, Deinstallation und einen verständlichen Aktivitätsverlauf in einer Windows-App.
 
-## Version 0.8.3
+## Version 0.8.4
 
 ### Installation
 
-1. Lade `WinVora-Setup-0.8.3.exe` aus dem aktuellen GitHub-Release herunter.
+1. Lade `WinVora-Setup-0.8.4.exe` aus dem aktuellen GitHub-Release herunter.
 2. Starte die Datei und folge dem Installationsassistenten.
 3. WinVora prüft anschließend verfügbare Programm-Updates und den Systemstatus.
 

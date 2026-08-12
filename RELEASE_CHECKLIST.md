@@ -1,7 +1,7 @@
-# WinVora 0.8.3 – Release-Checkliste
+# WinVora 0.8.4 – Release-Checkliste
 
-- Projektversion: `0.8.3`
-- Installername: `WinVora-Setup-0.8.3.exe`
+- Projektversion: `0.8.4`
+- Installername: `WinVora-Setup-0.8.4.exe`
 - Release-Build: `dotnet publish WinVora.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -o publish`
 - Installer: `WinVoraSetup.iss` anschließend mit Inno Setup kompilieren
 - README, Endnutzer-Changelog und Installerdateiname auf dieselbe Version prüfen

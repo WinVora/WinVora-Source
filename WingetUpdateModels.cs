@@ -1,5 +1,16 @@
 namespace WinVora
 {
+    public class WingetPackage
+    {
+        public string Name { get; set; } = "";
+        public string Id { get; set; } = "";
+        public string Version { get; set; } = "";
+        public string Available { get; set; } = "";
+        public string Source { get; set; } = "";
+        public string Publisher { get; set; } = "Unbekannt";
+        public string DownloadSize { get; set; } = "Unbekannt";
+    }
+
     internal enum WingetUpdatePhase
     {
         Downloading,

@@ -65,6 +65,27 @@ namespace WinVora
                 out string steamExe, out string steamArgs));
             Debug.Assert(steamExe.EndsWith("steam.exe", StringComparison.OrdinalIgnoreCase));
             Debug.Assert(steamArgs == "steam://uninstall/123");
+
+            var oldPcState = new PcStateSnapshot
+            {
+                CapturedUtc = DateTime.UtcNow.AddDays(-1),
+                Programs = new Dictionary<string, string> { ["Demo|Vendor"] = "1.0", ["Removed|Vendor"] = "1.0" },
+                StartupEntries = new HashSet<string> { "Old startup|old.exe" },
+                DriveFreeBytes = new Dictionary<string, long> { ["C:\\"] = 1000 },
+                WatchedFolderBytes = new Dictionary<string, long> { ["C:\\Users\\Demo\\Downloads"] = 100 }
+            };
+            var newPcState = new PcStateSnapshot
+            {
+                CapturedUtc = DateTime.UtcNow,
+                Programs = new Dictionary<string, string> { ["Demo|Vendor"] = "2.0", ["New|Vendor"] = "1.0" },
+                StartupEntries = new HashSet<string> { "New startup|new.exe" },
+                DriveFreeBytes = new Dictionary<string, long> { ["C:\\"] = 500 },
+                WatchedFolderBytes = new Dictionary<string, long> { ["C:\\Users\\Demo\\Downloads"] = 2L * 1024 * 1024 * 1024 }
+            };
+            var pcChanges = PcChangesService.Compare(oldPcState, newPcState);
+            Debug.Assert(pcChanges.InstalledPrograms == 1 && pcChanges.RemovedPrograms == 1 && pcChanges.UpdatedPrograms == 1);
+            Debug.Assert(pcChanges.AddedStartupEntries == 1 && pcChanges.RemovedStartupEntries == 1);
+            Debug.Assert(pcChanges.StorageGrowth.Count == 1);
         }
     }
 }
