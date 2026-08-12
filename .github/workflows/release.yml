@@ -37,12 +37,25 @@ jobs:
       - name: Publish
         run: dotnet publish WinVora.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -o publish
 
-      - name: Install Inno Setup
-        run: winget install --id JRSoftware.InnoSetup --exact --accept-package-agreements --accept-source-agreements --silent
+      - name: Locate or install Inno Setup
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            choco install innosetup --no-progress --yes
+            $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $compiler) { throw "Inno Setup compiler was not found." }
+          "INNO_COMPILER=$compiler" >> $env:GITHUB_ENV
 
       - name: Build installer
         shell: pwsh
-        run: '& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" WinVoraSetup.iss'
+        run: '& $env:INNO_COMPILER WinVoraSetup.iss'
 
       - name: Create checksum
         shell: pwsh
