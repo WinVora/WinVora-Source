@@ -39,98 +39,99 @@ namespace WinVora
             string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
             string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             string systemDrive = Path.GetPathRoot(windows) ?? "C:\\";
+            bool en = Localization.CurrentLanguage == "en";
 
             return new List<StorageCategory>
             {
                 new StorageCategory
                 {
                     Key = "user_temp",
-                    Name = "Benutzer Temp",
-                    Description = "Temporäre Dateien des aktuellen Benutzerkontos",
+                    Name = en ? "User Temp" : "Benutzer Temp",
+                    Description = en ? "Temporary files of the current user account" : "Temporäre Dateien des aktuellen Benutzerkontos",
                     Paths = new[] { temp }
                 },
                 new StorageCategory
                 {
                     Key = "windows_temp",
-                    Name = "Windows Temp",
-                    Description = "Temporäre Systemdateien von Windows",
+                    Name = en ? "Windows Temp" : "Windows Temp",
+                    Description = en ? "Temporary system files from Windows" : "Temporäre Systemdateien von Windows",
                     Paths = new[] { Path.Combine(windows, "Temp") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "prefetch",
-                    Name = "Prefetch",
-                    Description = "Zwischengespeicherte Startdaten für schnelleren Programmstart",
+                    Name = en ? "Prefetch" : "Prefetch",
+                    Description = en ? "Cached startup data for faster program launches" : "Zwischengespeicherte Startdaten für schnelleren Programmstart",
                     Paths = new[] { Path.Combine(windows, "Prefetch") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "recycle_bin",
-                    Name = "Papierkorb",
-                    Description = "Endgültig gelöschte Dateien aus dem Papierkorb entfernen",
+                    Name = en ? "Recycle Bin" : "Papierkorb",
+                    Description = en ? "Permanently remove deleted files from the Recycle Bin" : "Endgültig gelöschte Dateien aus dem Papierkorb entfernen",
                     ActionType = StorageActionType.RecycleBin
                 },
                 new StorageCategory
                 {
                     Key = "dx_shader_cache",
-                    Name = "DirectX Shader Cache",
-                    Description = "Zwischengespeicherte Grafik-Shader",
+                    Name = en ? "DirectX Shader Cache" : "DirectX Shader Cache",
+                    Description = en ? "Cached graphics shaders" : "Zwischengespeicherte Grafik-Shader",
                     Paths = new[] { Path.Combine(localAppData, "D3DSCache") }
                 },
                 new StorageCategory
                 {
                     Key = "update_cache",
-                    Name = "Windows Update Cache",
-                    Description = "Heruntergeladene Update-Dateien (inkl. alter, nicht mehr benötigter Downloads)",
+                    Name = en ? "Windows Update Cache" : "Windows Update Cache",
+                    Description = en ? "Downloaded update files (including old, no longer needed downloads)" : "Heruntergeladene Update-Dateien (inkl. alter, nicht mehr benötigter Downloads)",
                     Paths = new[] { Path.Combine(windows, "SoftwareDistribution", "Download") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "delivery_optimization",
-                    Name = "Delivery Optimization Dateien",
-                    Description = "Zwischengespeicherte Update-Teile für die Peer-Verteilung",
+                    Name = en ? "Delivery Optimization Files" : "Delivery Optimization Dateien",
+                    Description = en ? "Cached update chunks for peer distribution" : "Zwischengespeicherte Update-Teile für die Peer-Verteilung",
                     Paths = new[] { Path.Combine(programData, "Microsoft", "Network", "Downloader") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "wer",
-                    Name = "Windows Error Reporting",
-                    Description = "Absturzberichte, die an Microsoft gesendet oder lokal gespeichert wurden",
+                    Name = en ? "Windows Error Reporting" : "Windows Error Reporting",
+                    Description = en ? "Crash reports sent to Microsoft or stored locally" : "Absturzberichte, die an Microsoft gesendet oder lokal gespeichert wurden",
                     Paths = new[] { Path.Combine(programData, "Microsoft", "Windows", "WER") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "minidump",
-                    Name = "MiniDump Dateien",
-                    Description = "Kleine Absturz-Speicherabbilder von Systemabstürzen (Bluescreens)",
+                    Name = en ? "MiniDump Files" : "MiniDump Dateien",
+                    Description = en ? "Small crash memory dumps from system crashes (blue screens)" : "Kleine Absturz-Speicherabbilder von Systemabstürzen (Bluescreens)",
                     Paths = new[] { Path.Combine(windows, "Minidump") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "crash_dumps",
-                    Name = "Crash Dumps",
-                    Description = "Vollständige Absturz-Speicherabbilder von Anwendungen",
+                    Name = en ? "Crash Dumps" : "Crash Dumps",
+                    Description = en ? "Full crash memory dumps from applications" : "Vollständige Absturz-Speicherabbilder von Anwendungen",
                     Paths = new[] { Path.Combine(localAppData, "CrashDumps") }
                 },
                 new StorageCategory
                 {
                     Key = "thumbnail_cache",
-                    Name = "Thumbnail Cache",
-                    Description = "Zwischengespeicherte Miniaturansichten des Explorers",
+                    Name = en ? "Thumbnail Cache" : "Thumbnail Cache",
+                    Description = en ? "Cached thumbnail previews from Explorer" : "Zwischengespeicherte Miniaturansichten des Explorers",
                     Paths = new[] { Path.Combine(localAppData, "Microsoft", "Windows", "Explorer") },
                     FilePattern = "thumbcache_*.db"
                 },
                 new StorageCategory
                 {
                     Key = "browser_cache",
-                    Name = "Browser Cache",
-                    Description = "Zwischenspeicher von Chrome und Edge",
+                    Name = en ? "Browser Cache" : "Browser Cache",
+                    Description = en ? "Cache from Chrome and Edge" : "Zwischenspeicher von Chrome und Edge",
                     Paths = new[]
                     {
                         Path.Combine(localAppData, "Google", "Chrome", "User Data", "Default", "Cache"),
@@ -140,61 +141,61 @@ namespace WinVora
                 new StorageCategory
                 {
                     Key = "logs",
-                    Name = "Logs",
-                    Description = "Allgemeine Windows-Protokolldateien",
+                    Name = en ? "Logs" : "Logs",
+                    Description = en ? "General Windows log files" : "Allgemeine Windows-Protokolldateien",
                     Paths = new[] { Path.Combine(windows, "Logs") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "setup_logs",
-                    Name = "Setup Logs",
-                    Description = "Protokolle von Windows-Setup und Feature-Updates",
+                    Name = en ? "Setup Logs" : "Setup Logs",
+                    Description = en ? "Logs from Windows Setup and feature updates" : "Protokolle von Windows-Setup und Feature-Updates",
                     Paths = new[] { Path.Combine(windows, "Panther") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "defender_temp",
-                    Name = "Defender temporäre Dateien",
-                    Description = "Temporäre Support- und Protokolldateien von Windows Defender",
+                    Name = en ? "Defender Temporary Files" : "Defender temporäre Dateien",
+                    Description = en ? "Temporary support and log files from Windows Defender" : "Temporäre Support- und Protokolldateien von Windows Defender",
                     Paths = new[] { Path.Combine(programData, "Microsoft", "Windows Defender", "Support") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "inet_cache",
-                    Name = "Temporary Internet Files",
-                    Description = "Zwischengespeicherte Webinhalte des Internet Explorer / WebView",
+                    Name = en ? "Temporary Internet Files" : "Temporary Internet Files",
+                    Description = en ? "Cached web content from Internet Explorer / WebView" : "Zwischengespeicherte Webinhalte des Internet Explorer / WebView",
                     Paths = new[] { Path.Combine(localAppData, "Microsoft", "Windows", "INetCache") }
                 },
                 new StorageCategory
                 {
                     Key = "store_cache",
-                    Name = "Microsoft Store Cache",
-                    Description = "Setzt den Zwischenspeicher des Microsoft Store zurück",
+                    Name = en ? "Microsoft Store Cache" : "Microsoft Store Cache",
+                    Description = en ? "Resets the Microsoft Store cache" : "Setzt den Zwischenspeicher des Microsoft Store zurück",
                     ActionType = StorageActionType.StoreCacheReset
                 },
                 new StorageCategory
                 {
                     Key = "dns_cache",
-                    Name = "DNS Cache",
-                    Description = "Zwischengespeicherte DNS-Auflösungen",
+                    Name = en ? "DNS Cache" : "DNS Cache",
+                    Description = en ? "Cached DNS resolutions" : "Zwischengespeicherte DNS-Auflösungen",
                     ActionType = StorageActionType.DnsFlush
                 },
                 new StorageCategory
                 {
                     Key = "upgrade_logs",
-                    Name = "Windows Upgrade Logs",
-                    Description = "Protokolle eines vorherigen Windows-Feature-Updates",
+                    Name = en ? "Windows Upgrade Logs" : "Windows Upgrade Logs",
+                    Description = en ? "Logs from a previous Windows feature update" : "Protokolle eines vorherigen Windows-Feature-Updates",
                     Paths = new[] { Path.Combine(systemDrive, "$WINDOWS.~BT") },
                     RequiresAdmin = true
                 },
                 new StorageCategory
                 {
                     Key = "old_install_files",
-                    Name = "Nicht mehr benötigte Installationsdateien",
-                    Description = "Alte Windows-Installation nach einem Upgrade (Windows.old) - benötigt Admin-Rechte, ggf. nicht vollständig löschbar",
+                    Name = en ? "No Longer Needed Installation Files" : "Nicht mehr benötigte Installationsdateien",
+                    Description = en ? "Old Windows installation after an upgrade (Windows.old) - requires admin rights, may not be fully deletable" : "Alte Windows-Installation nach einem Upgrade (Windows.old) - benötigt Admin-Rechte, ggf. nicht vollständig löschbar",
                     Paths = new[] { Path.Combine(systemDrive, "Windows.old") },
                     RequiresAdmin = true
                 },
@@ -241,11 +242,12 @@ namespace WinVora
                         return RunHiddenCommand("wsreset.exe", "");
 
                     default:
-                        // BUGFIX: Windows.old gehört TrustedInstaller - normales
+                        // BUGFIX: Windows.old UND $WINDOWS.~BT (Windows Upgrade
+                        // Logs) gehören TrustedInstaller - normales
                         // File.Delete/Directory.Delete schlägt dort so gut wie
                         // immer fehl, selbst mit Admin-Rechten. Wir übernehmen
                         // vorher gezielt den Besitz und setzen die Rechte.
-                        if (category.Key == "old_install_files")
+                        if (category.Key is "old_install_files" or "upgrade_logs")
                         {
                             return DeleteProtectedFolder(category.Paths.FirstOrDefault() ?? "");
                         }
@@ -379,14 +381,72 @@ namespace WinVora
                 // S-1-5-32-544 = lokale Gruppe "Administratoren" (sprachunabhängig)
                 RunHiddenCommand("icacls.exe", $"\"{path}\" /grant *S-1-5-32-544:F /T /C /Q");
 
-                Directory.Delete(path, true);
-                return (true, "Windows.old wurde entfernt.");
+                // BUGFIX: Directory.Delete(path, true) ist alles-oder-nichts -
+                // eine einzige besonders geschützte Datei (z.B. "bcd", die
+                // Windows fürs Rückgängig-Machen des Updates braucht) lässt
+                // sich selbst mit Admin-Rechten nicht löschen und ließ dadurch
+                // bisher ALLES scheitern. Jetzt wird Datei für Datei einzeln
+                // versucht, geschützte Einzeldateien werden einfach übersprungen.
+                var (deleted, failed) = DeleteRecursiveBestEffort(path);
+
+                // Versuchen, den (jetzt hoffentlich leeren oder fast leeren)
+                // Ordner selbst noch zu entfernen - schlägt das fehl, ist das
+                // kein Beinbruch, der Inhalt ist ja trotzdem größtenteils weg.
+                try { Directory.Delete(path, true); } catch { /* Rest bleibt liegen, ok */ }
+
+                if (failed == 0)
+                    return (true, $"{deleted} Element(e) entfernt.");
+
+                return (deleted > 0,
+                    $"{deleted} Element(e) entfernt, {failed} geschützte Datei(en) übersprungen (z.B. Boot-Konfigurationsdaten).");
             }
             catch (Exception ex)
             {
                 return (false,
-                    $"Konnte nicht vollständig entfernt werden (Admin-Rechte erforderlich): {ex.Message}");
+                    $"Konnte nicht entfernt werden (Admin-Rechte erforderlich): {ex.Message}");
             }
+        }
+
+        // Löscht rekursiv Datei für Datei, überspringt einzelne nicht
+        // löschbare Dateien statt komplett abzubrechen.
+        private static (int deleted, int failed) DeleteRecursiveBestEffort(string root)
+        {
+            int deleted = 0, failed = 0;
+
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToList(); }
+            catch { return (0, 0); }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                    File.Delete(file);
+                    deleted++;
+                }
+                catch
+                {
+                    failed++;
+                }
+            }
+
+            // Leere Unterordner von innen nach außen entfernen (umgekehrte
+            // Reihenfolge, damit tiefste Ordner zuerst dran sind).
+            try
+            {
+                var dirs = Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+                    .OrderByDescending(d => d.Length);
+
+                foreach (var dir in dirs)
+                {
+                    try { Directory.Delete(dir); } // nur wenn leer
+                    catch { /* nicht leer oder gesperrt - einfach liegen lassen */ }
+                }
+            }
+            catch { /* Ordnerliste nicht zugreifbar - ignorieren */ }
+
+            return (deleted, failed);
         }
 
         private static (bool success, string message) EmptyRecycleBin()

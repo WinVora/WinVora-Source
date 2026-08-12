@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+installer_output/
 *.zip
 
 # Visual Studio

@@ -17,7 +17,7 @@
              Resources-Eigenschaft - deshalb hängen die Resources hier am
              RootGrid statt am Window. -->
         <Grid.Resources>
-            <SolidColorBrush x:Key="AppRootBackgroundBrush" Color="Black"/>
+            <SolidColorBrush x:Key="AppRootBackgroundBrush" Color="#F0000000"/>
 
             <SolidColorBrush x:Key="AppForegroundBrush" Color="White"/>
             <SolidColorBrush x:Key="AppMutedForegroundBrush" Color="#B0FFFFFF"/>
@@ -35,6 +35,13 @@
             <SolidColorBrush x:Key="AppForegroundC0" Color="#C0FFFFFF"/>
             <SolidColorBrush x:Key="AppForegroundCC" Color="#CCFFFFFF"/>
             <SolidColorBrush x:Key="AppForegroundD8" Color="#D8FFFFFF"/>
+
+            <!-- Akzentfarbe: modernes Violett-Blau, für aktive Navigation,
+                 Fortschrittsbalken, "Alles aktuell"-Status und Hover-Zustände -->
+            <SolidColorBrush x:Key="AppAccentBrush" Color="#6C5CE7"/>
+            <SolidColorBrush x:Key="AppAccentBrushLight" Color="#8B7CF6"/>
+            <SolidColorBrush x:Key="AppAccentOverlay20" Color="#336C5CE7"/>
+            <SolidColorBrush x:Key="AppAccentOverlay10" Color="#1A6C5CE7"/>
         </Grid.Resources>
 
         <Grid.Background>
@@ -64,8 +71,11 @@
                 </Grid.RowDefinitions>
 
                 <!-- Menü -->
-                <StackPanel Grid.Row="0">
-                    <Button Content="Übersicht"
+                <ScrollViewer Grid.Row="0"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <Button x:Name="NavOverviewButton" Content="Dashboard"
         Click="Overview_Click"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Left"
@@ -75,7 +85,7 @@
         Padding="18,14"
         Margin="0,0,0,12"/>
 
-                    <Button Content="Systeminfo"
+                        <Button x:Name="NavSystemButton" Content="Systeminfo"
         Click="System_Click"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Left"
@@ -85,7 +95,7 @@
         Padding="18,14"
         Margin="0,0,0,12"/>
 
-                    <Button Content="Winget"
+                        <Button x:Name="NavUpdatesButton" Content="Winget"
         Click="Updates_Click"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Left"
@@ -95,40 +105,73 @@
         Padding="18,14"
         Margin="0,0,0,12"/>
 
-                    <Button Content="Dateien"
+                        <Button x:Name="NavCleanerButton" Content="Dateien"
         Click="Cleaner_Click"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Left"
         FontSize="18"
         FontWeight="SemiBold"
         MinHeight="56"
+        Padding="18,14"
+        Margin="0,0,0,12"/>
+
+                        <Button x:Name="NavUninstallButton" Content="Deinstallieren"
+        Click="Uninstaller_Click"
+        HorizontalAlignment="Stretch"
+        HorizontalContentAlignment="Left"
+        FontSize="18"
+        FontWeight="SemiBold"
+        MinHeight="56"
         Padding="18,14"/>
-                </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
 
 
                 <!-- Einstellungen + Version / Changelog -->
                 <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="10" Margin="0,20,0,0">
 
-                    <Button Padding="12"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Left"
-                            CornerRadius="12"
-                            Background="{StaticResource AppOverlay18}"
-                            BorderBrush="{StaticResource AppOverlay30}"
-                            BorderThickness="1"
-                            Click="SettingsButton_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE713;" Foreground="{StaticResource AppForegroundBrush}" FontSize="18"/>
-                            <TextBlock Text="Einstellungen"
-                                       Foreground="{StaticResource AppForegroundBrush}"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
+                    <Grid>
+                        <Button Padding="12"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                CornerRadius="16"
+                                Background="{StaticResource AppOverlay18}"
+                                BorderBrush="{StaticResource AppOverlay30}"
+                                BorderThickness="1"
+                                Click="SettingsButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE713;" Foreground="{StaticResource AppForegroundBrush}" FontSize="18"/>
+                                <TextBlock x:Name="LblNavSettings" Text="Einstellungen"
+                                           Foreground="{StaticResource AppForegroundBrush}"
+                                           FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Kleiner Hinweis-Badge, falls ein Update verfügbar ist
+                             (wird beim App-Start im Hintergrund geprüft, siehe
+                             CheckForUpdateInBackgroundAsync in MainWindow.xaml.cs). -->
+                        <Border x:Name="UpdateAvailableBadge"
+                                Width="18" Height="18"
+                                CornerRadius="9"
+                                Background="#E74C3C"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Margin="0,-6,-6,0"
+                                Visibility="Collapsed"
+                                IsHitTestVisible="False">
+                            <TextBlock Text="1"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
 
                     <Button Padding="12"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Stretch"
-        CornerRadius="12"
+        CornerRadius="16"
         Background="{StaticResource AppOverlay18}"
         BorderBrush="{StaticResource AppOverlay30}"
         BorderThickness="1"
@@ -140,12 +183,12 @@
                           Foreground="{StaticResource AppForegroundBrush}"
                           FontSize="18"/>
 
-                                <TextBlock Text="Version 0.3.3"
+                                <TextBlock Text="Version 0.8.0"
                Foreground="{StaticResource AppForegroundBrush}"
                FontWeight="SemiBold"/>
                             </StackPanel>
 
-                            <TextBlock Margin="0,8,0,0"
+                            <TextBlock x:Name="LblNavChangelogHint" Margin="0,8,0,0"
                        Foreground="{StaticResource AppMutedForegroundBrush}"
                        FontSize="12"
                        TextWrapping="Wrap"
@@ -153,21 +196,48 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Padding="12"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Left"
-                            CornerRadius="12"
-                            Background="{StaticResource AppOverlay18}"
-                            BorderBrush="{StaticResource AppOverlay30}"
-                            BorderThickness="1"
-                            Click="ContactButton_Click">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE715;" Foreground="{StaticResource AppForegroundBrush}" FontSize="18"/>
-                            <TextBlock Text="Kontakt"
-                                       Foreground="{StaticResource AppForegroundBrush}"
-                                       FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0"
+                                Padding="10"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                CornerRadius="16"
+                                Background="{StaticResource AppOverlay18}"
+                                BorderBrush="{StaticResource AppOverlay30}"
+                                BorderThickness="1"
+                                Click="ContactButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE715;" Foreground="{StaticResource AppForegroundBrush}" FontSize="15"/>
+                                <TextBlock x:Name="LblNavContact" Text="Kontakt"
+                                           Foreground="{StaticResource AppForegroundBrush}"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Grid.Column="1"
+                                Padding="10"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                CornerRadius="16"
+                                Background="{StaticResource AppOverlay18}"
+                                BorderBrush="{StaticResource AppOverlay30}"
+                                BorderThickness="1"
+                                Click="KofiButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xEB51;" Foreground="{StaticResource AppForegroundBrush}" FontSize="15"/>
+                                <TextBlock Text="Ko-fi"
+                                           Foreground="{StaticResource AppForegroundBrush}"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
                 </StackPanel>
             </Grid>
         </Border>
@@ -203,7 +273,7 @@
                 VerticalAlignment="Center">
 
                             <TextBlock x:Name="PageTitle"
-                   Text="Übersicht"
+                   Text="Dashboard"
                    FontSize="34"
                    FontWeight="Bold"
                    Foreground="{StaticResource AppForegroundBrush}"/>
@@ -259,19 +329,19 @@
             VerticalAlignment="Center"
             Visibility="Collapsed">
 
-                        <Button Content="Aktualisieren"
+                        <Button x:Name="RefreshSystemInfoButton" Content="Aktualisieren"
             FontSize="15"
             FontWeight="SemiBold"
             Padding="16,10"
             Click="RefreshSystemInfo_Click"/>
 
-                        <Button Content="Alles aufklappen"
+                        <Button x:Name="ExpandAllSystemButton" Content="Alles aufklappen"
             FontSize="15"
             FontWeight="SemiBold"
             Padding="16,10"
             Click="ExpandAllSystem_Click"/>
 
-                        <Button Content="Alles einklappen"
+                        <Button x:Name="CollapseAllSystemButton" Content="Alles einklappen"
             FontSize="15"
             FontWeight="SemiBold"
             Padding="16,10"
@@ -308,6 +378,27 @@
             Click="StorageDeleteSelected_Click"
             Style="{StaticResource AccentButtonStyle}"/>
                     </StackPanel>
+
+                    <!-- Nur auf der Deinstaller-Seite sichtbar -->
+                    <StackPanel x:Name="UninstallActionBar"
+            Grid.Column="1"
+            Orientation="Horizontal"
+            Spacing="10"
+            VerticalAlignment="Center"
+            Visibility="Collapsed">
+
+                        <TextBox x:Name="UninstallSearchBox"
+            PlaceholderText="Programm suchen..."
+            Width="220"
+            TextChanged="UninstallSearchBox_TextChanged"/>
+
+                        <Button x:Name="UninstallRefreshButton"
+            Content="Refresh"
+            FontSize="15"
+            FontWeight="SemiBold"
+            Padding="16,10"
+            Click="UninstallRefresh_Click"/>
+                    </StackPanel>
                 </Grid>
 
                 <!-- Fortschrittsanzeige während der Installation -->
@@ -323,7 +414,8 @@
 
                     <ProgressBar x:Name="UpdateProgressBar"
                                  Minimum="0"
-                                 Maximum="100"/>
+                                 Maximum="100"
+                                 Foreground="{StaticResource AppAccentBrush}"/>
 
                     <TextBlock x:Name="CurrentPackageStatusText"
                                Foreground="{StaticResource AppFaintForegroundBrush}"
@@ -332,7 +424,8 @@
                     <ProgressBar x:Name="CurrentPackageProgressBar"
                                  Minimum="0"
                                  Maximum="100"
-                                 Height="4"/>
+                                 Height="4"
+                                 Foreground="{StaticResource AppAccentBrush}"/>
                 </StackPanel>
 
                 <!-- Fortschrittsanzeige während der Bereinigung -->
@@ -348,12 +441,14 @@
 
                     <ProgressBar x:Name="StorageProgressBar"
                                  Minimum="0"
-                                 Maximum="100"/>
+                                 Maximum="100"
+                                 Foreground="{StaticResource AppAccentBrush}"/>
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2"
               HorizontalScrollBarVisibility="Disabled"
-              VerticalScrollBarVisibility="Auto">
+              VerticalScrollBarVisibility="Auto"
+              Padding="0,0,24,0">
 
                     <Grid>
 
@@ -361,74 +456,301 @@
 
                         <!-- OVERVIEW -->
                         <StackPanel x:Name="OverviewPanel"
-            Spacing="20"
+            Spacing="24"
             HorizontalAlignment="Stretch"
             Visibility="Visible">
 
-                            <controls:SettingsCard Header="Übersicht"
+                            <!-- ===== Statuskarten (groß, mit Icons) ===== -->
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border x:Name="StatCardCpu" Grid.Column="0" CornerRadius="16" Padding="24"
+                                        MinHeight="150"
+                                        Background="{StaticResource AppOverlay1A}"
+                                        BorderBrush="{StaticResource AppOverlay28}"
+                                        BorderThickness="1"
+                                        ToolTipService.ToolTip="Aktuelle CPU-Auslastung in Prozent">
+                                    <StackPanel Spacing="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE7F8;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblStatCpu" Text="CPU" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="HealthCpuText" Text="--%" FontSize="36" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        <TextBlock x:Name="LblStatCpuSub" Text="Auslastung" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border x:Name="StatCardRam" Grid.Column="1" CornerRadius="16" Padding="24"
+                                        MinHeight="150"
+                                        Background="{StaticResource AppOverlay1A}"
+                                        BorderBrush="{StaticResource AppOverlay28}"
+                                        BorderThickness="1"
+                                        ToolTipService.ToolTip="Aktuelle RAM-Auslastung, genutzt / gesamt">
+                                    <StackPanel Spacing="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xEEA1;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblStatRam" Text="RAM" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="HealthRamText" Text="--%" FontSize="36" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        <TextBlock x:Name="HealthRamDetailText" Text="Auslastung" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border x:Name="StatCardGpu" Grid.Column="2" CornerRadius="16" Padding="24"
+                                        MinHeight="150"
+                                        Background="{StaticResource AppOverlay1A}"
+                                        BorderBrush="{StaticResource AppOverlay28}"
+                                        BorderThickness="1"
+                                        ToolTipService.ToolTip="Aktuelle GPU-Auslastung (falls von der Hardware unterstützt)">
+                                    <StackPanel Spacing="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE950;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblStatGpu" Text="GPU" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="HealthGpuText" Text="--" FontSize="36" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        <TextBlock x:Name="LblStatGpuSub" Text="Auslastung" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border x:Name="StatCardSecurity" Grid.Column="3" CornerRadius="16" Padding="24"
+                                        MinHeight="150"
+                                        Background="{StaticResource AppOverlay1A}"
+                                        BorderBrush="{StaticResource AppOverlay28}"
+                                        BorderThickness="1"
+                                        ToolTipService.ToolTip="Status von Windows Defender und Firewall">
+                                    <StackPanel Spacing="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xEA18;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblStatSecurity" Text="Sicherheit" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="HealthSecurityText" Text="--" FontSize="24" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        <TextBlock x:Name="LblStatSecuritySub" Text="Defender / Firewall" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border x:Name="StatCardUpdates" Grid.Column="4" CornerRadius="16" Padding="24"
+                                        MinHeight="150"
+                                        Background="{StaticResource AppOverlay1A}"
+                                        BorderBrush="{StaticResource AppOverlay28}"
+                                        BorderThickness="1"
+                                        ToolTipService.ToolTip="Anzahl verfügbarer Winget-Updates">
+                                    <StackPanel Spacing="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE896;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblStatUpdates" Text="Updates" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="HealthUpdatesText" Text="--" FontSize="24" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        <TextBlock x:Name="LblStatUpdatesSub" Text="Winget-Pakete" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- ===== Live-Dashboard ===== -->
+                            <controls:SettingsCard x:Name="LiveDashboardCard" Header="Live-Dashboard" CornerRadius="16"
                            HorizontalAlignment="Stretch"
-                           MinHeight="180"
-                           Padding="30">
-                                <Grid ColumnSpacing="18">
+                           HorizontalContentAlignment="Stretch"
+                           Padding="26">
+                                <Grid ColumnSpacing="14" RowSpacing="14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
 
-                                    <Border Grid.Column="0" CornerRadius="16" Padding="22" Background="{StaticResource AppOverlay1A}" BorderBrush="{StaticResource AppOverlay28}" BorderThickness="1">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="CPU" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock x:Name="HealthCpuText" Text="--%" FontSize="34" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                    <Border Grid.Row="0" Grid.Column="0" x:Name="DashCardDisk" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xEDA2;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashDisk" Text="Speicherplatz" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashDiskText" Text="--" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppForegroundBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="1" CornerRadius="16" Padding="22" Background="{StaticResource AppOverlay1A}" BorderBrush="{StaticResource AppOverlay28}" BorderThickness="1">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="RAM" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock x:Name="HealthRamText" Text="--%" FontSize="34" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                    <Border Grid.Row="0" Grid.Column="1" x:Name="DashCardTemp" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE9CA;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashTemp" Text="Temperatur" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashTempText" Text="Nicht verfügbar" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppFaintForegroundBrush}"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="2" CornerRadius="16" Padding="22" Background="{StaticResource AppOverlay1A}" BorderBrush="{StaticResource AppOverlay28}" BorderThickness="1">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="Sicherheit" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock x:Name="HealthSecurityText" Text="--" FontSize="24" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                    <Border Grid.Row="0" Grid.Column="2" x:Name="DashCardPrograms" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE71D;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashPrograms" Text="Programme" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashInstalledCountText" Text="--" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppForegroundBrush}"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="3" CornerRadius="16" Padding="22" Background="{StaticResource AppOverlay1A}" BorderBrush="{StaticResource AppOverlay28}" BorderThickness="1">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock Text="Updates" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock x:Name="HealthUpdatesText" Text="--" FontSize="24" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                    <Border Grid.Row="0" Grid.Column="3" x:Name="DashCardCleanup" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashCleanup" Text="Zuletzt bereinigt" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashLastCleanupText" Text="--" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppForegroundBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Row="1" Grid.Column="0" x:Name="DashCardUpdatesDetail" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE895;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashUpdatesAvailable" Text="Verfügbare Updates" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashUpdatesCountText" Text="--" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Row="1" Grid.Column="1" x:Name="DashCardRam" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xEEA1;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashRam" Text="Arbeitsspeicher" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashRamDetailText" Text="--" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppForegroundBrush}"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" x:Name="DashCardStatus" CornerRadius="16" Padding="18"
+                                            Background="{StaticResource AppAccentOverlay10}"
+                                            BorderBrush="{StaticResource AppAccentOverlay20}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <FontIcon Glyph="&#xE73E;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            <TextBlock x:Name="LblDashStatus" Text="Gesamtstatus" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashOverallStatusText" Text="Wird geprüft..." FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrushLight}"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
                             </controls:SettingsCard>
 
-                            <controls:SettingsCard Header="Schnellzugriff"
+                            <!-- ===== Mini-Verlaufsdiagramme (CPU/RAM/GPU) ===== -->
+                            <!-- BUGFIX: SettingsCard richtet ihren Content-Bereich fest
+                                 rechts aus und ignoriert HorizontalContentAlignment="Stretch" -
+                                 dadurch wurden die Diagramme immer nur schmal am rechten Rand
+                                 dargestellt, egal was am inneren Grid geändert wurde. Jetzt
+                                 eine normale Border mit eigenem Header - volle Kontrolle. -->
+                            <Border HorizontalAlignment="Stretch"
+                                    CornerRadius="16"
+                                    Padding="22"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1">
+                                <Grid ColumnSpacing="18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock x:Name="HistoryCard" Grid.Column="0" Text="Verlauf" FontSize="16" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AppForegroundBrush}" VerticalAlignment="Center"/>
+
+                                    <!-- Gleicher Kachel-Stil wie die Live-Dashboard-Kacheln oben:
+                                         Label + Wert INNERHALB desselben Rahmens, statt getrennt darüber. -->
+                                    <Border Grid.Column="1" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock x:Name="LblHistoryCpu" Text="CPU" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                                <TextBlock x:Name="CpuHistoryCurrentText" Text="--%" FontSize="12" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            </StackPanel>
+                                            <Canvas x:Name="CpuHistoryCanvas" Height="60" Background="Transparent" HorizontalAlignment="Stretch">
+                                                <Polyline x:Name="CpuHistoryLine" Stroke="{StaticResource AppAccentBrush}" StrokeThickness="2"
+                                                          StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Canvas>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock x:Name="LblHistoryRam" Text="RAM" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                                <TextBlock x:Name="RamHistoryCurrentText" Text="--%" FontSize="12" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            </StackPanel>
+                                            <Canvas x:Name="RamHistoryCanvas" Height="60" Background="Transparent" HorizontalAlignment="Stretch">
+                                                <Polyline x:Name="RamHistoryLine" Stroke="{StaticResource AppAccentBrush}" StrokeThickness="2"
+                                                          StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Canvas>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="3" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock x:Name="LblHistoryGpu" Text="GPU" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                                <TextBlock x:Name="GpuHistoryCurrentText" Text="--%" FontSize="12" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                            </StackPanel>
+                                            <Canvas x:Name="GpuHistoryCanvas" Height="60" Background="Transparent" HorizontalAlignment="Stretch">
+                                                <Polyline x:Name="GpuHistoryLine" Stroke="{StaticResource AppAccentBrush}" StrokeThickness="2"
+                                                          StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Canvas>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <!-- ===== Aktivitätsverlauf ===== -->
+                            <controls:SettingsCard x:Name="ActivityLogCard" Header="Letzte Aktionen" CornerRadius="16"
                            HorizontalAlignment="Stretch"
-                           MinHeight="130"
+                           HorizontalContentAlignment="Stretch"
+                           Padding="26">
+                                <StackPanel x:Name="ActivityLogPanel" Spacing="14"/>
+                            </controls:SettingsCard>
+
+                            <!-- ===== Schnellzugriff ===== -->
+                            <controls:SettingsCard x:Name="QuickAccessCard" Header="Schnellzugriff" CornerRadius="16"
+                           HorizontalAlignment="Stretch"
+                           HorizontalContentAlignment="Stretch"
                            Padding="26">
                                 <StackPanel Orientation="Horizontal" Spacing="14">
-                                    <Button Content="Systeminfo öffnen"
-                    FontSize="16"
-                    FontWeight="SemiBold"
-                    Padding="18,12"
-                    Click="System_Click"/>
+                                    <Button x:Name="QuickAccessHardwareButton"
+                    Padding="20,14"
+                    CornerRadius="16"
+                    ToolTipService.ToolTip="Detaillierte Hardware- und Systeminformationen anzeigen"
+                    Click="System_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <FontIcon Glyph="&#xE9F5;" FontSize="16"/>
+                                            <TextBlock x:Name="LblQuickHardware" Text="Hardware anzeigen" FontSize="15" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Button>
 
-                                    <Button Content="Winget prüfen"
-                    FontSize="16"
-                    FontWeight="SemiBold"
-                    Padding="18,12"
-                    Click="Updates_Click"/>
+                                    <Button x:Name="QuickAccessUpdatesButton"
+                    Padding="20,14"
+                    CornerRadius="16"
+                    ToolTipService.ToolTip="Verfügbare Winget-Updates prüfen und installieren"
+                    Click="Updates_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <FontIcon Glyph="&#xE895;" FontSize="16"/>
+                                            <TextBlock x:Name="LblQuickUpdates" Text="Programme aktualisieren" FontSize="15" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Button>
 
-                                    <Button Content="Dateien öffnen"
-                    FontSize="16"
-                    FontWeight="SemiBold"
-                    Padding="18,12"
-                    Click="Cleaner_Click"/>
+                                    <Button x:Name="QuickAccessCleanButton"
+                    Padding="20,14"
+                    CornerRadius="16"
+                    ToolTipService.ToolTip="Temporäre Dateien und Speicherplatz-Fresser bereinigen"
+                    Click="Cleaner_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <FontIcon Glyph="&#xEA99;" FontSize="16"/>
+                                            <TextBlock x:Name="LblQuickClean" Text="System bereinigen" FontSize="15" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button x:Name="QuickAccessSettingsButton"
+                    Padding="20,14"
+                    CornerRadius="16"
+                    ToolTipService.ToolTip="Darstellung, Verhalten und Wartung anpassen"
+                    Click="SettingsButton_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <FontIcon Glyph="&#xE713;" FontSize="16"/>
+                                            <TextBlock x:Name="LblQuickSettings" Text="Einstellungen öffnen" FontSize="15" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
                             </controls:SettingsCard>
                         </StackPanel>
@@ -440,7 +762,7 @@
 
                             <Expander x:Name="DeviceExpander" Header="Gerät" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Geräteinformationen" HorizontalAlignment="Stretch" MinHeight="190" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardDevice" Header="Geräteinformationen" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="190" Padding="30">
                                         <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -454,15 +776,15 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Computername" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl01" Text="Computername" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysComputerName" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Benutzername" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl02" Text="Benutzername" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysUserName" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Hersteller / Modell" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" x:Name="SysLbl03" Text="Hersteller / Modell" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SysManufacturerModel" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Seriennummer" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="0" x:Name="SysLbl04" Text="Seriennummer" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SysSerialNumber" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Architektur" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="4" Grid.Column="0" x:Name="SysLbl05" Text="Architektur" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="4" Grid.Column="1" x:Name="SysArchitecture" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
                                         </Grid>
                                     </controls:SettingsCard>
@@ -471,7 +793,7 @@
 
                             <Expander x:Name="OsExpander" Header="Betriebssystem" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Windows" HorizontalAlignment="Stretch" MinHeight="300" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardOs" Header="Windows" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="300" Padding="30">
                                         <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -488,21 +810,21 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Windows Edition" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl06" Text="Windows Edition" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysEdition" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Version / Build" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl07" Text="Version / Build" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysVersionBuild" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Installationsdatum" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" x:Name="SysLbl08" Text="Installationsdatum" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SysInstallDate" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Letztes Windows Update" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="0" x:Name="SysLbl09" Text="Letztes Windows Update" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SysLastUpdate" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Aktivierungsstatus" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="4" Grid.Column="0" x:Name="SysLbl10" Text="Aktivierungsstatus" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="4" Grid.Column="1" x:Name="SysActivation" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Uptime" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="5" Grid.Column="0" x:Name="SysLbl11" Text="Uptime" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="5" Grid.Column="1" x:Name="SysUptime" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="6" Grid.Column="0" Text=".NET Version" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="6" Grid.Column="0" x:Name="SysLbl12" Text=".NET Version" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="6" Grid.Column="1" x:Name="SysDotNet" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="7" Grid.Column="0" Text="DirectX Version" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="7" Grid.Column="0" x:Name="SysLbl13" Text="DirectX Version" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="7" Grid.Column="1" x:Name="SysDirectX" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
                                         </Grid>
                                     </controls:SettingsCard>
@@ -511,7 +833,7 @@
 
                             <Expander x:Name="CpuExpander" Header="Prozessor" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="CPU" HorizontalAlignment="Stretch" MinHeight="190" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardCpu" Header="CPU" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="190" Padding="30">
                                         <Grid ColumnSpacing="44" RowSpacing="20" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -523,13 +845,13 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Modell" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl14" Text="Modell" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysCpuName" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Kerne / Threads / Takt" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl15" Text="Kerne / Threads / Takt" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysCpuDetails" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Auslastung Live" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" x:Name="SysLbl16" Text="Auslastung Live" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Right">
-                                                <ProgressBar x:Name="SysCpuUsageBar" Width="260" Height="12" Maximum="100"/>
+                                                <ProgressBar x:Name="SysCpuUsageBar" Width="260" Height="12" Maximum="100" Foreground="{StaticResource AppAccentBrush}"/>
                                                 <TextBlock x:Name="SysCpuUsageText" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" MinWidth="50"/>
                                             </StackPanel>
                                         </Grid>
@@ -539,7 +861,7 @@
 
                             <Expander x:Name="RamExpander" Header="Arbeitsspeicher" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="RAM" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardRam" Header="RAM" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
                                         <Grid ColumnSpacing="44" RowSpacing="20" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -550,11 +872,11 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Installiert / Belegt / Frei" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl17" Text="Installiert / Belegt / Frei" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysRamDetails" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Auslastung Live" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl18" Text="Auslastung Live" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Right">
-                                                <ProgressBar x:Name="SysRamUsageBar" Width="260" Height="12" Maximum="100"/>
+                                                <ProgressBar x:Name="SysRamUsageBar" Width="260" Height="12" Maximum="100" Foreground="{StaticResource AppAccentBrush}"/>
                                                 <TextBlock x:Name="SysRamUsageText" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" MinWidth="50"/>
                                             </StackPanel>
                                         </Grid>
@@ -564,7 +886,7 @@
 
                             <Expander x:Name="BoardExpander" Header="Mainboard und BIOS" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Hardware" HorizontalAlignment="Stretch" MinHeight="150" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardBoard" Header="Hardware" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="150" Padding="30">
                                         <Grid ColumnSpacing="44" RowSpacing="20" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -575,9 +897,9 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Mainboard" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl19" Text="Mainboard" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysMainboard" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="BIOS-Version" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl20" Text="BIOS-Version" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysBios" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
                                         </Grid>
                                     </controls:SettingsCard>
@@ -586,7 +908,7 @@
 
                             <Expander x:Name="SecurityExpander" Header="Sicherheit" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Sicherheitsstatus" HorizontalAlignment="Stretch" MinHeight="255" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardSecurity" Header="Sicherheitsstatus" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="255" Padding="30">
                                         <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -601,17 +923,17 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Secure Boot" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl21" Text="Secure Boot" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysSecureBoot" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="TPM" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl22" Text="TPM" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysTpm" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Virtualisierung" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" x:Name="SysLbl23" Text="Virtualisierung" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SysVirtualization" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Windows Defender" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="0" x:Name="SysLbl24" Text="Windows Defender" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SysDefender" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Firewall" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="4" Grid.Column="0" x:Name="SysLbl25" Text="Firewall" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="4" Grid.Column="1" x:Name="SysFirewall" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
-                                            <TextBlock Grid.Row="5" Grid.Column="0" Text="BitLocker" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock Grid.Row="5" Grid.Column="0" x:Name="SysLbl26" Text="BitLocker" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="5" Grid.Column="1" x:Name="SysBitLocker" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
                                         </Grid>
                                     </controls:SettingsCard>
@@ -620,7 +942,7 @@
 
                             <Expander x:Name="GpuExpander" Header="Grafik" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Grafikkarten" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardGpu" Header="Grafikkarten" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
                                         <StackPanel x:Name="SysGpuPanel" Spacing="12" HorizontalAlignment="Stretch"/>
                                     </controls:SettingsCard>
                                 </Grid>
@@ -628,7 +950,7 @@
 
                             <Expander x:Name="DrivesExpander" Header="Laufwerke" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Speicherlaufwerke" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardDrives" Header="Speicherlaufwerke" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
                                         <StackPanel x:Name="SysDrivesPanel" Spacing="12" HorizontalAlignment="Stretch"/>
                                     </controls:SettingsCard>
                                 </Grid>
@@ -636,7 +958,7 @@
 
                             <Expander x:Name="NetworkExpander" Header="Netzwerk" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Aktive Netzwerkadapter" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardNetwork" Header="Aktive Netzwerkadapter" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="165" Padding="30">
                                         <StackPanel x:Name="SysNetworkPanel" Spacing="12" HorizontalAlignment="Stretch"/>
                                     </controls:SettingsCard>
                                 </Grid>
@@ -644,7 +966,7 @@
 
                             <Expander x:Name="BatteryExpander" Header="Akku" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
-                                    <controls:SettingsCard Header="Energie" HorizontalAlignment="Stretch" MinHeight="120" Padding="30">
+                                    <controls:SettingsCard x:Name="SysCardBattery" Header="Energie" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="120" Padding="30">
                                         <Grid ColumnSpacing="44" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -668,6 +990,11 @@
 
                         <!-- STORAGE -->
                         <StackPanel x:Name="StoragePanel"
+                                    Spacing="10"
+                                    Visibility="Collapsed"/>
+
+                        <!-- DEINSTALLIEREN -->
+                        <StackPanel x:Name="UninstallPanel"
                                     Spacing="10"
                                     Visibility="Collapsed"/>
 
@@ -721,31 +1048,66 @@
         <!-- STARTUP-OVERLAY -->
         <Border x:Name="StartupOverlay"
                 Grid.ColumnSpan="2"
-                Background="{StaticResource AppRootBackgroundBrush}"
+                Background="#141416"
                 Opacity="1"
-                Visibility="Visible">
+                Visibility="Visible"
+                Loaded="StartupOverlay_Loaded">
 
-            <StackPanel HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="20">
+            <Grid>
+                <!-- Container für mehrere Liquid-Glass-Bänder, die per Code-behind
+                     erzeugt werden (unterschiedliche Größen/Wege/Startzeiten,
+                     siehe CreateGlassBand() in MainWindow.xaml.cs). -->
+                <Canvas x:Name="StartupGlassBandsHost"/>
 
-                <TextBlock Text="WinVora"
-                           FontSize="40"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource AppForegroundBrush}"
-                           HorizontalAlignment="Center"/>
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="20">
 
-                <ProgressRing IsActive="True"
-                              Width="36"
-                              Height="36"
-                              HorizontalAlignment="Center"/>
+                    <!-- Logo wie im echten App-Icon: schwarze, abgerundete Box mit
+                         diagonalem Glas-Akzent und dem "W" mittig darüber. -->
+                    <Border Width="64" Height="64" CornerRadius="16"
+                            Background="Black"
+                            HorizontalAlignment="Center">
+                        <Grid>
+                            <Path Fill="#28FFFFFF" Stretch="Fill">
+                                <Path.Data>
+                                    <PathGeometry>
+                                        <PathFigure StartPoint="0,40" IsClosed="True">
+                                            <LineSegment Point="64,8"/>
+                                            <LineSegment Point="64,24"/>
+                                            <LineSegment Point="0,56"/>
+                                        </PathFigure>
+                                    </PathGeometry>
+                                </Path.Data>
+                            </Path>
 
-                <TextBlock x:Name="StartupStatusText"
-                           Text="Wird geladen..."
-                           FontSize="15"
-                           Foreground="{StaticResource AppFaintForegroundBrush}"
-                           HorizontalAlignment="Center"/>
-            </StackPanel>
+                            <TextBlock Text="W"
+                                       FontWeight="Bold"
+                                       FontSize="30"
+                                       Foreground="White"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="WinVora"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="White"
+                               HorizontalAlignment="Center"/>
+
+                    <ProgressRing IsActive="True"
+                                  Width="36"
+                                  Height="36"
+                                  HorizontalAlignment="Center"/>
+
+                    <TextBlock x:Name="StartupStatusText"
+                               Text="Wird geladen..."
+                               FontSize="15"
+                               Foreground="#B0FFFFFF"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
         </Border>
 
     </Grid>

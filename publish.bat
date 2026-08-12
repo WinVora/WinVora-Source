@@ -2,7 +2,7 @@
 setlocal
 
 echo ============================================
-echo   WinVora - Test-Build erstellen
+echo   WinVora - Build fuer den Installer erstellen
 echo ============================================
 echo.
 
@@ -23,15 +23,9 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo Erstelle ZIP-Datei...
-
-REM Alte ZIP entfernen, falls vorhanden
-if exist WinVora-Test.zip del WinVora-Test.zip
-
-powershell -Command "Compress-Archive -Path 'publish\*' -DestinationPath 'WinVora-Test.zip' -Force"
-
-echo.
 echo ============================================
-echo   Fertig! WinVora-Test.zip liegt bereit.
+echo   Fertig! Der publish-Ordner ist aktuell.
+echo   Jetzt WinVoraSetup.iss neu kompilieren (F9),
+echo   um den neuen Installer zu erzeugen.
 echo ============================================
 pause

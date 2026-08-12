@@ -27,16 +27,16 @@
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
 
-		<!-- Bündelt die vielen einzelnen .dll-Dateien in die .exe. Bei
-		     Windows-App-SDK-Apps bleiben trotzdem meist noch 1-2 Dateien
-		     (z.B. resources.pri) neben der .exe liegen - eine 100%ige
-		     Einzeldatei ohne jede Nebendatei ist hier offiziell nicht
-		     garantiert, aber es wird deutlich weniger als vorher. -->
-		<PublishSingleFile>true</PublishSingleFile>
-		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-		<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+		<!-- PublishSingleFile war früher aktiv ("nur eine .exe zum Weitergeben"),
+		     verursacht aber in Kombination mit WindowsAppSDKSelfContained bei
+		     dieser SDK-Version einen Bug: aus 186 MB (489 Dateien) wurden beim
+		     Bündeln plötzlich 1,87 GB - offenbar werden Dateien beim Bündeln
+		     dupliziert statt nur zusammengepackt. Deshalb wieder deaktiviert.
+		     Brauchen wir ohnehin nicht mehr: der Installer (WinVoraSetup.iss)
+		     packt den kompletten publish-Ordner sowieso in eine einzige
+		     Setup.exe, egal ob darin 1 oder 489 Dateien stecken. -->
 
-		<!-- Keine .pdb-Datei mehr im Publish-Output - dann bleibt wirklich nur die .exe übrig -->
+		<!-- Keine .pdb-Datei mehr im Publish-Output -->
 		<DebugType>none</DebugType>
 
 		<!-- Reduziert die vielen af-ZA/am-ET/... Sprachordner im Publish-Output
@@ -60,8 +60,10 @@
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
-		<PackageReference Include="System.Management" Version="8.0.0" />
+		<PackageReference Include="System.Management" Version="10.0.2" />
 		<PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.0" />
+		<PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+		<PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -69,5 +71,26 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>
+
+	<!-- Schließt ungenutzte KI/ML-Laufzeitkomponenten aus, die das
+	     Windows App SDK 2.2.0 standardmäßig mitbringt (ONNX Runtime,
+	     Windows-AI-Foundation-Projections für Copilot+-Funktionen). WinVora
+	     ruft keine dieser APIs auf - ohne sie ist der Build deutlich kleiner.
+	     Falls nach einem Update der App irgendwas Unerwartetes nicht mehr
+	     funktioniert: dieses Target einfach komplett entfernen/auskommentieren. -->
+	<Target Name="RemoveUnusedAIRuntimeFiles" AfterTargets="ComputeResolvedFilesToPublishList">
+		<ItemGroup>
+			<ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+				Condition="$([System.String]::Copy('%(ResolvedFileToPublish.FileName)').StartsWith('Microsoft.Windows.AI')) or
+				           $([System.String]::Copy('%(ResolvedFileToPublish.FileName)').StartsWith('Microsoft.Windows.Internal.AI')) or
+				           $([System.String]::Copy('%(ResolvedFileToPublish.FileName)').StartsWith('Microsoft.Windows.Vision')) or
+				           $([System.String]::Copy('%(ResolvedFileToPublish.FileName)').StartsWith('Microsoft.Windows.SemanticSearch')) or
+				           $([System.String]::Copy('%(ResolvedFileToPublish.FileName)').StartsWith('Microsoft.ML.OnnxRuntime')) or
+				           '%(ResolvedFileToPublish.FileName)' == 'onnxruntime' or
+				           '%(ResolvedFileToPublish.FileName)' == 'NPUDetect' or
+				           '%(ResolvedFileToPublish.FileName)' == 'PerceptiveStreaming' or
+				           '%(ResolvedFileToPublish.FileName)' == 'System.Numerics.Tensors'" />
+		</ItemGroup>
+	</Target>
 
 </Project>

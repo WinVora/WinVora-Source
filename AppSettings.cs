@@ -4,6 +4,15 @@ using System.Text.Json;
 
 namespace WinVora
 {
+    // Ein einzelner Eintrag im Aktivitätsverlauf auf dem Dashboard.
+    public class ActivityLogEntry
+    {
+        public DateTime TimestampUtc { get; set; }
+        public string IconGlyph { get; set; } = "\uE73E";
+        public string TextDe { get; set; } = "";
+        public string TextEn { get; set; } = "";
+    }
+
     public class AppSettings
     {
         // Alpha-Wert (0-64) für die Deckkraft der Glas-Karten. 24 = Standard.
@@ -29,6 +38,20 @@ namespace WinVora
 
         // Ob vor dem Löschen von Storage-Kategorien ein Bestätigungsdialog erscheint.
         public bool ShowDeleteConfirmations { get; set; } = true;
+
+        // Zeitpunkt (UTC) der letzten erfolgreichen Speicher-Bereinigung. Null,
+        // falls noch nie bereinigt wurde.
+        public DateTime? LastCleanupUtc { get; set; }
+
+        // Sprache der Oberfläche: "de" oder "en".
+        public string Language { get; set; } = "de";
+
+        // Ob die Sprachauswahl beim allerersten Start schon gezeigt wurde.
+        public bool HasChosenLanguage { get; set; } = false;
+
+        // Verlauf der letzten Aktionen (Bereinigung, Updates, Deinstallation) -
+        // wird auf der Dashboard-Seite als kleine Liste angezeigt.
+        public System.Collections.Generic.List<ActivityLogEntry> ActivityLog { get; set; } = new();
 
         private static string SettingsFilePath =>
             Path.Combine(

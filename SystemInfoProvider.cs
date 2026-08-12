@@ -44,11 +44,34 @@ namespace WinVora
             return s;
         }
 
+        // Initialisiert den CPU-Performance-Counter frühzeitig, im Hintergrund
+        // beim App-Start. PerformanceCounter braucht zwei Messungen mit etwas
+        // zeitlichem Abstand dazwischen, um einen sinnvollen Prozentwert zu
+        // liefern - ruft man ihn ganz frisch initialisiert direkt zweimal
+        // hintereinander auf, kommt oft ein falscher/niedriger Wert raus.
+        // Wird dieser Aufruf hier früh (parallel zum restlichen Laden)
+        // gemacht, ist beim ersten echten Live-Update schon genug Zeit
+        // vergangen, damit der Wert von Anfang an stimmt.
+        public static void WarmUpCpuCounter()
+        {
+            try
+            {
+                if (_cpuCounter == null)
+                {
+                    _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                    _cpuCounter.NextValue();
+                }
+            }
+            catch { }
+        }
+
         // ================= LIVE USAGE =================
-        public static (double cpu, double ram, double gpu) GetLiveUsage()
+        public static (double cpu, double ram, double gpu, double ramUsedGb, double ramTotalGb) GetLiveUsage()
         {
             double cpu = 0;
             double ram = 0;
+            double ramUsedGb = 0;
+            double ramTotalGb = 0;
 
             try
             {
@@ -68,11 +91,13 @@ namespace WinVora
                 if (GlobalMemoryStatusEx(mem))
                 {
                     ram = Math.Round((double)mem.dwMemoryLoad, 1);
+                    ramTotalGb = Math.Round(mem.ullTotalPhys / 1024d / 1024 / 1024, 1);
+                    ramUsedGb = Math.Round(ramTotalGb - (mem.ullAvailPhys / 1024d / 1024 / 1024), 1);
                 }
             }
             catch { }
 
-            return (cpu, ram, 0);
+            return (cpu, ram, 0, ramUsedGb, ramTotalGb);
         }
 
         // ================= BASIC =================
@@ -90,6 +115,7 @@ namespace WinVora
         // ================= SYSTEM =================
         private static void FillSystemInfo(SystemInfoSnapshot s)
         {
+            bool en = Localization.CurrentLanguage == "en";
             Safe(() =>
             {
                 using var cs = new ManagementObjectSearcher("SELECT Manufacturer, Model, HypervisorPresent FROM Win32_ComputerSystem");
@@ -101,7 +127,7 @@ namespace WinVora
 
                     var hyperV = mo["HypervisorPresent"];
                     if (hyperV != null)
-                        s.Virtualization = (bool)hyperV ? "Aktiv" : "Verfügbar, nicht aktiv";
+                        s.Virtualization = (bool)hyperV ? (en ? "Active" : "Aktiv") : (en ? "Available, not active" : "Verfügbar, nicht aktiv");
 
                     break;
                 }
@@ -111,6 +137,7 @@ namespace WinVora
         // ================= OS =================
         private static void FillOS(SystemInfoSnapshot s)
         {
+            bool en = Localization.CurrentLanguage == "en";
             Safe(() =>
             {
                 using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem");
@@ -132,7 +159,7 @@ namespace WinVora
                         s.Uptime = $"{up.Days}d {up.Hours}h {up.Minutes}m";
                     }
 
-                    s.ActivationStatus = IsActivated() ? "Aktiviert" : "Nicht aktiviert";
+                    s.ActivationStatus = IsActivated() ? (en ? "Activated" : "Aktiviert") : (en ? "Not activated" : "Nicht aktiviert");
                     break;
                 }
             });
@@ -290,33 +317,35 @@ namespace WinVora
         // ================= SECURITY =================
         private static void FillSecurity(SystemInfoSnapshot s)
         {
+            bool en = Localization.CurrentLanguage == "en";
+
             // Secure Boot
             try
             {
                 using var rk = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\SecureBoot\State");
                 var val = rk?.GetValue("UEFISecureBootEnabled")?.ToString();
-                s.SecureBoot = val == "1" ? "Aktiviert" : (val == "0" ? "Deaktiviert" : "Nicht verfügbar");
+                s.SecureBoot = val == "1" ? (en ? "Enabled" : "Aktiviert") : (val == "0" ? (en ? "Disabled" : "Deaktiviert") : (en ? "Not available" : "Nicht verfügbar"));
             }
             catch
             {
-                s.SecureBoot = "Nicht verfügbar";
+                s.SecureBoot = en ? "Not available" : "Nicht verfügbar";
             }
 
             // TPM
             try
             {
                 using var tpm = new ManagementObjectSearcher(@"root\CIMV2\Security\MicrosoftTpm", "SELECT SpecVersion FROM Win32_Tpm");
-                s.TpmVersion = "Kein TPM erkannt";
+                s.TpmVersion = en ? "No TPM detected" : "Kein TPM erkannt";
 
                 foreach (ManagementObject mo in tpm.Get())
                 {
-                    s.TpmVersion = mo["SpecVersion"]?.ToString() ?? "TPM vorhanden";
+                    s.TpmVersion = mo["SpecVersion"]?.ToString() ?? (en ? "TPM present" : "TPM vorhanden");
                     break;
                 }
             }
             catch
             {
-                s.TpmVersion = "Kein TPM erkannt";
+                s.TpmVersion = en ? "No TPM detected" : "Kein TPM erkannt";
             }
 
             // Windows Defender
@@ -324,19 +353,19 @@ namespace WinVora
             {
                 using var defender = new ManagementObjectSearcher(@"root\Microsoft\Windows\Defender",
                     "SELECT AntivirusEnabled, RealTimeProtectionEnabled FROM MSFT_MpComputerStatus");
-                s.DefenderStatus = "Unbekannt";
+                s.DefenderStatus = en ? "Unknown" : "Unbekannt";
 
                 foreach (ManagementObject mo in defender.Get())
                 {
                     var av = Convert.ToBoolean(mo["AntivirusEnabled"]);
                     var rt = Convert.ToBoolean(mo["RealTimeProtectionEnabled"]);
-                    s.DefenderStatus = av && rt ? "Aktiv" : "Teilweise/Inaktiv";
+                    s.DefenderStatus = av && rt ? (en ? "Active" : "Aktiv") : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
                     break;
                 }
             }
             catch
             {
-                s.DefenderStatus = "Unbekannt";
+                s.DefenderStatus = en ? "Unknown" : "Unbekannt";
             }
 
             // Firewall
@@ -350,11 +379,11 @@ namespace WinVora
                     if (Convert.ToBoolean(mo["Enabled"])) anyEnabled = true;
                 }
 
-                s.FirewallStatus = anyEnabled ? "Aktiv" : "Deaktiviert";
+                s.FirewallStatus = anyEnabled ? (en ? "Active" : "Aktiv") : (en ? "Disabled" : "Deaktiviert");
             }
             catch
             {
-                s.FirewallStatus = "Unbekannt";
+                s.FirewallStatus = en ? "Unknown" : "Unbekannt";
             }
 
             // BitLocker (Laufwerk C:)
@@ -362,16 +391,16 @@ namespace WinVora
             {
                 using var bl = new ManagementObjectSearcher(@"root\CIMV2\Security\MicrosoftVolumeEncryption",
                     "SELECT ProtectionStatus FROM Win32_EncryptableVolume WHERE DriveLetter = 'C:'");
-                s.BitLockerStatus = "Nicht verfügbar";
+                s.BitLockerStatus = en ? "Not available" : "Nicht verfügbar";
 
                 foreach (ManagementObject mo in bl.Get())
                 {
                     var status = Convert.ToInt32(mo["ProtectionStatus"]);
                     s.BitLockerStatus = status switch
                     {
-                        0 => "Deaktiviert",
-                        1 => "Aktiviert",
-                        2 => "Unbekannt",
+                        0 => en ? "Disabled" : "Deaktiviert",
+                        1 => en ? "Enabled" : "Aktiviert",
+                        2 => en ? "Unknown" : "Unbekannt",
                         _ => "N/A"
                     };
                     break;
@@ -380,7 +409,7 @@ namespace WinVora
             catch
             {
                 // Ohne Admin-Rechte oft nicht abfragbar
-                s.BitLockerStatus = "Nicht verfügbar (ggf. Adminrechte nötig)";
+                s.BitLockerStatus = en ? "Not available (admin rights may be required)" : "Nicht verfügbar (ggf. Adminrechte nötig)";
             }
         }
 
@@ -404,7 +433,7 @@ namespace WinVora
                     var serial = mo["SerialNumber"]?.ToString();
 
                     s.SerialNumber = string.IsNullOrWhiteSpace(serial) || serial.Contains("System")
-                        ? "Nicht verfügbar"
+                        ? (Localization.CurrentLanguage == "en" ? "Not available" : "Nicht verfügbar")
                         : serial;
 
                     s.BiosVersion = mo["SMBIOSBIOSVersion"]?.ToString() ?? "N/A";
@@ -416,18 +445,19 @@ namespace WinVora
         // ================= BATTERY =================
         private static void FillBattery(SystemInfoSnapshot s)
         {
+            bool en = Localization.CurrentLanguage == "en";
             Safe(() =>
             {
                 using var searcher = new ManagementObjectSearcher("SELECT EstimatedChargeRemaining, BatteryStatus FROM Win32_Battery");
 
-                s.BatteryStatus = "Kein Akku erkannt";
+                s.BatteryStatus = en ? "No battery detected" : "Kein Akku erkannt";
 
                 foreach (ManagementObject mo in searcher.Get())
                 {
                     var charge = mo["EstimatedChargeRemaining"]?.ToString() ?? "N/A";
                     var statusCode = mo["BatteryStatus"]?.ToString();
                     var charging = statusCode == "6" || statusCode == "7" || statusCode == "8";
-                    s.BatteryStatus = $"{charge}% {(charging ? "(lädt)" : "")}".Trim();
+                    s.BatteryStatus = $"{charge}% {(charging ? (en ? "(charging)" : "(lädt)") : "")}".Trim();
                     break;
                 }
             });
