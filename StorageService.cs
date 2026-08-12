@@ -375,6 +375,12 @@ namespace WinVora
             if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
                 return (true, "Nicht vorhanden, nichts zu löschen.");
 
+            if (!IsAllowedProtectedFolder(path))
+            {
+                Logger.Log($"Geschützte Löschung aus Sicherheitsgründen abgelehnt: {path}");
+                return (false, "Der angeforderte Systempfad ist nicht für die geschützte Bereinigung freigegeben.");
+            }
+
             try
             {
                 RunHiddenCommand("takeown.exe", $"/F \"{path}\" /R /D Y");
@@ -404,6 +410,39 @@ namespace WinVora
             {
                 return (false,
                     $"Konnte nicht entfernt werden (Admin-Rechte erforderlich): {ex.Message}");
+            }
+        }
+
+        private static bool IsAllowedProtectedFolder(string path)
+        {
+            try
+            {
+                var windowsPath = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                var systemRoot = Path.GetPathRoot(windowsPath);
+                if (string.IsNullOrWhiteSpace(systemRoot)) return false;
+
+                var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var allowedPaths = new[]
+                {
+                    Path.Combine(systemRoot, "Windows.old"),
+                    Path.Combine(systemRoot, "$WINDOWS.~BT")
+                };
+
+                if (!allowedPaths.Any(allowed =>
+                    string.Equals(fullPath, Path.GetFullPath(allowed).TrimEnd(Path.DirectorySeparatorChar),
+                        StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
+
+                // Ein Reparse Point könnte trotz korrektem Namen auf einen ganz
+                // anderen Ordner zeigen und darf deshalb nie rekursiv gelöscht werden.
+                return (File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) == 0;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Prüfung des geschützten Storage-Pfads", ex);
+                return false;
             }
         }
 

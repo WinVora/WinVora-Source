@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Shapes;
@@ -8,6 +9,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -26,17 +29,27 @@ namespace WinVora
         private Window? _changelogWindow;
         private SystemInfoSnapshot? _cachedSnapshot;
         private bool _isLoadingSnapshot;
+        private bool _isLoadingWinget;
+        private bool _isUpdatingWinget;
+        private bool _isLoadingStorage;
+        private bool _isDeletingStorage;
+        private bool _isLoadingPrograms;
         private List<WingetPackage>? _cachedPackages;
         private bool _isDarkTheme = true;
 
         private readonly List<(WingetPackage Package, ToggleSwitch Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> _wingetRows = new();
         private readonly List<(StorageCategory Category, ToggleSwitch Toggle)> _storageRows = new();
+        private TextBlock? _wingetNoResultsText;
+        private TextBlock? _uninstallNoResultsText;
         private AppSettings _settings = AppSettings.Load();
         private readonly Random _startupRandom = new();
 
-        // Muss bei jedem Versions-Bump zusammen mit Changelog/Sidebar/.iss
-        // manuell aktualisiert werden - wird für den Auto-Update-Vergleich genutzt.
-        private const string CurrentVersion = "0.8.0";
+        // Eine zentrale Versionsquelle: <Version> in WinVora.csproj. So können
+        // Sidebar, Einstellungen und Updatevergleich nicht mehr auseinanderlaufen.
+        private static readonly string CurrentVersion =
+            Assembly.GetExecutingAssembly().GetName().Version is { } version
+                ? $"{version.Major}.{version.Minor}.{version.Build}"
+                : "0.0.0";
 
         // Vom Hintergrund-Check gefundenes Update (falls vorhanden) - damit
         // das Einstellungen-Fenster nicht nochmal extra suchen muss.
@@ -48,8 +61,13 @@ namespace WinVora
         {
             this.InitializeComponent();
             this.Title = "WinVora";
+            NavVersionText.Text = $"Version {CurrentVersion}";
             this.Activated += MainWindow_Activated;
-            this.Closed += (_, __) => HardwareMonitorService.Shutdown();
+            this.Closed += (_, __) =>
+            {
+                SaveWindowPlacement();
+                HardwareMonitorService.Shutdown();
+            };
 
             // Eigene, dunkle Titelleiste statt der weißen Standard-Leiste von Windows.
             this.ExtendsContentIntoTitleBar = true;
@@ -83,6 +101,85 @@ namespace WinVora
 
             Localization.CurrentLanguage = _settings.Language;
             ApplyLanguage();
+            RestoreWindowPlacement();
+            SetupKeyboardShortcuts();
+            UpdateService.CleanupOldDownloads();
+        }
+
+        private void RestoreWindowPlacement()
+        {
+            try
+            {
+                var point = new Windows.Graphics.PointInt32(_settings.WindowX ?? 100, _settings.WindowY ?? 100);
+                var display = Microsoft.UI.Windowing.DisplayArea.GetFromPoint(
+                    point, Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+                var work = display.WorkArea;
+                int width = Math.Min(_settings.WindowWidth, work.Width);
+                int height = Math.Min(_settings.WindowHeight, work.Height);
+                int x = Math.Clamp(_settings.WindowX ?? work.X + 60, work.X, work.X + work.Width - width);
+                int y = Math.Clamp(_settings.WindowY ?? work.Y + 60, work.Y, work.Y + work.Height - height);
+                AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, width, height));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Fensterposition konnte nicht wiederhergestellt werden", ex);
+            }
+        }
+
+        private void SaveWindowPlacement()
+        {
+            try
+            {
+                var position = AppWindow.Position;
+                var size = AppWindow.Size;
+                _settings.WindowX = position.X;
+                _settings.WindowY = position.Y;
+                _settings.WindowWidth = size.Width;
+                _settings.WindowHeight = size.Height;
+                _settings.Save();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Fensterposition konnte nicht gespeichert werden", ex);
+            }
+        }
+
+        private void SetupKeyboardShortcuts()
+        {
+            var refresh = new KeyboardAccelerator
+            {
+                Key = Windows.System.VirtualKey.R,
+                Modifiers = Windows.System.VirtualKeyModifiers.Control
+            };
+            refresh.Invoked += async (_, args) =>
+            {
+                args.Handled = true;
+                if (_currentPageKey == "Updates") await LoadWinget(forceRefresh: true);
+                else if (_currentPageKey == "Storage") await LoadStorage();
+                else if (_currentPageKey == "Uninstall") await LoadInstalledPrograms();
+                else if (_currentPageKey is "System" or "Übersicht")
+                {
+                    _cachedSnapshot = null;
+                    await LoadSystemSnapshotIfNeededAsync(
+                        Localization.T("Common.LoadingSystemInfo"), "Fehler beim Aktualisieren");
+                }
+            };
+
+            var search = new KeyboardAccelerator
+            {
+                Key = Windows.System.VirtualKey.F,
+                Modifiers = Windows.System.VirtualKeyModifiers.Control
+            };
+            search.Invoked += (_, args) =>
+            {
+                if (_currentPageKey == "Updates") WingetSearchBox.Focus(FocusState.Keyboard);
+                else if (_currentPageKey == "Uninstall") UninstallSearchBox.Focus(FocusState.Keyboard);
+                else return;
+                args.Handled = true;
+            };
+
+            RootGrid.KeyboardAccelerators.Add(refresh);
+            RootGrid.KeyboardAccelerators.Add(search);
         }
 
         // Setzt alle übersetzbaren Texte (Sidebar, Dashboard, Schnellzugriff)
@@ -185,6 +282,7 @@ namespace WinVora
             }
 
             // Winget: Action-Bar
+            WingetSearchBox.PlaceholderText = Localization.T("Winget.SearchPlaceholder");
             RefreshButton.Content = Localization.T("Common.Refresh");
             StartUpdateButton.Content = Localization.T("Winget.StartUpdate");
 
@@ -481,12 +579,26 @@ namespace WinVora
 
             if (_settings.ActivityLog.Count == 0)
             {
-                ActivityLogPanel.Children.Add(new TextBlock
+                var emptyState = new StackPanel
                 {
-                    Text = en ? "No actions yet." : "Noch keine Aktionen.",
-                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
-                    FontSize = 13
+                    Spacing = 6,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 8, 0, 4)
+                };
+                emptyState.Children.Add(new FontIcon
+                {
+                    Glyph = "\uE823",
+                    FontSize = 22,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
                 });
+                emptyState.Children.Add(new TextBlock
+                {
+                    Text = en ? "Your recent actions will appear here." : "Deine letzten Aktionen erscheinen später hier.",
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
+                    FontSize = 13,
+                    TextAlignment = TextAlignment.Center
+                });
+                ActivityLogPanel.Children.Add(emptyState);
                 return;
             }
 
@@ -1103,12 +1215,15 @@ namespace WinVora
             // ---- Auto-Update (ganz oben, damit ein verfügbares Update sofort
             //      ins Auge fällt statt unten in der Wartung versteckt zu sein) ----
             var updateCard = MakeSettingsCard(Localization.T("Settings.UpdateSection"), out var updateContent);
+            bool updateUiEnglish = Localization.CurrentLanguage == "en";
 
             var updateStatusText = new TextBlock
             {
                 Text = _pendingUpdateInfo != null
-                    ? $"Version {_pendingUpdateInfo.Version} ist verfügbar (du hast {CurrentVersion})."
-                    : $"Aktuelle Version: {CurrentVersion}",
+                    ? (updateUiEnglish
+                        ? $"Version {_pendingUpdateInfo.Version} is available (you have {CurrentVersion})."
+                        : $"Version {_pendingUpdateInfo.Version} ist verfügbar (du hast {CurrentVersion}).")
+                    : (updateUiEnglish ? $"Current version: {CurrentVersion}" : $"Aktuelle Version: {CurrentVersion}"),
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"],
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap
@@ -1142,7 +1257,7 @@ namespace WinVora
 
                 if (update == null)
                 {
-                    updateStatusText.Text = "Suche nach Updates...";
+                    updateStatusText.Text = updateUiEnglish ? "Checking for updates..." : "Suche nach Updates...";
                     try
                     {
                         update = await UpdateService.CheckForUpdateAsync(CurrentVersion);
@@ -1150,7 +1265,18 @@ namespace WinVora
                     catch (Exception ex)
                     {
                         Logger.LogError("CheckForUpdateAsync", ex);
-                        updateStatusText.Text = "Update-Prüfung fehlgeschlagen (keine Internetverbindung?).";
+                        updateStatusText.Text = ex switch
+                        {
+                            HttpRequestException => updateUiEnglish
+                                ? "GitHub could not be reached. Please check your internet connection."
+                                : "GitHub ist nicht erreichbar. Bitte prüfe deine Internetverbindung.",
+                            InvalidDataException => updateUiEnglish
+                                ? "The new version has no installer available yet."
+                                : "Für die neue Version ist noch kein Installer verfügbar.",
+                            _ => updateUiEnglish
+                                ? "The update check failed. Please try again later."
+                                : "Die Update-Prüfung ist fehlgeschlagen. Bitte versuche es später erneut."
+                        };
                         updateButton.IsEnabled = true;
                         return;
                     }
@@ -1158,28 +1284,35 @@ namespace WinVora
 
                 if (update == null)
                 {
-                    updateStatusText.Text = $"Du hast bereits die neueste Version ({CurrentVersion}).";
+                    updateStatusText.Text = updateUiEnglish
+                        ? $"You already have the latest version ({CurrentVersion})."
+                        : $"Du hast bereits die neueste Version ({CurrentVersion}).";
                     updateButton.IsEnabled = true;
                     return;
                 }
 
                 var confirmed = await ConfirmAsync(
-                    "Update verfügbar",
-                    $"Version {update.Version} ist verfügbar (du hast {CurrentVersion}). " +
-                    "WinVora wird zum Aktualisieren geschlossen und automatisch aktualisiert. Jetzt aktualisieren?",
-                    primaryButtonText: "Jetzt aktualisieren",
+                    updateUiEnglish ? "Update available" : "Update verfügbar",
+                    updateUiEnglish
+                        ? $"Version {update.Version} is available (you have {CurrentVersion}). WinVora will close and update automatically. Update now?"
+                        : $"Version {update.Version} ist verfügbar (du hast {CurrentVersion}). WinVora wird geschlossen und automatisch aktualisiert. Jetzt aktualisieren?",
+                    primaryButtonText: updateUiEnglish ? "Update now" : "Jetzt aktualisieren",
                     respectDeleteConfirmationSetting: false);
 
                 if (!confirmed)
                 {
-                    updateStatusText.Text = $"Update auf {update.Version} verfügbar, aber nicht installiert.";
+                    updateStatusText.Text = updateUiEnglish
+                        ? $"Update {update.Version} is available but was not installed."
+                        : $"Update auf {update.Version} verfügbar, aber nicht installiert.";
                     updateButton.IsEnabled = true;
                     return;
                 }
 
                 updateProgressBar.Visibility = Visibility.Visible;
                 updateProgressBar.Value = 0;
-                updateStatusText.Text = $"Lade Version {update.Version} herunter...";
+                updateStatusText.Text = updateUiEnglish
+                    ? $"Downloading version {update.Version}..."
+                    : $"Lade Version {update.Version} herunter...";
 
                 var progress = new Progress<DownloadProgressInfo>(info =>
                 {
@@ -1191,7 +1324,9 @@ namespace WinVora
                         double totalMb = info.TotalBytes / 1024.0 / 1024.0;
                         updateProgressBar.IsIndeterminate = false;
                         updateProgressBar.Value = percent;
-                        updateStatusText.Text = $"Lade Version {update.Version} herunter... ({downloadedMb:0.0} / {totalMb:0.0} MB)";
+                        updateStatusText.Text = updateUiEnglish
+                            ? $"Downloading version {update.Version}... ({downloadedMb:0.0} / {totalMb:0.0} MB)"
+                            : $"Lade Version {update.Version} herunter... ({downloadedMb:0.0} / {totalMb:0.0} MB)";
                     }
                     else
                     {
@@ -1199,13 +1334,15 @@ namespace WinVora
                         // machen, dass Daten ankommen, statt einen stehenden Text
                         // zu zeigen, der wie ein Hänger aussieht.
                         updateProgressBar.IsIndeterminate = true;
-                        updateStatusText.Text = $"Lade Version {update.Version} herunter... ({downloadedMb:0.0} MB)";
+                        updateStatusText.Text = updateUiEnglish
+                            ? $"Downloading version {update.Version}... ({downloadedMb:0.0} MB)"
+                            : $"Lade Version {update.Version} herunter... ({downloadedMb:0.0} MB)";
                     }
                 });
 
                 try
                 {
-                    var installerPath = await UpdateService.DownloadUpdateAsync(update.DownloadUrl, update.AssetName, progress);
+                    var installerPath = await UpdateService.DownloadUpdateAsync(update, progress);
                     Logger.Log($"Update auf Version {update.Version} heruntergeladen, starte Installer.");
 
                     UpdateService.RunInstaller(installerPath);
@@ -1217,7 +1354,13 @@ namespace WinVora
                 catch (Exception ex)
                 {
                     Logger.LogError("DownloadUpdateAsync/RunInstaller", ex);
-                    updateStatusText.Text = $"Update fehlgeschlagen: {ex.Message}";
+                    updateStatusText.Text = ex is InvalidDataException
+                        ? (updateUiEnglish
+                            ? "The download is damaged or incomplete and was removed."
+                            : "Der Download ist beschädigt oder unvollständig und wurde entfernt.")
+                        : (updateUiEnglish
+                            ? "The update could not be installed. Please try again later."
+                            : "Das Update konnte nicht installiert werden. Bitte versuche es später erneut.");
                     updateProgressBar.Visibility = Visibility.Collapsed;
                     updateButton.IsEnabled = true;
                 }
@@ -1548,6 +1691,47 @@ namespace WinVora
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
             });
+
+            panel.Children.Add(MakeChangelogCard(
+    "Version 0.8.1",
+    "• Neue Suche: Verfügbare Programm-Updates lassen sich jetzt schnell nach\n" +
+    "  Name oder Paket durchsuchen\n" +
+    "• Suche zeigt Trefferzahlen und einen freundlichen Hinweis, wenn nichts passt\n" +
+    "• Der Update-Button zeigt direkt, wie viele Programme ausgewählt sind\n" +
+    "• Nach abgeschlossenen Programm-Updates wird die Liste automatisch erneuert\n" +
+    "• Die Programmsuche beim Deinstallieren zeigt jetzt ebenfalls Trefferzahlen\n" +
+    "• Programmgrößen werden deutlich häufiger angezeigt statt nur als N/A\n" +
+    "• Herausgeber, Größe und Ladehinweise auf der Winget-Seite wechseln jetzt\n" +
+    "  korrekt zwischen Deutsch und Englisch\n" +
+    "• Der komplette WinVora-Updatebereich ist jetzt auch auf Englisch verfügbar\n" +
+    "• Heruntergeladene WinVora-Updates werden vor der Installation geprüft\n" +
+    "• Beschädigte oder unvollständige Downloads werden automatisch entfernt\n" +
+    "• Die Bereinigung geschützter Windows-Dateien wurde sicherer gemacht\n" +
+    "• Mehrfachklicks starten keine doppelten Lade- oder Bereinigungsvorgänge mehr\n" +
+    "• WinVora merkt sich Größe und Position des Hauptfensters\n" +
+    "• Neue Tastenkürzel: Strg+F für die Suche und Strg+R zum Aktualisieren\n" +
+    "• Verbesserte Tastaturbedienung und Beschriftungen für Bildschirmleser\n" +
+    "• Versionsanzeige in der App und im Installer bleibt automatisch gleich\n" +
+    "• Fehler beim Laden oder Speichern von Einstellungen sind leichter zu finden",
+    "• New search: quickly filter available program updates by name or package\n" +
+    "• Search now shows result counts and a friendly message when nothing matches\n" +
+    "• The update button directly shows how many programs are selected\n" +
+    "• The list refreshes automatically after program updates finish\n" +
+    "• Program search on the uninstall page now also shows result counts\n" +
+    "• Program sizes are now shown much more often instead of only displaying N/A\n" +
+    "• Publisher, size and loading text on the Winget page now switch correctly\n" +
+    "  between German and English\n" +
+    "• The complete WinVora update section is now available in English\n" +
+    "• Downloaded WinVora updates are checked before installation\n" +
+    "• Damaged or incomplete downloads are removed automatically\n" +
+    "• Cleanup of protected Windows files is now safer\n" +
+    "• Repeated clicks no longer start duplicate loading or cleanup operations\n" +
+    "• WinVora remembers the main window size and position\n" +
+    "• New shortcuts: Ctrl+F for search and Ctrl+R to refresh\n" +
+    "• Improved keyboard navigation and screen reader labels\n" +
+    "• Version numbers in the app and installer now always stay in sync\n" +
+    "• Problems loading or saving settings are easier to diagnose"
+));
 
             panel.Children.Add(MakeChangelogCard(
     "Version 0.8.0",
@@ -2082,13 +2266,51 @@ namespace WinVora
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
             });
 
-            content.Children.Add(new TextBlock
+            var bulletList = new StackPanel { Spacing = 8 };
+            var bulletItems = new List<string>();
+
+            foreach (var rawLine in text.Replace("\r", "").Split('\n'))
             {
-                Text = text,
-                FontSize = 14,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundCC"]
-            });
+                var line = rawLine.Trim();
+                if (line.StartsWith("•", StringComparison.Ordinal))
+                {
+                    bulletItems.Add(line.TrimStart('•', ' '));
+                }
+                else if (!string.IsNullOrWhiteSpace(line) && bulletItems.Count > 0)
+                {
+                    bulletItems[^1] += " " + line;
+                }
+            }
+
+            foreach (var item in bulletItems)
+            {
+                var row = new Grid { ColumnSpacing = 10 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var bullet = new TextBlock
+                {
+                    Text = "•",
+                    FontSize = 15,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrush"]
+                };
+
+                var body = new TextBlock
+                {
+                    Text = item,
+                    FontSize = 14,
+                    LineHeight = 21,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundCC"]
+                };
+                Grid.SetColumn(body, 1);
+
+                row.Children.Add(bullet);
+                row.Children.Add(body);
+                bulletList.Children.Add(row);
+            }
+
+            content.Children.Add(bulletList);
 
             card.Child = content;
             AttachCardHoverEffect(card);
@@ -2582,15 +2804,55 @@ namespace WinVora
 
         private void WingetSelectAll_Click(object sender, RoutedEventArgs e)
         {
-            if (_wingetRows.Count == 0) return;
+            var visibleRows = _wingetRows.Where(r => r.Card.Visibility == Visibility.Visible).ToList();
+            if (visibleRows.Count == 0) return;
 
-            bool allSelected = _wingetRows.All(r => r.Toggle.IsOn);
+            bool allSelected = visibleRows.All(r => r.Toggle.IsOn);
             bool newState = !allSelected;
 
-            foreach (var row in _wingetRows)
+            foreach (var row in visibleRows)
                 row.Toggle.IsOn = newState;
 
             WingetSelectAllButton.Content = newState ? Localization.T("Common.DeselectAll") : Localization.T("Common.SelectAll");
+            UpdateWingetSelectionButton();
+        }
+
+        private void UpdateWingetSelectionButton()
+        {
+            int count = _wingetRows.Count(row => row.Toggle.IsOn);
+            bool en = Localization.CurrentLanguage == "en";
+            StartUpdateButton.Content = count == 1
+                ? (en ? "Install 1 update" : "1 Update installieren")
+                : (en ? $"Install {count} updates" : $"{count} Updates installieren");
+            StartUpdateButton.IsEnabled = count > 0 && !_isLoadingWinget && !_isUpdatingWinget;
+        }
+
+        private void WingetSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var query = WingetSearchBox.Text?.Trim() ?? "";
+
+            foreach (var row in _wingetRows)
+            {
+                row.Card.Visibility = string.IsNullOrEmpty(query) ||
+                    row.Package.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    row.Package.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+            }
+
+            var visibleCount = _wingetRows.Count(r => r.Card.Visibility == Visibility.Visible);
+            if (_wingetNoResultsText != null)
+                _wingetNoResultsText.Visibility = visibleCount == 0 && !string.IsNullOrEmpty(query)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            bool en = Localization.CurrentLanguage == "en";
+            PageSubtitle.Text = string.IsNullOrEmpty(query)
+                ? (_wingetRows.Count == 1
+                    ? (en ? "1 app has an update" : "1 App hat ein Update")
+                    : (en ? $"{_wingetRows.Count} apps have updates" : $"{_wingetRows.Count} Apps haben Updates"))
+                : (en
+                    ? $"Showing {visibleCount} of {_wingetRows.Count} updates"
+                    : $"{visibleCount} von {_wingetRows.Count} Updates angezeigt");
         }
 
         private async void Refresh_Click(object sender, RoutedEventArgs e)
@@ -2600,6 +2862,7 @@ namespace WinVora
 
         private async Task LoadWinget(bool forceRefresh = false)
         {
+            if (_isLoadingWinget || _isUpdatingWinget) return;
             // BUGFIX (Teil 2): Wenn schon ein Ergebnis vorliegt und kein
             // erzwungener Refresh angefordert wurde, einfach das gecachte
             // Ergebnis erneut anzeigen statt "winget upgrade" neu zu starten.
@@ -2609,8 +2872,10 @@ namespace WinVora
                 return;
             }
 
+            _isLoadingWinget = true;
             ContentArea.Children.Clear();
             _wingetRows.Clear();
+            WingetSearchBox.Text = "";
             _wingetColumns = null; // bei jedem Aufruf zurücksetzen
 
             RefreshButton.IsEnabled = false;
@@ -2725,6 +2990,7 @@ namespace WinVora
             }
             finally
             {
+                _isLoadingWinget = false;
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
                 RefreshButton.IsEnabled = true;
@@ -2781,6 +3047,9 @@ namespace WinVora
             _wingetRows.Clear();
 
             bool en = Localization.CurrentLanguage == "en";
+            var publisherLabel = Localization.T("Winget.Publisher");
+            var sizeLabel = Localization.T("Winget.Size");
+            var loadingLabel = Localization.T("Winget.Loading");
 
             if (packages.Count == 0)
             {
@@ -2810,26 +3079,43 @@ namespace WinVora
             foreach (var pkg in packages)
             {
                 var toggle = new ToggleSwitch { IsOn = true, OnContent = "", OffContent = "" };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle,
+                    en ? $"Select update for {pkg.Name}" : $"Update für {pkg.Name} auswählen");
                 var baseDescription = $"{pkg.Id}  •  {pkg.Version} → {pkg.Available}  •  {pkg.Source}";
 
                 var card = new ToolkitControls.SettingsCard
                 {
                     Header = pkg.Name,
-                    Description = $"{baseDescription}  •  Herausgeber: wird geladen...  •  Größe: wird geladen...",
+                    Description = $"{baseDescription}  •  {publisherLabel}: {loadingLabel}  •  {sizeLabel}: {loadingLabel}",
                     HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter-App-Icon
                     Content = toggle,
                     BorderThickness = new Thickness(1),
                     BorderBrush = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"] // startet ausgewählt
                 };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(card,
+                    en ? $"Available update for {pkg.Name}" : $"Verfügbares Update für {pkg.Name}");
 
                 // Akzentfarbener Rand, solange das Paket zum Aktualisieren ausgewählt ist.
                 var defaultBorder = (SolidColorBrush)RootGrid.Resources["AppOverlay28"];
                 var accentBorder = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"];
                 toggle.Toggled += (_, __) => card.BorderBrush = toggle.IsOn ? accentBorder : defaultBorder;
+                toggle.Toggled += (_, __) => UpdateWingetSelectionButton();
 
                 ContentArea.Children.Add(card);
                 _wingetRows.Add((pkg, toggle, card, baseDescription));
             }
+
+            _wingetNoResultsText = new TextBlock
+            {
+                Text = en ? "No updates match your search." : "Keine Updates passen zu deiner Suche.",
+                FontSize = 14,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 20, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+            ContentArea.Children.Add(_wingetNoResultsText);
+            UpdateWingetSelectionButton();
 
             // Herausgeber und Größe laufen im Hintergrund nach (winget show pro Paket),
             // damit die Liste sofort erscheint und nicht auf alle Detailabfragen wartet.
@@ -2874,6 +3160,9 @@ namespace WinVora
             List<(WingetPackage Package, ToggleSwitch Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> rows)
         {
             using var semaphore = new SemaphoreSlim(2);
+            var installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+            var publisherLabel = Localization.T("Winget.Publisher");
+            var sizeLabel = Localization.T("Winget.Size");
 
             var pending = new System.Collections.Concurrent.ConcurrentQueue<(ToolkitControls.SettingsCard Card, string Text)>();
 
@@ -2896,9 +3185,10 @@ namespace WinVora
                     await semaphore.WaitAsync();
                     try
                     {
-                        var (publisher, size) = await GetWingetDetailsAsync(row.Package.Id);
+                        var (publisher, size) = await GetWingetDetailsAsync(
+                            row.Package.Id, row.Package.Name, installedPrograms);
                         pending.Enqueue((row.Card,
-                            $"{row.BaseDescription}  •  Herausgeber: {publisher}  •  Größe: {size}"));
+                            $"{row.BaseDescription}  •  {publisherLabel}: {publisher}  •  {sizeLabel}: {size}"));
                     }
                     finally
                     {
@@ -2918,7 +3208,8 @@ namespace WinVora
         // Liest "winget show --id X" aus und sucht sprachunabhängig nach
         // Herausgeber- und Größenangaben. Das genaue Textformat kann je nach
         // winget-Version/Sprache leicht variieren.
-        private async Task<(string Publisher, string Size)> GetWingetDetailsAsync(string packageId)
+        private async Task<(string Publisher, string Size)> GetWingetDetailsAsync(
+            string packageId, string packageName, List<InstalledProgram> installedPrograms)
         {
             string publisher = "N/A";
             string size = "N/A";
@@ -3012,17 +3303,30 @@ namespace WinVora
                     Logger.Log($"winget show '{packageId}' lieferte weder Herausgeber noch Größe " +
                                $"(ExitCode {p.ExitCode}){(string.IsNullOrEmpty(errText) ? "" : $": {errText}")}");
                 }
+
+                var registryDetails = InstalledProgramsService.FindDetailsForPackage(
+                    installedPrograms, packageName, packageId);
+
+                if (publisher == "N/A" && !string.IsNullOrWhiteSpace(registryDetails.Publisher))
+                    publisher = registryDetails.Publisher;
+
+                if (size == "N/A" && !string.IsNullOrWhiteSpace(registryDetails.Size))
+                    size = registryDetails.Size;
             }
             catch (Exception ex)
             {
                 Logger.LogError($"GetWingetDetailsAsync({packageId})", ex);
             }
 
-            return (publisher, size);
+            bool en = Localization.CurrentLanguage == "en";
+            return (publisher == "N/A" ? (en ? "Unknown" : "Unbekannt") : publisher,
+                    size == "N/A" ? (en ? "Unknown" : "Unbekannt") : size);
         }
 
         private async void StartUpdate_Click(object sender, RoutedEventArgs e)
         {
+            if (_isUpdatingWinget || _isLoadingWinget) return;
+            _isUpdatingWinget = true;
             var selected = _wingetRows.Where(r => r.Toggle.IsOn).Select(r => r.Package).ToList();
 
             if (selected.Count == 0)
@@ -3030,6 +3334,8 @@ namespace WinVora
                 UpdateProgressPanel.Visibility = Visibility.Visible;
                 UpdateProgressText.Text = "Keine Pakete ausgewählt.";
                 UpdateProgressBar.Value = 0;
+                _isUpdatingWinget = false;
+                UpdateWingetSelectionButton();
                 return;
             }
 
@@ -3093,6 +3399,7 @@ namespace WinVora
 
             // Nach einer Installation ist der Cache veraltet - erzwungener Reload.
             _cachedPackages = null;
+            _isUpdatingWinget = false;
             await LoadWinget(forceRefresh: true);
         }
 
@@ -3272,6 +3579,8 @@ namespace WinVora
 
         private async Task LoadStorage()
         {
+            if (_isLoadingStorage || _isDeletingStorage) return;
+            _isLoadingStorage = true;
             StoragePanel.Children.Clear();
             _storageRows.Clear();
 
@@ -3299,6 +3608,7 @@ namespace WinVora
             }
             finally
             {
+                _isLoadingStorage = false;
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
                 StorageRefreshButton.IsEnabled = true;
@@ -3517,6 +3827,8 @@ namespace WinVora
 
         private async Task DeleteSingleCategory(StorageCategory category, Button sourceButton)
         {
+            if (_isDeletingStorage || _isLoadingStorage) return;
+
             bool confirmed = await ConfirmAsync(
                 "Bereich löschen?",
                 $"\"{category.Name}\" wird bereinigt. Das kann nicht rückgängig gemacht werden. Fortfahren?" +
@@ -3555,11 +3867,13 @@ namespace WinVora
             await Task.Delay(1500);
             StorageProgressPanel.Visibility = Visibility.Collapsed;
 
+            _isDeletingStorage = false;
             await LoadStorage();
         }
 
         private async void StorageDeleteSelected_Click(object sender, RoutedEventArgs e)
         {
+            if (_isDeletingStorage || _isLoadingStorage) return;
             var selected = _storageRows.Where(r => r.Toggle.IsOn).Select(r => r.Category).ToList();
 
             if (selected.Count == 0)
@@ -3576,6 +3890,8 @@ namespace WinVora
                 GetRunningProcessWarning(selected));
 
             if (!confirmed) return;
+            _isDeletingStorage = true;
+            _isDeletingStorage = true;
 
             StorageRefreshButton.IsEnabled = false;
             StorageDeleteSelectedButton.IsEnabled = false;
@@ -3640,6 +3956,7 @@ namespace WinVora
             await Task.Delay(2500);
             StorageProgressPanel.Visibility = Visibility.Collapsed;
 
+            _isDeletingStorage = false;
             await LoadStorage();
         }
 
@@ -3660,6 +3977,8 @@ namespace WinVora
 
         private async Task LoadInstalledPrograms()
         {
+            if (_isLoadingPrograms) return;
+            _isLoadingPrograms = true;
             UninstallPanel.Children.Clear();
             UninstallSearchBox.Text = "";
 
@@ -3683,6 +4002,7 @@ namespace WinVora
             }
             finally
             {
+                _isLoadingPrograms = false;
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
                 UninstallRefreshButton.IsEnabled = true;
@@ -3711,6 +4031,19 @@ namespace WinVora
                 // Karte erscheint sofort mit Platzhalter-Icon.
                 _ = LoadCardIconAsync(card, program.IconPath);
             }
+
+            _uninstallNoResultsText = new TextBlock
+            {
+                Text = Localization.CurrentLanguage == "en"
+                    ? "No programs match your search."
+                    : "Keine Programme passen zu deiner Suche.",
+                FontSize = 14,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 20, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+            UninstallPanel.Children.Add(_uninstallNoResultsText);
         }
 
         private ToolkitControls.SettingsCard MakeUninstallCard(InstalledProgram program)
@@ -3724,6 +4057,8 @@ namespace WinVora
             if (!string.IsNullOrWhiteSpace(program.SizeDisplay)) detailParts.Add(program.SizeDisplay);
 
             var uninstallButton = new Button { Content = Localization.T("Nav.Uninstall") };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(uninstallButton,
+                en ? $"Uninstall {program.DisplayName}" : $"{program.DisplayName} deinstallieren");
             uninstallButton.Click += async (_, __) => await UninstallProgramAsync(program, uninstallButton);
 
             var card = new ToolkitControls.SettingsCard
@@ -3785,6 +4120,7 @@ namespace WinVora
         private void UninstallSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             var query = UninstallSearchBox.Text?.Trim() ?? "";
+            int visibleCount = 0;
 
             foreach (var child in UninstallPanel.Children)
             {
@@ -3794,8 +4130,21 @@ namespace WinVora
                                       name.Contains(query, StringComparison.OrdinalIgnoreCase)
                         ? Visibility.Visible
                         : Visibility.Collapsed;
+                    if (card.Visibility == Visibility.Visible) visibleCount++;
                 }
             }
+
+            if (_uninstallNoResultsText != null)
+                _uninstallNoResultsText.Visibility = visibleCount == 0 && !string.IsNullOrEmpty(query)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+            bool en = Localization.CurrentLanguage == "en";
+            PageSubtitle.Text = string.IsNullOrEmpty(query)
+                ? (en ? $"{_installedPrograms.Count} programs found" : $"{_installedPrograms.Count} Programme gefunden")
+                : (en
+                    ? $"Showing {visibleCount} of {_installedPrograms.Count} programs"
+                    : $"{visibleCount} von {_installedPrograms.Count} Programmen angezeigt");
         }
 
         private async Task UninstallProgramAsync(InstalledProgram program, Button sourceButton)

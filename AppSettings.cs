@@ -53,6 +53,11 @@ namespace WinVora
         // wird auf der Dashboard-Seite als kleine Liste angezeigt.
         public System.Collections.Generic.List<ActivityLogEntry> ActivityLog { get; set; } = new();
 
+        public int? WindowX { get; set; }
+        public int? WindowY { get; set; }
+        public int WindowWidth { get; set; } = 1280;
+        public int WindowHeight { get; set; } = 800;
+
         private static string SettingsFilePath =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -67,15 +72,36 @@ namespace WinVora
                 {
                     var json = File.ReadAllText(SettingsFilePath);
                     var loaded = JsonSerializer.Deserialize<AppSettings>(json);
-                    if (loaded != null) return loaded;
+                    if (loaded != null)
+                    {
+                        loaded.Validate();
+                        return loaded;
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Bei beschädigter/fehlender Datei einfach mit Standardwerten starten
+                Logger.LogError("Einstellungen konnten nicht geladen werden; Standardwerte werden verwendet", ex);
             }
 
             return new AppSettings();
+        }
+
+        private void Validate()
+        {
+            string[] startupPages = { "Übersicht", "System", "Updates", "Storage", "Uninstall" };
+            if (!Array.Exists(startupPages, page => string.Equals(page, StartupPage, StringComparison.Ordinal)))
+                StartupPage = "Übersicht";
+
+            int[] intervals = { 1, 2, 5, 10 };
+            if (Array.IndexOf(intervals, LiveUpdateIntervalSeconds) < 0)
+                LiveUpdateIntervalSeconds = 2;
+
+            if (Language is not ("de" or "en")) Language = "de";
+            GlassIntensity = Math.Clamp(GlassIntensity, 0, 64);
+            WindowWidth = Math.Clamp(WindowWidth, 900, 3840);
+            WindowHeight = Math.Clamp(WindowHeight, 650, 2160);
+            ActivityLog ??= new();
         }
 
         public void Save()
@@ -88,9 +114,9 @@ namespace WinVora
                 var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(SettingsFilePath, json);
             }
-            catch
+            catch (Exception ex)
             {
-                // Nicht kritisch, falls das Speichern fehlschlägt (z.B. keine Schreibrechte)
+                Logger.LogError("Einstellungen konnten nicht gespeichert werden", ex);
             }
         }
     }

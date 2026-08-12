@@ -12,7 +12,9 @@
 ; ============================================================
 
 #define MyAppName "WinVora"
-#define MyAppVersion "0.8.0"
+; Liest die zentrale Produktversion aus der zuvor veröffentlichten EXE.
+; Dadurch muss die Version nur noch in WinVora.csproj geändert werden.
+#define MyAppVersion GetStringFileInfo("publish\WinVora.exe", "ProductVersion")
 #define MyAppPublisher "WinVora"
 #define MyAppExeName "WinVora.exe"
 

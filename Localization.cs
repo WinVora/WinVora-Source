@@ -113,6 +113,12 @@ namespace WinVora
             ["Common.LoadingSystemInfo"] = ("Systeminfos werden geladen...", "Loading system info..."),
             ["Common.CheckingUpdates"] = ("Updates werden geprüft...", "Checking for updates..."),
 
+            // ---- Winget-Seite ----
+            ["Winget.SearchPlaceholder"] = ("Update suchen...", "Search updates..."),
+            ["Winget.Publisher"] = ("Herausgeber", "Publisher"),
+            ["Winget.Size"] = ("Größe", "Size"),
+            ["Winget.Loading"] = ("wird geladen...", "loading..."),
+
             // ---- Kontakt ----
             ["Contact.Body"] = (
                 "Fragen, Feedback oder Bugs?\n\n" +

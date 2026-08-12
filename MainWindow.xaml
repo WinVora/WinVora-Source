@@ -183,9 +183,9 @@
                           Foreground="{StaticResource AppForegroundBrush}"
                           FontSize="18"/>
 
-                                <TextBlock Text="Version 0.8.0"
-               Foreground="{StaticResource AppForegroundBrush}"
-               FontWeight="SemiBold"/>
+                                <TextBlock x:Name="NavVersionText"
+                Foreground="{StaticResource AppForegroundBrush}"
+                FontWeight="SemiBold"/>
                             </StackPanel>
 
                             <TextBlock x:Name="LblNavChangelogHint" Margin="0,8,0,0"
@@ -296,12 +296,27 @@
             Orientation="Horizontal"
             Spacing="10"
             VerticalAlignment="Center"
-            Visibility="Collapsed">
+                    Visibility="Collapsed">
+
+                        <TextBox x:Name="WingetSearchBox"
+            PlaceholderText="Update suchen..."
+            Width="220"
+            Height="42"
+            Padding="12,5,12,0"
+            CornerRadius="8"
+            VerticalAlignment="Center"
+            VerticalContentAlignment="Stretch"
+            AutomationProperties.Name="Verfügbare Updates durchsuchen"
+            TabIndex="1"
+            TextChanged="WingetSearchBox_TextChanged"/>
 
                         <Button x:Name="WingetSelectAllButton"
             Content="Alle abwählen"
             FontSize="15"
             FontWeight="SemiBold"
+            Height="42"
+            AutomationProperties.Name="Sichtbare Updates auswählen oder abwählen"
+            TabIndex="2"
             Padding="16,10"
             Click="WingetSelectAll_Click"/>
 
@@ -309,6 +324,9 @@
             Content="Refresh"
             FontSize="15"
             FontWeight="SemiBold"
+            Height="42"
+            AutomationProperties.Name="Update-Liste aktualisieren"
+            TabIndex="3"
             Padding="16,10"
             Click="Refresh_Click"/>
 
@@ -316,6 +334,9 @@
             Content="Start Update"
             FontSize="15"
             FontWeight="SemiBold"
+            Height="42"
+            AutomationProperties.Name="Ausgewählte Updates installieren"
+            TabIndex="4"
             Padding="16,10"
             Click="StartUpdate_Click"
             Style="{StaticResource AccentButtonStyle}"/>
@@ -390,12 +411,22 @@
                         <TextBox x:Name="UninstallSearchBox"
             PlaceholderText="Programm suchen..."
             Width="220"
+            Height="42"
+            Padding="12,5,12,0"
+            CornerRadius="8"
+            VerticalAlignment="Center"
+            VerticalContentAlignment="Stretch"
+            AutomationProperties.Name="Installierte Programme durchsuchen"
+            TabIndex="1"
             TextChanged="UninstallSearchBox_TextChanged"/>
 
                         <Button x:Name="UninstallRefreshButton"
             Content="Refresh"
             FontSize="15"
             FontWeight="SemiBold"
+            Height="42"
+            AutomationProperties.Name="Programmliste aktualisieren"
+            TabIndex="2"
             Padding="16,10"
             Click="UninstallRefresh_Click"/>
                     </StackPanel>

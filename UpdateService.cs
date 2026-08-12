@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -12,6 +14,7 @@ namespace WinVora
         public string Version { get; set; } = "";
         public string DownloadUrl { get; set; } = "";
         public string AssetName { get; set; } = "";
+        public string Sha256 { get; set; } = "";
         public string ReleaseNotes { get; set; } = "";
     }
 
@@ -39,6 +42,7 @@ namespace WinVora
 
             string? downloadUrl = null;
             string? assetName = null;
+            string? sha256 = null;
 
             if (root.TryGetProperty("assets", out var assets))
             {
@@ -50,13 +54,19 @@ namespace WinVora
                     {
                         downloadUrl = asset.GetProperty("browser_download_url").GetString();
                         assetName = name;
+                        if (asset.TryGetProperty("digest", out var digestProperty))
+                        {
+                            var digest = digestProperty.GetString();
+                            if (digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true)
+                                sha256 = digest[7..];
+                        }
                         break;
                     }
                 }
             }
 
             if (downloadUrl == null || assetName == null)
-                return null; // Release existiert, aber kein passender Installer als Anhang gefunden
+                throw new InvalidDataException("Für die neue Version wurde kein passender Installer veröffentlicht.");
 
             var notes = root.TryGetProperty("body", out var bodyProp) ? bodyProp.GetString() ?? "" : "";
 
@@ -65,6 +75,7 @@ namespace WinVora
                 Version = latestVersion,
                 DownloadUrl = downloadUrl,
                 AssetName = assetName,
+                Sha256 = sha256 ?? "",
                 ReleaseNotes = notes
             };
         }
@@ -85,49 +96,96 @@ namespace WinVora
             }
         }
 
-        public static async Task<string> DownloadUpdateAsync(string url, string assetName, IProgress<DownloadProgressInfo>? progress)
+        public static async Task<string> DownloadUpdateAsync(UpdateInfo update, IProgress<DownloadProgressInfo>? progress)
         {
+            if (!Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var downloadUri) ||
+                downloadUri.Scheme != Uri.UriSchemeHttps ||
+                !downloadUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Die Update-Adresse ist nicht vertrauenswürdig.");
+            }
+
+            if (string.IsNullOrWhiteSpace(update.Sha256) || update.Sha256.Length != 64 ||
+                !update.Sha256.All(Uri.IsHexDigit))
+                throw new InvalidOperationException("GitHub liefert keine gültige SHA-256-Prüfsumme für dieses Update.");
+
+            var safeAssetName = Path.GetFileName(update.AssetName);
+            if (string.IsNullOrWhiteSpace(safeAssetName) ||
+                !safeAssetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Der Dateiname des Updates ist ungültig.");
+            }
+
             // Eindeutiger Dateiname pro Versuch - verhindert, dass ein noch
             // laufender Installer aus einem vorherigen Update-Versuch die Datei
             // für den nächsten Download blockiert ("wird von einem anderen
             // Prozess verwendet").
-            var uniqueName = $"{Path.GetFileNameWithoutExtension(assetName)}_{Guid.NewGuid():N}{Path.GetExtension(assetName)}";
+            var uniqueName = $"{Path.GetFileNameWithoutExtension(safeAssetName)}_{Guid.NewGuid():N}{Path.GetExtension(safeAssetName)}";
             var tempPath = Path.Combine(Path.GetTempPath(), uniqueName);
 
             using var client = new HttpClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("WinVora-UpdateChecker");
             client.Timeout = TimeSpan.FromMinutes(5);
 
-            Logger.Log($"Update-Download startet: {url}");
+            Logger.Log($"Update-Download startet: {update.DownloadUrl}");
 
-            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-
-            var totalBytes = response.Content.Headers.ContentLength ?? -1;
-            Logger.Log($"Update-Download: HTTP {(int)response.StatusCode}, Content-Length: {(totalBytes > 0 ? totalBytes.ToString() : "unbekannt")}");
-
-            await using var contentStream = await response.Content.ReadAsStreamAsync();
-            await using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
-
-            var buffer = new byte[81920];
-            long totalRead = 0;
-            int bytesRead;
-
-            while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+            try
             {
-                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
-                totalRead += bytesRead;
+                using var response = await client.GetAsync(downloadUri, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
 
-                // Wird IMMER gemeldet (auch ohne bekannte Gesamtgröße), damit in
-                // der UI sichtbar ist, dass tatsächlich Daten ankommen - vorher
-                // blieb der Text bei unbekannter Content-Length einfach stehen,
-                // was wie ein Hänger aussah, obwohl im Hintergrund weiterlief.
-                progress?.Report(new DownloadProgressInfo(totalRead, totalBytes));
+                var finalUri = response.RequestMessage?.RequestUri;
+                if (finalUri == null || finalUri.Scheme != Uri.UriSchemeHttps ||
+                    !(finalUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                      finalUri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new InvalidOperationException("Das Update wurde auf ein nicht vertrauenswürdiges Downloadziel umgeleitet.");
+                }
+
+                var totalBytes = response.Content.Headers.ContentLength ?? -1;
+                Logger.Log($"Update-Download: HTTP {(int)response.StatusCode}, Content-Length: {(totalBytes > 0 ? totalBytes.ToString() : "unbekannt")}");
+
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using (var fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    var buffer = new byte[81920];
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                        totalRead += bytesRead;
+                        progress?.Report(new DownloadProgressInfo(totalRead, totalBytes));
+                    }
+
+                    Logger.Log($"Update-Download abgeschlossen: {totalRead} Bytes -> {tempPath}");
+                }
+
+                await using var verificationStream = File.OpenRead(tempPath);
+                var actualHash = Convert.ToHexString(await SHA256.HashDataAsync(verificationStream));
+                if (!actualHash.Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException(
+                        "Die SHA-256-Prüfsumme des Downloads stimmt nicht mit GitHub überein.");
+                }
+
+                Logger.Log($"Update-Prüfsumme bestätigt: {actualHash.ToLowerInvariant()}");
+                return tempPath;
             }
+            catch
+            {
+                try
+                {
+                    if (File.Exists(tempPath)) File.Delete(tempPath);
+                }
+                catch (Exception cleanupException)
+                {
+                    Logger.LogError("Temporäre Update-Datei konnte nicht gelöscht werden", cleanupException);
+                }
 
-            Logger.Log($"Update-Download abgeschlossen: {totalRead} Bytes -> {tempPath}");
-
-            return tempPath;
+                throw;
+            }
         }
 
         // Startet den heruntergeladenen Installer im komplett stillen Modus
@@ -147,6 +205,29 @@ namespace WinVora
             };
 
             Process.Start(psi);
+        }
+
+        public static void CleanupOldDownloads()
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), "WinVora-Setup-*.exe"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddDays(-1))
+                            File.Delete(file);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Alte Update-Datei konnte nicht entfernt werden: {file}", ex);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Alte Update-Downloads konnten nicht geprüft werden", ex);
+            }
         }
     }
 

@@ -119,6 +119,24 @@ namespace WinVora
         // echte Icons statt Platzhaltern anzuzeigen.
         public static string? FindIconPathForName(List<InstalledProgram> installedPrograms, string nameHint)
         {
+            var match = FindBestMatch(installedPrograms, nameHint, null);
+
+            return string.IsNullOrWhiteSpace(match?.IconPath) ? null : match.IconPath;
+        }
+
+        // Winget-Manifeste enthalten häufig keine Größenangabe. In diesem Fall
+        // können Herausgeber und installierte Größe aus dem Windows-Uninstall-
+        // Eintrag des bereits installierten Programms übernommen werden.
+        public static (string Publisher, string Size) FindDetailsForPackage(
+            List<InstalledProgram> installedPrograms, string packageName, string packageId)
+        {
+            var match = FindBestMatch(installedPrograms, packageName, packageId);
+            return match == null ? ("", "") : (match.Publisher, match.SizeDisplay);
+        }
+
+        private static InstalledProgram? FindBestMatch(
+            List<InstalledProgram> installedPrograms, string nameHint, string? packageId)
+        {
             if (string.IsNullOrWhiteSpace(nameHint)) return null;
 
             var match = installedPrograms.FirstOrDefault(p =>
@@ -128,7 +146,16 @@ namespace WinVora
                 p.DisplayName.Contains(nameHint, StringComparison.OrdinalIgnoreCase) ||
                 nameHint.Contains(p.DisplayName, StringComparison.OrdinalIgnoreCase));
 
-            return string.IsNullOrWhiteSpace(match?.IconPath) ? null : match.IconPath;
+            if (match != null || string.IsNullOrWhiteSpace(packageId)) return match;
+
+            // Als letzter Fallback den letzten aussagekräftigen Teil der Winget-ID
+            // verwenden, z.B. "Microsoft.PowerToys" -> "PowerToys".
+            var idHint = packageId.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (string.IsNullOrWhiteSpace(idHint) || idHint.Length < 4) return null;
+
+            return installedPrograms.FirstOrDefault(p =>
+                p.DisplayName.Contains(idHint, StringComparison.OrdinalIgnoreCase) ||
+                idHint.Contains(p.DisplayName, StringComparison.OrdinalIgnoreCase));
         }
 
         private static string ResolveIconPath(string? displayIcon, string? installLocation)
