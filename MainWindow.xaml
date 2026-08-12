@@ -49,7 +49,7 @@
         </Grid.Background>
 
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
+            <ColumnDefinition x:Name="SidebarColumn" Width="280"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -107,7 +107,7 @@
                     </Button>
 
                     <Grid>
-                        <Button Padding="12"
+                        <Button x:Name="NavSettingsButton" Padding="12"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Left"
                                 CornerRadius="16"
@@ -145,7 +145,7 @@
                         </Border>
                     </Grid>
 
-                    <Button Padding="12"
+                    <Button x:Name="NavChangelogButton" Padding="12"
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Stretch"
         CornerRadius="16"
@@ -173,7 +173,7 @@
                         </StackPanel>
                     </Button>
 
-                    <Grid ColumnSpacing="10">
+                    <Grid x:Name="SidebarFooterLinks" ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
@@ -238,13 +238,17 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="0,0,0,10">
+                <Grid Grid.Row="0" Margin="0,0,0,16" RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Spacing="4">
+                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
                         <StackPanel Orientation="Horizontal"
                 Spacing="12"
                 VerticalAlignment="Center">
@@ -269,6 +273,7 @@
 
                     <!-- Nur auf der Apps-Seite sichtbar -->
                     <StackPanel x:Name="AppsActionBar"
+            Grid.Row="0"
             Grid.Column="1"
             Orientation="Horizontal"
             Spacing="10"
@@ -279,7 +284,7 @@
             PlaceholderText="Update suchen..."
             Width="220"
             Height="42"
-            Padding="12,5,12,0"
+            Padding="12,9,12,0"
             CornerRadius="8"
             VerticalAlignment="Center"
             VerticalContentAlignment="Stretch"
@@ -287,16 +292,35 @@
             TabIndex="1"
             TextChanged="WingetSearchBox_TextChanged"/>
 
-                        <CheckBox x:Name="WingetSelectAllButton"
-            Content="Alle abwählen"
-            FontSize="15"
+                        <Button x:Name="WingetClearSearchButton"
+                                Width="38" Height="42" Padding="0"
+                                Visibility="Collapsed"
+                                AutomationProperties.Name="Update-Suche leeren"
+                                Click="WingetClearSearch_Click">
+                            <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                        </Button>
+
+                        <Button x:Name="WingetSelectAllButton"
+            FontSize="14"
             FontWeight="SemiBold"
             Height="42"
+            MinWidth="154"
+            CornerRadius="8"
             AutomationProperties.Name="Sichtbare Updates auswählen oder abwählen"
             TabIndex="2"
-            Padding="16,10"
-            IsChecked="True"
-            Click="WingetSelectAll_Click"/>
+            Padding="14,8"
+            Click="WingetSelectAll_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="9">
+                                <Border x:Name="WingetSelectAllIndicator"
+                                        Width="18" Height="18" CornerRadius="4"
+                                        Background="{StaticResource AppAccentBrush}"
+                                        BorderBrush="{StaticResource AppAccentBrushLight}"
+                                        BorderThickness="1">
+                                    <FontIcon x:Name="WingetSelectAllIcon" Glyph="&#xE73E;" FontSize="10" Foreground="White"/>
+                                </Border>
+                                <TextBlock x:Name="WingetSelectAllText" Text="Alle abwählen" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
 
                         <Button x:Name="RefreshButton"
             FontSize="15"
@@ -308,7 +332,7 @@
             Click="Refresh_Click"><FontIcon Glyph="&#xE72C;"/></Button>
 
                         <Button x:Name="StartUpdateButton"
-            Content="Start Update"
+            Content="Updates installieren"
             FontSize="15"
             FontWeight="SemiBold"
             Height="42"
@@ -321,6 +345,7 @@
 
                     <!-- Nur auf der Systeminfo-Seite sichtbar -->
                     <StackPanel x:Name="SystemActionBar"
+            Grid.Row="0"
             Grid.Column="1"
             Orientation="Horizontal"
             Spacing="10"
@@ -348,6 +373,7 @@
 
                     <!-- Nur auf der Storage-Seite sichtbar -->
                     <StackPanel x:Name="StorageActionBar"
+            Grid.Row="0"
             Grid.Column="1"
             Orientation="Horizontal"
             Spacing="10"
@@ -362,7 +388,7 @@
             Click="StorageSelectAll_Click"/>
 
                         <Button x:Name="StorageRefreshButton"
-            Content="Refresh"
+            Content="Aktualisieren"
             FontSize="15"
             FontWeight="SemiBold"
             Padding="16,10"
@@ -373,12 +399,16 @@
             FontSize="15"
             FontWeight="SemiBold"
             Padding="16,10"
+            Background="#28FF6B6B"
+            BorderBrush="#66FF6B6B"
+            BorderThickness="1"
             Click="StorageDeleteSelected_Click"
-            Style="{StaticResource AccentButtonStyle}"/>
+            />
                     </StackPanel>
 
                     <!-- Nur auf der Deinstaller-Seite sichtbar -->
                     <StackPanel x:Name="UninstallActionBar"
+            Grid.Row="0"
             Grid.Column="1"
             Orientation="Horizontal"
             Spacing="10"
@@ -389,7 +419,7 @@
             PlaceholderText="Programm suchen..."
             Width="220"
             Height="42"
-            Padding="12,5,12,0"
+            Padding="12,9,12,0"
             CornerRadius="8"
             VerticalAlignment="Center"
             VerticalContentAlignment="Stretch"
@@ -397,8 +427,16 @@
             TabIndex="1"
             TextChanged="UninstallSearchBox_TextChanged"/>
 
+                        <Button x:Name="UninstallClearSearchButton"
+                                Width="38" Height="42" Padding="0"
+                                Visibility="Collapsed"
+                                AutomationProperties.Name="Programmsuche leeren"
+                                Click="UninstallClearSearch_Click">
+                            <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                        </Button>
+
                         <Button x:Name="UninstallRefreshButton"
-            Content="Refresh"
+            Content="Aktualisieren"
             FontSize="15"
             FontWeight="SemiBold"
             Height="42"
@@ -459,6 +497,31 @@
                                  Maximum="100"
                                  Foreground="{StaticResource AppAccentBrush}"/>
                 </StackPanel>
+
+                <!-- Status während eine Programm-Deinstallation gestartet wird -->
+                <Border x:Name="UninstallStatusPanel"
+                        Grid.Row="1"
+                        Margin="0,0,0,10"
+                        Padding="14,10"
+                        CornerRadius="10"
+                        Background="{StaticResource AppOverlay18}"
+                        BorderBrush="{StaticResource AppOverlay28}"
+                        BorderThickness="1"
+                        Visibility="Collapsed">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ProgressRing x:Name="UninstallStatusRing" Width="18" Height="18" IsActive="True"/>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock x:Name="UninstallStatusText" FontSize="13" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="UninstallStatusDetailText" FontSize="11" Foreground="{StaticResource AppFaintForegroundBrush}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <FontIcon x:Name="UninstallStatusIcon" Grid.Column="2" FontSize="17" Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
 
                 <ScrollViewer x:Name="MainContentScrollViewer" Grid.Row="2"
               HorizontalScrollBarVisibility="Disabled"
@@ -549,28 +612,31 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border x:Name="StatCardUpdates" Grid.Column="0" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardUpdates" Grid.Column="0" Tapped="DashUpdates_Tapped" CornerRadius="16" Padding="24"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
                                         BorderThickness="1"
-                                        ToolTipService.ToolTip="Anzahl verfügbarer Winget-Updates">
+                                        ToolTipService.ToolTip="Programm-Updates öffnen">
                                     <StackPanel Spacing="12">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <FontIcon Glyph="&#xE896;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
                                             <TextBlock x:Name="LblStatUpdates" Text="Updates" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                         </StackPanel>
                                         <TextBlock x:Name="HealthUpdatesText" Text="--" FontSize="24" FontWeight="Bold" Foreground="{StaticResource AppForegroundBrush}"/>
-                                        <TextBlock x:Name="LblStatUpdatesSub" Text="Winget-Pakete" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                        <TextBlock x:Name="LblStatUpdatesSub" Text="Update-Pakete" FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
 
                             <!-- ===== Live-Dashboard ===== -->
-                            <controls:SettingsCard x:Name="LiveDashboardCard" Header="Live-Dashboard" CornerRadius="16"
-                           HorizontalAlignment="Stretch"
-                           HorizontalContentAlignment="Stretch"
-                           Padding="26">
+                            <Border x:Name="LiveDashboardCard"
+                                    CornerRadius="16"
+                                    HorizontalAlignment="Stretch"
+                                    Padding="26"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1">
                                 <Grid ColumnSpacing="14" RowSpacing="14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -583,7 +649,7 @@
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
-                                    <Border Grid.Row="0" Grid.Column="0" x:Name="DashCardDisk" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                    <Border Grid.Row="0" Grid.Column="0" x:Name="DashCardDisk" Tapped="DashDisk_Tapped" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" ToolTipService.ToolTip="Dateibereinigung öffnen">
                                         <StackPanel Spacing="6">
                                             <FontIcon Glyph="&#xEDA2;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
                                             <TextBlock x:Name="LblDashDisk" Text="Speicherplatz" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -594,12 +660,12 @@
                                     <Border Grid.Row="0" Grid.Column="1" x:Name="DashCardTemp" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
                                         <StackPanel Spacing="6">
                                             <FontIcon Glyph="&#xE9CA;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
-                                            <TextBlock x:Name="LblDashTemp" Text="Temperatur" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock x:Name="DashTempText" Text="Nicht verfügbar" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                            <TextBlock x:Name="LblDashTemp" Text="Windows-Version" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="DashTempText" Text="Wird ermittelt..." FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppFaintForegroundBrush}"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Row="0" Grid.Column="2" x:Name="DashCardPrograms" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                    <Border Grid.Row="0" Grid.Column="2" x:Name="DashCardPrograms" Tapped="DashPrograms_Tapped" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" ToolTipService.ToolTip="Installierte Programme öffnen">
                                         <StackPanel Spacing="6">
                                             <FontIcon Glyph="&#xE71D;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
                                             <TextBlock x:Name="LblDashPrograms" Text="Programme" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -607,7 +673,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Row="0" Grid.Column="3" x:Name="DashCardCleanup" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                    <Border Grid.Row="0" Grid.Column="3" x:Name="DashCardCleanup" Tapped="DashDisk_Tapped" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" ToolTipService.ToolTip="Dateibereinigung öffnen">
                                         <StackPanel Spacing="6">
                                             <FontIcon Glyph="&#xE74D;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
                                             <TextBlock x:Name="LblDashCleanup" Text="Zuletzt bereinigt" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -615,7 +681,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Row="1" Grid.Column="0" x:Name="DashCardUpdatesDetail" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                    <Border Grid.Row="1" Grid.Column="0" x:Name="DashCardUpdatesDetail" Visibility="Collapsed" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
                                         <StackPanel Spacing="6">
                                             <FontIcon Glyph="&#xE895;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
                                             <TextBlock x:Name="LblDashUpdatesAvailable" Text="Verfügbare Updates" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -623,7 +689,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Row="1" Grid.Column="1" x:Name="DashCardRam" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
+                                    <Border Grid.Row="1" Grid.Column="1" x:Name="DashCardRam" Visibility="Collapsed" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1">
                                         <StackPanel Spacing="6">
                                             <FontIcon Glyph="&#xEEA1;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
                                             <TextBlock x:Name="LblDashRam" Text="Arbeitsspeicher" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -631,17 +697,29 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" x:Name="DashCardStatus" CornerRadius="16" Padding="18"
+                                    <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" x:Name="DashCardStatus" CornerRadius="16" Padding="18,14"
                                             Background="{StaticResource AppAccentOverlay10}"
                                             BorderBrush="{StaticResource AppAccentOverlay20}" BorderThickness="1">
-                                        <StackPanel Spacing="6">
-                                            <FontIcon Glyph="&#xE73E;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
-                                            <TextBlock x:Name="LblDashStatus" Text="Gesamtstatus" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock x:Name="DashOverallStatusText" Text="Wird geprüft..." FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                        <StackPanel Spacing="12">
+                                            <Grid ColumnSpacing="10">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <Border Width="28" Height="28" CornerRadius="14" Background="{StaticResource AppAccentOverlay20}">
+                                                    <FontIcon Glyph="&#xE73E;" FontSize="13" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                                </Border>
+                                                <TextBlock Grid.Column="1" x:Name="LblDashStatus" Text="Gesamtstatus" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" x:Name="DashOverallBadgeText" Text="Alles in Ordnung" FontSize="12" Foreground="#4CD973" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <Grid ColumnSpacing="10">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="DashUpdatesStatusDot" Width="8" Height="8" Fill="{StaticResource AppAccentBrushLight}"/><TextBlock x:Name="DashUpdatesStatusText" Text="Updates werden geprüft" TextWrapping="Wrap"/></StackPanel></Border>
+                                                <Border Grid.Column="1" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="DashSecurityStatusDot" Width="8" Height="8" Fill="{StaticResource AppAccentBrushLight}"/><TextBlock x:Name="DashSecurityStatusText" Text="Sicherheit wird geprüft" TextWrapping="Wrap"/></StackPanel></Border>
+                                                <Border Grid.Column="2" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="8" Height="8" Fill="#4CD973"/><TextBlock x:Name="DashSystemStatusText" Text="Systemüberwachung läuft" TextWrapping="Wrap"/></StackPanel></Border>
+                                            </Grid>
+                                            <TextBlock x:Name="DashOverallStatusText" Text="Wird geprüft..." Visibility="Collapsed"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
-                            </controls:SettingsCard>
+                            </Border>
 
                             <!-- ===== Mini-Verlaufsdiagramme (CPU/RAM/GPU) ===== -->
                             <!-- BUGFIX: SettingsCard richtet ihren Content-Bereich fest
@@ -663,7 +741,7 @@
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-                                    <TextBlock x:Name="HistoryCard" Grid.Row="0" Grid.ColumnSpan="3" Text="Verlauf" FontSize="16" FontWeight="SemiBold"
+                                    <TextBlock x:Name="HistoryCard" Grid.Row="0" Grid.ColumnSpan="3" Text="Auslastung der letzten Minuten" FontSize="16" FontWeight="SemiBold"
                                                Foreground="{StaticResource AppForegroundBrush}" VerticalAlignment="Center"/>
 
                                     <!-- Gleicher Kachel-Stil wie die Live-Dashboard-Kacheln oben:
@@ -999,14 +1077,12 @@
                         VerticalAlignment="Center"
                         Margin="16,0,0,0">
 
-                <Border Width="22" Height="22" CornerRadius="6" Background="Black">
-                    <TextBlock Text="W"
-                               FontWeight="Bold"
-                               FontSize="13"
-                               Foreground="White"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
-                </Border>
+                <!-- Dieselbe Quelldatei wie Fenster, EXE und Installer verwenden. -->
+                <Image Width="22"
+                       Height="22"
+                       Source="app-logo.png"
+                       Stretch="Uniform"
+                       AutomationProperties.Name="WinVora-Logo"/>
 
                 <TextBlock Text="WinVora"
                            FontWeight="SemiBold"
@@ -1022,7 +1098,7 @@
                 Grid.ColumnSpan="2"
                 Height="1"
                 VerticalAlignment="Top"
-                Margin="0,32,0,0"
+                Margin="0,31,0,0"
                 Background="{StaticResource AppOverlay1E}"/>
 
         <Border x:Name="GlobalStatusBar" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom"
@@ -1058,54 +1134,55 @@
                      siehe CreateGlassBand() in MainWindow.xaml.cs). -->
                 <Canvas x:Name="StartupGlassBandsHost"/>
 
-                <StackPanel HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Spacing="20">
+                <!-- Ruhige Kontrastfläche vor dem animierten Wabenraster. -->
+                <Border HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0">
+                    <StackPanel Spacing="16">
+                        <Border Width="76"
+                                Height="76"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                HorizontalAlignment="Center">
+                            <Image Width="68"
+                                   Height="68"
+                                   Source="app-logo.png"
+                                   Stretch="Uniform"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   AutomationProperties.Name="WinVora-Logo"/>
+                        </Border>
 
-                    <!-- Logo wie im echten App-Icon: schwarze, abgerundete Box mit
-                         diagonalem Glas-Akzent und dem "W" mittig darüber. -->
-                    <Border Width="64" Height="64" CornerRadius="16"
-                            Background="Black"
-                            HorizontalAlignment="Center">
-                        <Grid>
-                            <Path Fill="#28FFFFFF" Stretch="Fill">
-                                <Path.Data>
-                                    <PathGeometry>
-                                        <PathFigure StartPoint="0,40" IsClosed="True">
-                                            <LineSegment Point="64,8"/>
-                                            <LineSegment Point="64,24"/>
-                                            <LineSegment Point="0,56"/>
-                                        </PathFigure>
-                                    </PathGeometry>
-                                </Path.Data>
-                            </Path>
+                        <TextBlock Text="WinVora"
+                                   FontSize="38"
+                                   FontWeight="Bold"
+                                   Foreground="#FFFFFFFF"
+                                   CharacterSpacing="15"
+                                   HorizontalAlignment="Center"/>
 
-                            <TextBlock Text="W"
-                                       FontWeight="Bold"
-                                       FontSize="30"
-                                       Foreground="White"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
-
-                    <TextBlock Text="WinVora"
-                               FontSize="40"
-                               FontWeight="Bold"
-                               Foreground="White"
-                               HorizontalAlignment="Center"/>
-
-                    <ProgressRing IsActive="True"
-                                  Width="36"
-                                  Height="36"
-                                  HorizontalAlignment="Center"/>
-
-                    <TextBlock x:Name="StartupStatusText"
-                               Text="Wird geladen..."
-                               FontSize="15"
-                               Foreground="#B0FFFFFF"
-                               HorizontalAlignment="Center"/>
-                </StackPanel>
+                        <Border Padding="14,8"
+                                CornerRadius="10"
+                                Background="#CC18181D"
+                                BorderBrush="#356C5CE7"
+                                BorderThickness="1"
+                                HorizontalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <ProgressRing IsActive="True"
+                                              Width="20"
+                                              Height="20"
+                                              Foreground="#FF8B7CF6"
+                                              VerticalAlignment="Center"/>
+                                <TextBlock x:Name="StartupStatusText"
+                                           Text="Wird geladen..."
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FFF2F2F5"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 

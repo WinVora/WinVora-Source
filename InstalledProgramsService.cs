@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace WinVora
@@ -192,24 +193,66 @@ namespace WinVora
                     ? program.QuietUninstallString
                     : program.UninstallString;
 
-                // UninstallString ist z.B. "MsiExec.exe /X{GUID}" oder ein Pfad zu einem
-                // Setup/Uninstall.exe. Über cmd /c ausführen, damit beide Formen funktionieren,
-                // inkl. evtl. Anführungszeichen im Pfad.
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c \"{command}\"",
-                    UseShellExecute = true, // lässt ggf. UAC-Prompt des Deinstallers zu
-                    CreateNoWindow = false
-                };
+                var expandedCommand = Environment.ExpandEnvironmentVariables(command.Trim());
+                ProcessStartInfo psi;
 
-                Process.Start(psi);
+                // Direkter Start verhindert ein unnötiges, teilweise offen bleibendes
+                // cmd-Fenster (z.B. bei Steam-URLs). Nur echte Shell-Ausdrücke
+                // benötigen weiterhin cmd.exe als unsichtbaren Fallback.
+                if (TrySplitCommand(expandedCommand, out string executable, out string arguments))
+                {
+                    psi = new ProcessStartInfo
+                    {
+                        FileName = executable,
+                        Arguments = arguments,
+                        UseShellExecute = true
+                    };
+                }
+                else
+                {
+                    psi = new ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = $"/d /s /c \"{expandedCommand}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                }
+
+                if (Process.Start(psi) == null)
+                    return (false, "Der Deinstaller konnte nicht gestartet werden.");
                 return (true, "Deinstallation gestartet - folge ggf. dem Assistenten in einem neuen Fenster.");
             }
             catch (Exception ex)
             {
                 return (false, $"Fehler: {ex.Message}");
             }
+        }
+
+        internal static bool TrySplitCommand(string command, out string executable, out string arguments)
+        {
+            executable = "";
+            arguments = "";
+            if (string.IsNullOrWhiteSpace(command)) return false;
+
+            if (command.IndexOfAny(new[] { '&', '|', '<', '>' }) >= 0)
+                return false;
+
+            if (command[0] == '"')
+            {
+                int closingQuote = command.IndexOf('"', 1);
+                if (closingQuote <= 1) return false;
+                executable = command[1..closingQuote];
+                arguments = command[(closingQuote + 1)..].Trim();
+                return true;
+            }
+
+            var executableMatch = Regex.Match(command, @"^(.+?\.(?:exe|com|bat|cmd))(?=\s|$)", RegexOptions.IgnoreCase);
+            if (!executableMatch.Success) return false;
+            executable = executableMatch.Groups[1].Value.Trim();
+            arguments = command[executableMatch.Length..].Trim();
+            return true;
         }
 
         private static string FormatBytes(long bytes)

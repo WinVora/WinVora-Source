@@ -12,7 +12,7 @@ if exist publish (
     rmdir /s /q publish
 )
 
-echo Erstelle Self-Contained Single-File Build...
+echo Erstelle Self-Contained Release-Build...
 dotnet publish WinVora.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -o publish
 
 if %ERRORLEVEL% NEQ 0 (

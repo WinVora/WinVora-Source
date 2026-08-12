@@ -22,15 +22,24 @@ namespace WinVora
             return result;
         }
 
-        public static void SetEnabled(AutostartEntry entry, bool enabled)
+        public static bool SetEnabled(AutostartEntry entry, bool enabled)
         {
-            string sourcePath = enabled ? DisabledKey : RunKey;
-            string targetPath = enabled ? RunKey : DisabledKey;
-            using var source = Registry.CurrentUser.OpenSubKey(sourcePath, writable: true);
-            using var target = Registry.CurrentUser.CreateSubKey(targetPath, writable: true);
-            string command = source?.GetValue(entry.Name)?.ToString() ?? entry.Command;
-            target.SetValue(entry.Name, command, RegistryValueKind.String);
-            source?.DeleteValue(entry.Name, throwOnMissingValue: false);
+            try
+            {
+                string sourcePath = enabled ? DisabledKey : RunKey;
+                string targetPath = enabled ? RunKey : DisabledKey;
+                using var source = Registry.CurrentUser.OpenSubKey(sourcePath, writable: true);
+                using var target = Registry.CurrentUser.CreateSubKey(targetPath, writable: true);
+                string command = source?.GetValue(entry.Name)?.ToString() ?? entry.Command;
+                target.SetValue(entry.Name, command, RegistryValueKind.String);
+                source?.DeleteValue(entry.Name, throwOnMissingValue: false);
+                return string.Equals(target.GetValue(entry.Name)?.ToString(), command, StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"AutostartService.SetEnabled({entry.Name})", ex);
+                return false;
+            }
         }
 
         public static bool CommandTargetExists(string command)

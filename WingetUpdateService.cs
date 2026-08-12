@@ -45,11 +45,11 @@ namespace WinVora
                 var standardOutput = new StringBuilder();
                 var errorOutput = new StringBuilder();
 
-                Task outputTask = ReadOutputAsync(process.StandardOutput, standardOutput, progress);
-                Task errorTask = ReadOutputAsync(process.StandardError, errorOutput, null);
+                Task outputTask = ReadOutputAsync(process.StandardOutput, standardOutput, progress, cancellationToken);
+                Task errorTask = ReadOutputAsync(process.StandardError, errorOutput, null, cancellationToken);
 
                 progress.Report(new WingetUpdateProgress(WingetUpdatePhase.Waiting, "", null));
-                await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync());
+                await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(cancellationToken));
 
                 string combinedOutput = $"{standardOutput}\n{errorOutput}";
                 bool restartRequired = WingetErrorTranslator.ContainsRestartRequired(combinedOutput) ||
@@ -74,6 +74,14 @@ namespace WinVora
                     process.ExitCode,
                     WingetErrorTranslator.GetFriendlyMessage(process.ExitCode, combinedOutput, status),
                     restartRequired);
+            }
+            catch (OperationCanceledException)
+            {
+                return new WingetUpdateResult(
+                    WingetUpdateStatus.Cancelled,
+                    -1,
+                    Localization.CurrentLanguage == "en" ? "Installer was cancelled." : "Installer wurde abgebrochen.",
+                    false);
             }
             catch (Exception ex)
             {
@@ -115,11 +123,12 @@ namespace WinVora
         private static async Task ReadOutputAsync(
             System.IO.StreamReader reader,
             StringBuilder output,
-            IProgress<WingetUpdateProgress>? progress)
+            IProgress<WingetUpdateProgress>? progress,
+            CancellationToken cancellationToken)
         {
-            while (!reader.EndOfStream)
+            while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
             {
-                string? line = await reader.ReadLineAsync();
+                string? line = await reader.ReadLineAsync(cancellationToken);
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 output.AppendLine(line);

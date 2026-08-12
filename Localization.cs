@@ -18,7 +18,7 @@ namespace WinVora
             // ---- Sidebar-Navigation ----
             ["Nav.Dashboard"] = ("Dashboard", "Dashboard"),
             ["Nav.System"] = ("Systeminfo", "System Info"),
-            ["Nav.Updates"] = ("Winget", "Winget"),
+            ["Nav.Updates"] = ("Updates", "Updates"),
             ["Nav.Files"] = ("Dateien", "Files"),
             ["Nav.Uninstall"] = ("Deinstallieren", "Uninstall"),
             ["Nav.Settings"] = ("Einstellungen", "Settings"),
@@ -29,7 +29,7 @@ namespace WinVora
             // ---- Große Seiten-Überschrift ----
             ["PageTitle.Dashboard"] = ("Dashboard", "Dashboard"),
             ["PageTitle.System"] = ("Systeminfo", "System Info"),
-            ["PageTitle.Updates"] = ("Winget", "Winget"),
+            ["PageTitle.Updates"] = ("Programm-Updates", "Program Updates"),
             ["PageTitle.Storage"] = ("Dateien", "Files"),
             ["PageTitle.Uninstall"] = ("Deinstallieren", "Uninstall"),
 
@@ -42,7 +42,7 @@ namespace WinVora
             ["Stat.Security"] = ("Sicherheit", "Security"),
             ["Stat.SecurityLabel"] = ("Defender / Firewall", "Defender / Firewall"),
             ["Stat.Updates"] = ("Updates", "Updates"),
-            ["Stat.UpdatesLabel"] = ("Winget-Pakete", "Winget packages"),
+            ["Stat.UpdatesLabel"] = ("Update-Pakete", "Update packages"),
 
             // ---- Live-Dashboard-Kacheln ----
             ["Dash.Header"] = ("Live-Dashboard", "Live Dashboard"),
@@ -73,8 +73,9 @@ namespace WinVora
             ["Settings.WindowTitle"] = ("WinVora Einstellungen", "WinVora Settings"),
             ["Settings.Appearance"] = ("Darstellung", "Appearance"),
             ["Settings.LightMode"] = ("Heller Modus", "Light Mode"),
+            ["Settings.ColorScheme"] = ("Farbschema", "Color scheme"),
             ["Settings.UseMica"] = ("Mica-Hintergrund verwenden", "Use Mica background"),
-            ["Settings.Animations"] = ("Animationen beim Seitenwechsel", "Page transition animations"),
+            ["Settings.Animations"] = ("App-Animationen", "App animations"),
             ["Settings.On"] = ("An", "On"),
             ["Settings.Off"] = ("Aus", "Off"),
             ["Settings.Behavior"] = ("Verhalten", "Behavior"),
@@ -106,7 +107,7 @@ namespace WinVora
             // ---- Allgemein ----
             ["Common.SelectAll"] = ("Alle auswählen", "Select All"),
             ["Common.DeselectAll"] = ("Alle abwählen", "Deselect All"),
-            ["Common.Refresh"] = ("Refresh", "Refresh"),
+            ["Common.Refresh"] = ("Aktualisieren", "Refresh"),
             ["Common.None"] = ("Keine", "None"),
             ["Common.Checking"] = ("Prüfe...", "Checking..."),
             ["Common.Loading"] = ("Wird geladen...", "Loading..."),
@@ -163,7 +164,7 @@ namespace WinVora
             ["System.Card.Battery"] = ("Energie", "Power"),
 
             // ---- Winget-Seite: Action-Bar ----
-            ["Winget.StartUpdate"] = ("Start Update", "Start Update"),
+            ["Winget.StartUpdate"] = ("Updates installieren", "Install updates"),
 
             // ---- Storage-Seite: Gruppen + Action-Bar ----
             ["Storage.TempFiles"] = ("Temporäre Dateien", "Temporary Files"),

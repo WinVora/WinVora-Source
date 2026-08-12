@@ -32,11 +32,20 @@ namespace WinVora
         // Ob das Mica-Backdrop des Fensters genutzt werden soll.
         public bool UseMica { get; set; } = true;
 
-        // Ob Ein-/Ausblend-Animationen beim Seitenwechsel reduziert werden sollen.
+        // Ob Animationen in der App, einschließlich Ladebildschirm und
+        // Seitenwechsel, reduziert werden sollen.
         public bool ReducedMotion { get; set; } = false;
+
+        // "Full", "Reduced" oder "Off". ReducedMotion bleibt für ältere
+        // Einstellungsdateien kompatibel und wird daraus abgeleitet.
+        public string AnimationMode { get; set; } = "Full";
 
         // Ob die Oberfläche im dunklen (true) oder hellen (false) Modus dargestellt wird.
         public bool DarkMode { get; set; } = true;
+
+        // "System", "Dark" oder "Light". DarkMode bleibt für ältere
+        // Einstellungsdateien als kompatibler Rückfallwert erhalten.
+        public string ColorScheme { get; set; } = "System";
 
         // Ob WinVora automatisch mit Windows starten soll.
         public bool AutoStartWithWindows { get; set; } = false;
@@ -71,8 +80,8 @@ namespace WinVora
         public int WindowHeight { get; set; } = 800;
         public int? SettingsWindowX { get; set; }
         public int? SettingsWindowY { get; set; }
-        public int SettingsWindowWidth { get; set; } = 460;
-        public int SettingsWindowHeight { get; set; } = 620;
+        public int SettingsWindowWidth { get; set; } = 560;
+        public int SettingsWindowHeight { get; set; } = 680;
         public int? ChangelogWindowX { get; set; }
         public int? ChangelogWindowY { get; set; }
         public int ChangelogWindowWidth { get; set; } = 560;
@@ -107,7 +116,7 @@ namespace WinVora
             return new AppSettings();
         }
 
-        private void Validate()
+        internal void Validate()
         {
             string[] startupPages = { "Übersicht", "System", "Updates", "Storage", "Uninstall" };
             if (!Array.Exists(startupPages, page => string.Equals(page, StartupPage, StringComparison.Ordinal)))
@@ -118,6 +127,11 @@ namespace WinVora
                 LiveUpdateIntervalSeconds = 2;
 
             if (Language is not ("de" or "en")) Language = "de";
+            if (ColorScheme is not ("System" or "Dark" or "Light"))
+                ColorScheme = DarkMode ? "Dark" : "Light";
+            if (AnimationMode is not ("Full" or "Reduced" or "Off"))
+                AnimationMode = ReducedMotion ? "Reduced" : "Full";
+            ReducedMotion = AnimationMode != "Full";
             GlassIntensity = Math.Clamp(GlassIntensity, 0, 64);
             WindowWidth = Math.Clamp(WindowWidth, 900, 3840);
             WindowHeight = Math.Clamp(WindowHeight, 650, 2160);
@@ -138,7 +152,12 @@ namespace WinVora
                 if (dir != null) Directory.CreateDirectory(dir);
 
                 var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFilePath, json);
+                var tempPath = SettingsFilePath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                if (File.Exists(SettingsFilePath))
+                    File.Move(tempPath, SettingsFilePath, overwrite: true);
+                else
+                    File.Move(tempPath, SettingsFilePath);
             }
             catch (Exception ex)
             {
