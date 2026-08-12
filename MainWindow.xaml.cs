@@ -190,11 +190,11 @@ namespace WinVora
         private void ApplyLanguage()
         {
             // Sidebar-Navigation
-            NavOverviewButton.Content = Localization.T("Nav.Dashboard");
-            NavSystemButton.Content = Localization.T("Nav.System");
-            NavUpdatesButton.Content = Localization.T("Nav.Updates");
-            NavCleanerButton.Content = Localization.T("Nav.Files");
-            NavUninstallButton.Content = Localization.T("Nav.Uninstall");
+            LblNavDashboard.Text = Localization.T("Nav.Dashboard");
+            LblNavSystem.Text = Localization.T("Nav.System");
+            LblNavUpdates.Text = Localization.CurrentLanguage == "en" ? "Program Updates" : "Programm-Updates";
+            LblNavFiles.Text = Localization.T("Nav.Files");
+            LblNavUninstall.Text = Localization.T("Nav.Uninstall");
             LblNavHistory.Text = Localization.CurrentLanguage == "en" ? "History" : "Verlauf";
             NavAutostartButton.Content = "Autostart";
             LblNavSettings.Text = Localization.T("Nav.Settings");
@@ -1135,7 +1135,20 @@ namespace WinVora
                     entry.ExitCode is int exitCode && exitCode != 0 ? $"0x{unchecked((uint)exitCode):X8}" : null,
                     entry.TimestampUtc.ToLocalTime().ToString("g")
                 }.Where(value => !string.IsNullOrWhiteSpace(value)));
-                HistoryListPanel.Children.Add(MakeInfoCard(text, details));
+                Windows.UI.Color color = entry.Result switch
+                {
+                    "Successful" => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73),
+                    "RestartRequired" => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D),
+                    "Cancelled" => Windows.UI.Color.FromArgb(0xFF, 0xA0, 0xA0, 0xA0),
+                    "Failed" => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B),
+                    _ => AccentColorLight
+                };
+                var card = MakeInfoCard(text, details);
+                card.BorderThickness = new Thickness(4, 0, 0, 0);
+                card.BorderBrush = new SolidColorBrush(color);
+                card.MinHeight = 82;
+                card.Padding = new Thickness(18, 14, 18, 14);
+                HistoryListPanel.Children.Add(card);
             }
 
             if (entries.Count == 0)
@@ -3269,7 +3282,7 @@ namespace WinVora
                 var toggle = new ToggleSwitch { IsOn = true, OnContent = "", OffContent = "" };
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle,
                     en ? $"Select update for {pkg.Name}" : $"Update für {pkg.Name} auswählen");
-                var baseDescription = $"{pkg.Id}  •  {pkg.Version} → {pkg.Available}  •  {pkg.Source}";
+                var baseDescription = $"{pkg.Version}  →  {pkg.Available}\n{pkg.Id}  •  {pkg.Source}";
 
                 var deferButton = new Button
                 {
@@ -3295,6 +3308,18 @@ namespace WinVora
                 }
                 deferButton.Flyout = deferMenu;
                 var cardActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+                cardActions.Children.Add(new Border
+                {
+                    Background = (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"],
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Child = new TextBlock
+                    {
+                        Text = en ? "Available" : "Verfügbar",
+                        FontSize = 12,
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                    }
+                });
                 cardActions.Children.Add(toggle);
                 cardActions.Children.Add(deferButton);
 

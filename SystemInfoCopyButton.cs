@@ -33,10 +33,10 @@ namespace WinVora
             bool en = Localization.CurrentLanguage == "en";
             var button = new Button
             {
-                Content = new FontIcon { Glyph = "\uE8C8", FontSize = 14 },
-                Width = 36,
+                Content = CreateContent(en ? "Copy" : "Kopieren", "\uE8C8"),
+                Width = 104,
                 Height = 32,
-                Padding = new Thickness(0),
+                Padding = new Thickness(10, 0, 10, 0),
                 CornerRadius = new CornerRadius(8)
             };
             ToolTipService.SetToolTip(button, en ? "Copy information" : "Informationen kopieren");
@@ -55,19 +55,30 @@ namespace WinVora
                 ToolTipService.SetToolTip(button, en ? "Copied" : "Kopiert");
 
                 // Sichtbares Feedback, auch wenn kein Tooltip geöffnet ist.
-                button.Content = new FontIcon { Glyph = "\uE73E", FontSize = 14 };
+                button.Content = CreateContent(en ? "Copied" : "Kopiert", "\uE73E");
                 var resetTimer = button.DispatcherQueue.CreateTimer();
                 resetTimer.Interval = TimeSpan.FromSeconds(1.4);
                 resetTimer.Tick += (_, __) =>
                 {
                     resetTimer.Stop();
-                    button.Content = new FontIcon { Glyph = "\uE8C8", FontSize = 14 };
+                    button.Content = CreateContent(en ? "Copy" : "Kopieren", "\uE8C8");
                     ToolTipService.SetToolTip(button, en ? "Copy information" : "Informationen kopieren");
                 };
                 resetTimer.Start();
             };
             return button;
         }
+
+        private static StackPanel CreateContent(string label, string glyph) => new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Children =
+            {
+                new FontIcon { Glyph = glyph, FontSize = 13 },
+                new TextBlock { Text = label, FontSize = 12 }
+            }
+        };
 
     }
 }
