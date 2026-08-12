@@ -12,7 +12,7 @@
 		<Version>0.8.4</Version>
 		<InformationalVersion>$(Version)</InformationalVersion>
 		<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
-		<ApplicationIcon>app.ico</ApplicationIcon>
+		<ApplicationIcon>Assets\app.ico</ApplicationIcon>
 
 		<UseWinUI>true</UseWinUI>
 
@@ -35,7 +35,7 @@
 		     dieser SDK-Version einen Bug: aus 186 MB (489 Dateien) wurden beim
 		     Bündeln plötzlich 1,87 GB - offenbar werden Dateien beim Bündeln
 		     dupliziert statt nur zusammengepackt. Deshalb wieder deaktiviert.
-		     Brauchen wir ohnehin nicht mehr: der Installer (WinVoraSetup.iss)
+		     Brauchen wir ohnehin nicht mehr: der Installer (Packaging\WinVoraSetup.iss)
 		     packt den kompletten publish-Ordner sowieso in eine einzige
 		     Setup.exe, egal ob darin 1 oder 489 Dateien stecken. -->
 
@@ -70,11 +70,13 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Content Include="app.ico">
+		<Content Include="Assets\app.ico">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<TargetPath>app.ico</TargetPath>
 		</Content>
-		<Content Include="app-logo.png">
+		<Content Include="Assets\app-logo.png">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<TargetPath>app-logo.png</TargetPath>
 		</Content>
 	</ItemGroup>
 

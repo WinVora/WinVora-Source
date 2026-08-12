@@ -105,7 +105,8 @@ namespace WinVora
 
         public static void Shutdown()
         {
-            try { _computer?.Close(); } catch { }
+            try { _computer?.Close(); }
+            catch (Exception ex) { Logger.LogErrorOnce("Hardwaremonitor schließen", ex); }
         }
     }
 }

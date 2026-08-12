@@ -137,7 +137,7 @@ namespace WinVora
                             leftovers.Add($"Autostart: {valueName}");
                     }
                 }
-                catch { }
+                catch (Exception ex) { Logger.LogErrorOnce("Autostartreste aus Registry lesen", ex); }
             }
             return leftovers.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }

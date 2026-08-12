@@ -8,15 +8,6 @@ namespace WinVora
     {
         public static Border CreateSection(string title, ResourceDictionary resources, out StackPanel content)
         {
-            var card = new Border
-            {
-                Tag = title,
-                CornerRadius = new CornerRadius(16),
-                Padding = new Thickness(20),
-                Background = (SolidColorBrush)resources["AppOverlay18"],
-                BorderBrush = (SolidColorBrush)resources["AppOverlay28"],
-                BorderThickness = new Thickness(1)
-            };
             content = new StackPanel { Spacing = 20 };
             content.Children.Add(new TextBlock
             {
@@ -25,7 +16,8 @@ namespace WinVora
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)resources["AppForegroundBrush"]
             });
-            card.Child = content;
+            var card = CommonUiBuilder.CreateCard(content, resources);
+            card.Tag = title;
             return card;
         }
 

@@ -31,21 +31,18 @@ namespace WinVora
             bool en = Localization.CurrentLanguage == "en";
             bool containsEaApp = selected.Any(package =>
                 package.Id.Equals("ElectronicArts.EADesktop", StringComparison.OrdinalIgnoreCase));
-            var confirmation = new ContentDialog
-            {
-                XamlRoot = RootGrid.XamlRoot,
-                Title = en ? "Install selected updates?" : "Ausgewählte Updates installieren?",
-                Content = containsEaApp
+            var confirmation = CommonUiBuilder.CreateConfirmation(
+                RootGrid.XamlRoot,
+                en ? "Install selected updates?" : "Ausgewählte Updates installieren?",
+                containsEaApp
                     ? (en
                         ? "The EA app is selected. Its installer previously restarted this PC without warning. WinVora will now open installers visibly, but a publisher installer may still request or initiate a restart. Save your work before continuing."
                         : "Die EA App ist ausgewählt. Ihr Installer hat diesen PC bereits ohne Warnung neu gestartet. WinVora öffnet Installer jetzt sichtbar, trotzdem kann ein Hersteller-Installer einen Neustart anfordern oder auslösen. Speichere vor dem Fortfahren deine Arbeit.")
                     : (en
                         ? "Publisher installers will be shown visibly. Some installers may request a restart. Save your work before continuing."
                         : "Die Installer der Hersteller werden sichtbar geöffnet. Einige Installer können einen Neustart verlangen. Speichere vor dem Fortfahren deine Arbeit."),
-                PrimaryButtonText = en ? "Install" : "Installieren",
-                CloseButtonText = en ? "Cancel" : "Abbrechen",
-                DefaultButton = ContentDialogButton.Close
-            };
+                en ? "Install" : "Installieren",
+                en ? "Cancel" : "Abbrechen");
 
             if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
             {
@@ -266,17 +263,14 @@ namespace WinVora
                 });
             }
 
-            var dialog = new ContentDialog
-            {
-                XamlRoot = RootGrid.XamlRoot,
-                Title = en ? "Update summary" : "Update-Abschlussbericht",
-                Content = new ScrollViewer { Content = panel, MaxHeight = 430 },
-                PrimaryButtonText = results.Any(item => item.Result.Status == WingetUpdateStatus.Failed)
+            var dialog = CommonUiBuilder.CreateConfirmation(
+                RootGrid.XamlRoot,
+                en ? "Update summary" : "Update-Abschlussbericht",
+                new ScrollViewer { Content = panel, MaxHeight = 430 },
+                results.Any(item => item.Result.Status == WingetUpdateStatus.Failed)
                     ? (en ? "Retry failed" : "Fehlgeschlagene erneut versuchen")
                     : null,
-                CloseButtonText = en ? "Close" : "Schließen",
-                DefaultButton = ContentDialogButton.Close
-            };
+                en ? "Close" : "Schließen");
             var choice = await dialog.ShowAsync();
             if (choice == ContentDialogResult.Primary)
             {

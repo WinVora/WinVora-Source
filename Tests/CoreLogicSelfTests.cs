@@ -41,6 +41,15 @@ namespace WinVora
             Debug.Assert(SecurityStatusEvaluator.Evaluate("Aktiv", "Aktiv") == SecurityHealthState.Active);
             Debug.Assert(SecurityStatusEvaluator.Evaluate("Unbekannt", "Aktiv") == SecurityHealthState.Unknown);
             Debug.Assert(SecurityStatusEvaluator.Evaluate("Deaktiviert", "Aktiv") == SecurityHealthState.Problem);
+            Debug.Assert(SecurityStatusEvaluator.Evaluate("Nicht verfügbar", "Aktiv") == SecurityHealthState.Unknown);
+            Debug.Assert(SecurityStatusEvaluator.Evaluate("Aktiv", "Nicht prüfbar") == SecurityHealthState.Unknown);
+            Debug.Assert(SecurityStatusEvaluator.Evaluate("Teilweise/Inaktiv", "Aktiv") == SecurityHealthState.Problem);
+            Debug.Assert(SecurityStatusEvaluator.Evaluate("Aktiv", "Deaktiviert") == SecurityHealthState.Problem);
+
+            // Eine fehlgeschlagene WMI-Abfrage wird als unbekannt bewertet und
+            // darf weder fälschlich Grün noch als echtes Problem Gelb ergeben.
+            const string simulatedWmiFailure = "Unbekannt";
+            Debug.Assert(SecurityStatusEvaluator.Evaluate(simulatedWmiFailure, "Aktiv") == SecurityHealthState.Unknown);
 
             var csv = ProgramListExporter.ToCsv(new[]
             {

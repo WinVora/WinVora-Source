@@ -158,12 +158,22 @@ namespace WinVora
             };
             HealthSecurityText.Foreground = new SolidColorBrush(_securityHealthState switch
             {
-                SecurityHealthState.Active => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73),
-                SecurityHealthState.Problem => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D),
-                _ => Windows.UI.Color.FromArgb(0xFF, 0xA0, 0xA0, 0xA0)
+                SecurityHealthState.Active => GetHealthyStatusColor(),
+                SecurityHealthState.Problem => GetStatusColor("AppWarningBrush"),
+                _ => GetStatusColor("AppNeutralStatusBrush")
             });
             UpdateDashboardStatusSummary();
         }
+
+        // Das helle Grün wirkt auf dunklem Untergrund ruhig, auf Weiß jedoch
+        // deutlich zu leuchtend. Im Hellmodus verwenden wir deshalb dieselbe
+        // Bedeutung mit einem dunkleren, kontrastreichen Grünton.
+        private Windows.UI.Color GetHealthyStatusColor() => GetStatusColor("AppSuccessBrush");
+
+        private Windows.UI.Color GetStatusColor(string resourceKey) =>
+            RootGrid.Resources[resourceKey] is SolidColorBrush brush
+                ? brush.Color
+                : Microsoft.UI.Colors.Gray;
 
         private async void SecurityCard_Tapped(object sender, TappedRoutedEventArgs e)
         {
@@ -505,10 +515,10 @@ namespace WinVora
             bool securityOk = _securityHealthState == SecurityHealthState.Active;
             bool securityUnknown = _securityHealthState == SecurityHealthState.Unknown;
 
-            var green = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73));
-            var yellow = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D));
+            var green = new SolidColorBrush(GetHealthyStatusColor());
+            var yellow = (SolidColorBrush)RootGrid.Resources["AppWarningBrush"];
             DashUpdatesStatusDot.Fill = updateCount == 0 ? green : yellow;
-            var gray = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xA0, 0xA0, 0xA0));
+            var gray = (SolidColorBrush)RootGrid.Resources["AppNeutralStatusBrush"];
             DashSecurityStatusDot.Fill = securityOk ? green : securityUnknown ? gray : yellow;
             DashUpdatesStatusText.Text = updateCount == 0
                 ? (en ? "No updates" : "Keine Updates")

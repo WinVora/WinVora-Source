@@ -1,11 +1,16 @@
 using System;
 using System.IO;
+using System.Text;
+using System.Threading;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 
 namespace WinVora
 {
     public static class Logger
     {
         private static readonly object _lock = new();
+        private static readonly ConcurrentDictionary<string, byte> _reportedOnce = new();
 
         private static string LogFilePath =>
             Path.Combine(
@@ -51,7 +56,26 @@ namespace WinVora
 
         public static void LogError(string context, Exception ex)
         {
-            Log($"FEHLER in {context}: {ex.GetType().Name}: {ex.Message}");
+            if (ex == null)
+            {
+                Log($"FEHLER in {context}: Keine Exception-Information verfügbar.");
+                return;
+            }
+
+            var details = new StringBuilder()
+                .Append("FEHLER in ").AppendLine(context)
+                .Append("Thread: ").AppendLine(Environment.CurrentManagedThreadId.ToString())
+                .Append("HRESULT: 0x").AppendLine(ex.HResult.ToString("X8"))
+                .AppendLine("Exception:")
+                .Append(ex);
+
+            Log(details.ToString());
+        }
+
+        public static void LogErrorOnce(string context, Exception ex)
+        {
+            string key = $"{context}|{ex.GetType().FullName}|{ex.HResult:X8}";
+            if (_reportedOnce.TryAdd(key, 0)) LogError(context, ex);
         }
 
         // Rotiert die Logdatei, statt sie unbegrenzt wachsen zu lassen. Bis zu

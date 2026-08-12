@@ -57,6 +57,33 @@ namespace WinVora
 
         // ================= POWER =================
         public string BatteryStatus { get; set; } = "";
+
+        public SystemInfoSnapshot Clone()
+        {
+            var copy = new SystemInfoSnapshot();
+            foreach (SystemInfoSection section in Enum.GetValues<SystemInfoSection>())
+                copy.CopySectionFrom(this, section);
+            return copy;
+        }
+
+        public void CopySectionFrom(SystemInfoSnapshot source, SystemInfoSection section)
+        {
+            switch (section)
+            {
+                case SystemInfoSection.Device:
+                    ComputerName=source.ComputerName; UserName=source.UserName; Manufacturer=source.Manufacturer; Model=source.Model; SerialNumber=source.SerialNumber; Architecture=source.Architecture; Virtualization=source.Virtualization; DotNetVersion=source.DotNetVersion; break;
+                case SystemInfoSection.OperatingSystem:
+                    WindowsEdition=source.WindowsEdition; WindowsVersion=source.WindowsVersion; BuildNumber=source.BuildNumber; InstallDate=source.InstallDate; LastUpdate=source.LastUpdate; ActivationStatus=source.ActivationStatus; DirectXVersion=source.DirectXVersion; Uptime=source.Uptime; break;
+                case SystemInfoSection.Cpu: CpuName=source.CpuName; CpuCores=source.CpuCores; CpuThreads=source.CpuThreads; CpuClock=source.CpuClock; break;
+                case SystemInfoSection.Ram: RamTotal=source.RamTotal; RamFree=source.RamFree; RamUsed=source.RamUsed; break;
+                case SystemInfoSection.Board: Mainboard=source.Mainboard; BiosVersion=source.BiosVersion; SerialNumber=source.SerialNumber; break;
+                case SystemInfoSection.Security: SecureBoot=source.SecureBoot; TpmVersion=source.TpmVersion; DefenderStatus=source.DefenderStatus; FirewallStatus=source.FirewallStatus; BitLockerStatus=source.BitLockerStatus; break;
+                case SystemInfoSection.Gpu: Gpus=source.Gpus.ToArray(); break;
+                case SystemInfoSection.Drives: Drives=source.Drives.Select(d => new DriveSummary { Name=d.Name, TotalSize=d.TotalSize, FreeSpace=d.FreeSpace }).ToArray(); break;
+                case SystemInfoSection.Network: NetworkAdapters=source.NetworkAdapters.Select(n => new NetworkSummary { Name=n.Name, IPv4=n.IPv4, IPv6=n.IPv6, MacAddress=n.MacAddress, Gateway=n.Gateway, Dns=n.Dns }).ToArray(); break;
+                case SystemInfoSection.Battery: BatteryStatus=source.BatteryStatus; break;
+            }
+        }
     }
 
     // ================= DRIVE =================

@@ -14,7 +14,7 @@
 #define MyAppName "WinVora"
 ; Liest die zentrale Produktversion aus der zuvor veröffentlichten EXE.
 ; Dadurch muss die Version nur noch in WinVora.csproj geändert werden.
-#define MyAppVersion GetStringFileInfo("publish\WinVora.exe", "ProductVersion")
+#define MyAppVersion GetStringFileInfo("..\publish\WinVora.exe", "ProductVersion")
 #define MyAppPublisher "WinVora"
 #define MyAppExeName "WinVora.exe"
 
@@ -36,12 +36,12 @@ DisableProgramGroupPage=yes
 ; DisableDirPage nicht auf "yes" steht).
 DisableDirPage=no
 
-OutputDir=installer_output
+OutputDir=..\installer_output
 OutputBaseFilename=WinVora-Setup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=app.ico
+SetupIconFile=..\Assets\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -67,7 +67,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; Nimmt automatisch ALLES aus dem publish-Ordner mit (die .exe und die
 ; wenigen Restdateien wie resources.pri, falls vorhanden).
-Source: "publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

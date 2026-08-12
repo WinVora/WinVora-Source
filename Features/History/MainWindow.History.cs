@@ -208,7 +208,7 @@ namespace WinVora
 
         private async void ExportSystemReport_Click(object sender, RoutedEventArgs e)
         {
-            _cachedSnapshot ??= await SystemInfoProvider.GetFullSnapshotAsync();
+            _cachedSnapshot ??= await SystemInfoProvider.GetFullSnapshotAsync(_startupCancellation.Token);
             var s = _cachedSnapshot;
             string report = string.Join(Environment.NewLine + Environment.NewLine, new[]
             {

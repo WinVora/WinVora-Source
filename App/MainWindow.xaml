@@ -42,6 +42,9 @@
             <SolidColorBrush x:Key="AppAccentBrushLight" Color="#8B7CF6"/>
             <SolidColorBrush x:Key="AppAccentOverlay20" Color="#336C5CE7"/>
             <SolidColorBrush x:Key="AppAccentOverlay10" Color="#1A6C5CE7"/>
+            <SolidColorBrush x:Key="AppSuccessBrush" Color="#4CD973"/>
+            <SolidColorBrush x:Key="AppWarningBrush" Color="#FFC14D"/>
+            <SolidColorBrush x:Key="AppNeutralStatusBrush" Color="#A0A0A0"/>
         </Grid.Resources>
 
         <Grid.Background>
@@ -230,6 +233,33 @@
                 BorderBrush="{StaticResource AppOverlay1E}"
                 BorderThickness="1"
                 Padding="20">
+
+            <Border.Resources>
+                <!-- Sämtliche Aktionsbuttons im Seiteninhalt verwenden WinVora-Lila.
+                     Die Navigation bleibt davon ausgenommen und behält ihre
+                     ruhige, nur bei der aktiven Seite betonte Darstellung. -->
+                <Style TargetType="Button" BasedOn="{StaticResource WinVoraButtonStyle}"/>
+                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#386C5CE7"/>
+                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#506C5CE7"/>
+                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#126C5CE7"/>
+                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#906C5CE7"/>
+                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#B06C5CE7"/>
+
+                <!-- WinUI greift beim Fokus sonst auf die blaue Windows-
+                     Akzentfarbe zurück. Diese Ressourcen gelten auch für
+                     dynamisch erzeugte Such- und Eingabefelder. -->
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#8B7CF6"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#8B7CF6"/>
+                <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#6C5CE7"/>
+                <SolidColorBrush x:Key="TextControlSelectionHighlightColorWhenNotFocused" Color="#806C5CE7"/>
+
+                <Style TargetType="ProgressBar">
+                    <Setter Property="Foreground" Value="{StaticResource AppAccentBrushLight}"/>
+                </Style>
+                <Style TargetType="ProgressRing">
+                    <Setter Property="Foreground" Value="{StaticResource AppAccentBrushLight}"/>
+                </Style>
+            </Border.Resources>
 
             <Grid>
 
@@ -749,13 +779,13 @@
                                                     <FontIcon Glyph="&#xE73E;" FontSize="13" Foreground="{StaticResource AppAccentBrushLight}"/>
                                                 </Border>
                                                 <TextBlock Grid.Column="1" x:Name="LblDashStatus" Text="Gesamtstatus" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="2" x:Name="DashOverallBadgeText" Text="Alles in Ordnung" FontSize="12" Foreground="#4CD973" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" x:Name="DashOverallBadgeText" Text="Alles in Ordnung" FontSize="12" Foreground="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
                                             </Grid>
                                             <Grid ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Grid.Column="0" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="DashUpdatesStatusDot" Width="8" Height="8" Fill="{StaticResource AppAccentBrushLight}"/><TextBlock x:Name="DashUpdatesStatusText" Text="Updates werden geprüft" TextWrapping="Wrap"/></StackPanel></Border>
                                                 <Border Grid.Column="1" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="DashSecurityStatusDot" Width="8" Height="8" Fill="{StaticResource AppAccentBrushLight}"/><TextBlock x:Name="DashSecurityStatusText" Text="Sicherheit wird geprüft" TextWrapping="Wrap"/></StackPanel></Border>
-                                                <Border Grid.Column="2" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="8" Height="8" Fill="#4CD973"/><TextBlock x:Name="DashSystemStatusText" Text="Systemüberwachung läuft" TextWrapping="Wrap"/></StackPanel></Border>
+                                                <Border Grid.Column="2" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="8" Height="8" Fill="{StaticResource AppSuccessBrush}"/><TextBlock x:Name="DashSystemStatusText" Text="Systemüberwachung läuft" TextWrapping="Wrap"/></StackPanel></Border>
                                             </Grid>
                                             <TextBlock x:Name="DashOverallStatusText" Text="Wird geprüft..." Visibility="Collapsed"/>
                                         </StackPanel>

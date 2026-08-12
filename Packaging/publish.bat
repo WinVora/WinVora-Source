@@ -1,5 +1,6 @@
 @echo off
 setlocal
+cd /d "%~dp0.."
 
 echo ============================================
 echo   WinVora - Build fuer den Installer erstellen
@@ -25,7 +26,7 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 echo ============================================
 echo   Fertig! Der publish-Ordner ist aktuell.
-echo   Jetzt WinVoraSetup.iss neu kompilieren (F9),
+echo   Jetzt Packaging\WinVoraSetup.iss neu kompilieren (F9),
 echo   um den neuen Installer zu erzeugen.
 echo ============================================
 pause

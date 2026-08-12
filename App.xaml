@@ -10,7 +10,30 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
                 <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+
+            <!-- Einheitlicher WinVora-Akzent. Explizite AccentButtonStyle-Verweise
+                 dürfen nicht auf das blaue Windows-Systemakzent zurückfallen. -->
+            <SolidColorBrush x:Key="WinVoraPurpleBrush" Color="#6C5CE7"/>
+            <SolidColorBrush x:Key="WinVoraPurpleHoverBrush" Color="#7D6FF0"/>
+            <SolidColorBrush x:Key="WinVoraPurplePressedBrush" Color="#5848CD"/>
+            <SolidColorBrush x:Key="WinVoraPurpleDisabledBrush" Color="#596C5CE7"/>
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="#6C5CE7"/>
+            <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#7D6FF0"/>
+            <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#5848CD"/>
+            <SolidColorBrush x:Key="AccentButtonBackgroundDisabled" Color="#596C5CE7"/>
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="White"/>
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="White"/>
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="White"/>
+
+            <Style x:Key="WinVoraButtonStyle"
+                   TargetType="Button"
+                   BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Background" Value="#246C5CE7"/>
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="BorderBrush" Value="#706C5CE7"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="8"/>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

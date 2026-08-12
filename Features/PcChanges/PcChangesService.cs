@@ -122,11 +122,12 @@ namespace WinVora
                 {
                     foreach (string file in Directory.EnumerateFiles(directory))
                     {
-                        try { total += new FileInfo(file).Length; } catch { }
+                        try { total += new FileInfo(file).Length; }
+                        catch (Exception ex) { Logger.LogErrorOnce("Dateigröße für PC-Veränderungen lesen", ex); }
                     }
                     foreach (string child in Directory.EnumerateDirectories(directory)) pending.Push(child);
                 }
-                catch { }
+                catch (Exception ex) { Logger.LogErrorOnce("Ordnergröße für PC-Veränderungen lesen", ex); }
             }
             return total;
         }

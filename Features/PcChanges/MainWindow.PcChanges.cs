@@ -28,7 +28,10 @@ namespace WinVora
                         InfoBarSeverity.Warning);
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                // Erwarteter Abbruch beim Schließen; kein Fehler und daher kein Logeintrag.
+            }
             catch (Exception ex)
             {
                 Logger.LogError("PC-Veränderungen laden", ex);
