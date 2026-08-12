@@ -41,6 +41,7 @@ jobs:
         shell: pwsh
         run: |
           $candidates = @(
+            "$env:ChocolateyInstall\bin\ISCC.exe",
             "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
             "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
             "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
@@ -48,6 +49,10 @@ jobs:
           $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $compiler) {
             choco install innosetup --no-progress --yes
+            $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+            if ($command) { $compiler = $command.Source }
+          }
+          if (-not $compiler) {
             $compiler = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           }
           if (-not $compiler) { throw "Inno Setup compiler was not found." }
