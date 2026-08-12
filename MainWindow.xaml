@@ -6,7 +6,7 @@
     Title="WinVora">
 
     <!-- LIQUID GLASS BACKDROP -->
-    <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden" UseSystemFocusVisuals="True">
 
         <!-- THEME-BRUSHES: gemeinsam genutzte Instanzen, deren Color-Wert beim
              Umschalten zwischen Dunkel/Hell im Code-Behind (ApplyTheme) live
@@ -287,7 +287,7 @@
             TabIndex="1"
             TextChanged="WingetSearchBox_TextChanged"/>
 
-                        <Button x:Name="WingetSelectAllButton"
+                        <CheckBox x:Name="WingetSelectAllButton"
             Content="Alle abwählen"
             FontSize="15"
             FontWeight="SemiBold"
@@ -295,17 +295,17 @@
             AutomationProperties.Name="Sichtbare Updates auswählen oder abwählen"
             TabIndex="2"
             Padding="16,10"
+            IsChecked="True"
             Click="WingetSelectAll_Click"/>
 
                         <Button x:Name="RefreshButton"
-            Content="Refresh"
             FontSize="15"
             FontWeight="SemiBold"
             Height="42"
             AutomationProperties.Name="Update-Liste aktualisieren"
             TabIndex="3"
             Padding="16,10"
-            Click="Refresh_Click"/>
+            Click="Refresh_Click"><FontIcon Glyph="&#xE72C;"/></Button>
 
                         <Button x:Name="StartUpdateButton"
             Content="Start Update"
@@ -460,7 +460,7 @@
                                  Foreground="{StaticResource AppAccentBrush}"/>
                 </StackPanel>
 
-                <ScrollViewer Grid.Row="2"
+                <ScrollViewer x:Name="MainContentScrollViewer" Grid.Row="2"
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto"
               Padding="0,0,24,0">
@@ -485,7 +485,7 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Border x:Name="StatCardCpu" Grid.Column="0" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardCpu" Grid.Column="1" CornerRadius="16" Padding="24"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
@@ -501,7 +501,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border x:Name="StatCardRam" Grid.Column="1" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardRam" Grid.Column="2" CornerRadius="16" Padding="24"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
@@ -517,7 +517,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border x:Name="StatCardGpu" Grid.Column="2" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardGpu" Grid.Column="3" CornerRadius="16" Padding="24"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
@@ -533,7 +533,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border x:Name="StatCardSecurity" Grid.Column="3" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardSecurity" Grid.Column="4" CornerRadius="16" Padding="24"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
@@ -549,7 +549,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border x:Name="StatCardUpdates" Grid.Column="4" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardUpdates" Grid.Column="0" CornerRadius="16" Padding="24"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
@@ -655,20 +655,20 @@
                                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                     BorderThickness="1">
-                                <Grid ColumnSpacing="18">
+                                <Grid ColumnSpacing="18" RowSpacing="14">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-                                    <TextBlock x:Name="HistoryCard" Grid.Column="0" Text="Verlauf" FontSize="16" FontWeight="SemiBold"
+                                    <TextBlock x:Name="HistoryCard" Grid.Row="0" Grid.ColumnSpan="3" Text="Verlauf" FontSize="16" FontWeight="SemiBold"
                                                Foreground="{StaticResource AppForegroundBrush}" VerticalAlignment="Center"/>
 
                                     <!-- Gleicher Kachel-Stil wie die Live-Dashboard-Kacheln oben:
                                          Label + Wert INNERHALB desselben Rahmens, statt getrennt darüber. -->
-                                    <Border Grid.Column="1" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
+                                    <Border Grid.Row="1" Grid.Column="0" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
                                         <StackPanel Spacing="8">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <TextBlock x:Name="LblHistoryCpu" Text="CPU" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -681,7 +681,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="2" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
+                                    <Border Grid.Row="1" Grid.Column="1" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
                                         <StackPanel Spacing="8">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <TextBlock x:Name="LblHistoryRam" Text="RAM" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -694,7 +694,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="3" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
+                                    <Border Grid.Row="1" Grid.Column="2" CornerRadius="16" Padding="14" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" HorizontalAlignment="Stretch">
                                         <StackPanel Spacing="8">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <TextBlock x:Name="LblHistoryGpu" Text="GPU" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AppMutedForegroundBrush}"/>
@@ -1024,6 +1024,16 @@
                 VerticalAlignment="Top"
                 Margin="0,32,0,0"
                 Background="{StaticResource AppOverlay1E}"/>
+
+        <Border x:Name="GlobalStatusBar" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Margin="0,0,0,18" Padding="14,8" CornerRadius="12"
+                Background="{StaticResource AppOverlay30}" BorderBrush="{StaticResource AppOverlay30}" BorderThickness="1"
+                Visibility="Collapsed" IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+                <ProgressRing x:Name="GlobalStatusRing" Width="16" Height="16" IsActive="True"/>
+                <TextBlock x:Name="GlobalStatusText" Text="Wird geladen..." VerticalAlignment="Center" FontSize="12"/>
+            </StackPanel>
+        </Border>
 
         <InfoBar x:Name="AppInfoBar"
                  Grid.Column="1"

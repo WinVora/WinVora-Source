@@ -14,17 +14,16 @@ namespace WinVora
 
             var button = Create(getText);
             button.HorizontalAlignment = HorizontalAlignment.Right;
-            button.Margin = new Thickness(0, 0, 0, 10);
+            button.VerticalAlignment = VerticalAlignment.Top;
+            button.Margin = new Thickness(0, 0, 0, 0);
 
             // Direkt in den Content der SettingsCard einsetzen. Eine äußere
             // Überlagerung wurde vom Control-Template verdeckt und war deshalb
             // nicht sichtbar.
             var wrapper = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
-            wrapper.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            wrapper.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            Grid.SetRow(originalContent, 1);
-            wrapper.Children.Add(button);
+            originalContent.Margin = new Thickness(0, 0, 116, 0);
             wrapper.Children.Add(originalContent);
+            wrapper.Children.Add(button);
             card.Content = wrapper;
         }
 
