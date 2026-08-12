@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace WinVora
@@ -73,6 +74,14 @@ namespace WinVora
         // wird auf der Dashboard-Seite als kleine Liste angezeigt.
         public System.Collections.Generic.List<ActivityLogEntry> ActivityLog { get; set; } = new();
         public System.Collections.Generic.List<DeferredUpdateEntry> DeferredUpdates { get; set; } = new();
+        public System.Collections.Generic.List<string> IgnoredUpdateIds { get; set; } = new();
+
+        public bool NotifyUpdateCompletion { get; set; } = true;
+        public bool NotifyRestartRequired { get; set; } = true;
+        public bool ConfirmDownloadsCleanup { get; set; } = true;
+        public bool ConfirmRecycleBinCleanup { get; set; } = true;
+        public bool ConfirmBrowserCleanup { get; set; } = true;
+        public bool OfferUninstallLeftoverScan { get; set; } = true;
 
         public int? WindowX { get; set; }
         public int? WindowY { get; set; }
@@ -141,8 +150,15 @@ namespace WinVora
             ChangelogWindowHeight = Math.Clamp(ChangelogWindowHeight, 520, 1440);
             ActivityLog ??= new();
             DeferredUpdates ??= new();
+            IgnoredUpdateIds ??= new();
             DeferredUpdates.RemoveAll(entry => string.IsNullOrWhiteSpace(entry.PackageId));
+            IgnoredUpdateIds = IgnoredUpdateIds
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
+
+        public static string GetSettingsFilePath() => SettingsFilePath;
 
         public void Save()
         {

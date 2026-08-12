@@ -444,6 +444,22 @@
             TabIndex="2"
             Padding="16,10"
             Click="UninstallRefresh_Click"/>
+
+                        <Button x:Name="UninstallExportButton"
+                                Content="Liste exportieren"
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                Height="42"
+                                Padding="14,10"
+                                AutomationProperties.Name="Liste aller installierten Programme exportieren">
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem Text="Als TXT exportieren" Click="UninstallExportTxt_Click"/>
+                                    <MenuFlyoutItem Text="Als CSV exportieren (Komma)" Tag="," Click="UninstallExportCsv_Click"/>
+                                    <MenuFlyoutItem Text="Als CSV für deutsches Excel (Semikolon)" Tag=";" Click="UninstallExportCsv_Click"/>
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
                     </StackPanel>
                 </Grid>
 
@@ -539,14 +555,20 @@
             Visibility="Visible">
 
                             <!-- ===== Statuskarten (groß, mit Icons) ===== -->
-                            <Grid ColumnSpacing="16">
+                            <Grid x:Name="DashboardStatusGrid" ColumnSpacing="16" RowSpacing="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="0"/>
                                 </Grid.ColumnDefinitions>
+
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
                                 <Border x:Name="StatCardCpu" Grid.Column="1" CornerRadius="16" Padding="24"
                                         MinHeight="150"
@@ -596,7 +618,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border x:Name="StatCardSecurity" Grid.Column="4" CornerRadius="16" Padding="24"
+                                <Border x:Name="StatCardSecurity" Grid.Column="4" CornerRadius="16" Padding="24" Tapped="SecurityCard_Tapped"
                                         MinHeight="150"
                                         Background="{StaticResource AppOverlay1A}"
                                         BorderBrush="{StaticResource AppOverlay28}"
@@ -637,7 +659,7 @@
                                     Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                     BorderThickness="1">
-                                <Grid ColumnSpacing="14" RowSpacing="14">
+                                <Grid x:Name="LiveDashboardGrid" ColumnSpacing="14" RowSpacing="14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
@@ -645,6 +667,7 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
@@ -1024,6 +1047,8 @@
                                 <Button x:Name="HistoryFailedButton" Content="Fehler" Tag="Failed" Click="HistoryChip_Click"/>
                                 <Button x:Name="HistoryCancelledButton" Content="Abgebrochen" Tag="Cancelled" Click="HistoryChip_Click"/>
                                 <Button x:Name="HistoryRestartButton" Content="Neustart" Tag="RestartRequired" Click="HistoryChip_Click"/>
+                                <Button Content="Filter zurücksetzen" Click="HistoryResetFilters_Click"/>
+                                <Button Content="Verlauf leeren" Click="HistoryClearAll_Click"/>
                                 <Button Content="Exportieren">
                                     <Button.Flyout>
                                         <MenuFlyout>
@@ -1033,6 +1058,19 @@
                                     </Button.Flyout>
                                 </Button>
                             </StackPanel>
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="HistorySearchBox" PlaceholderText="Verlauf durchsuchen..."
+                                         TextChanged="HistorySearchBox_TextChanged"/>
+                                <DatePicker x:Name="HistoryFromDatePicker" Grid.Column="1" Header="Von"
+                                            DateChanged="HistoryDatePicker_DateChanged"/>
+                                <DatePicker x:Name="HistoryToDatePicker" Grid.Column="2" Header="Bis"
+                                            DateChanged="HistoryDatePicker_DateChanged"/>
+                            </Grid>
                             <StackPanel x:Name="HistoryListPanel" Spacing="10"/>
                         </StackPanel>
 
@@ -1181,6 +1219,12 @@
                                            VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
+                        <StackPanel Spacing="6" Width="240">
+                            <ProgressBar x:Name="StartupProgressBar" Minimum="0" Maximum="4" Value="0" Height="5"
+                                         Foreground="#FF8B7CF6"/>
+                            <TextBlock x:Name="StartupProgressText" Text="0 von 4 abgeschlossen"
+                                       FontSize="11" Foreground="#BFFFFFFF" HorizontalAlignment="Center"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </Grid>

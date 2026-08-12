@@ -3,33 +3,41 @@ namespace WinVora
     internal static class ReleaseNotes
     {
         public const string CurrentGerman =
-            "• Verbesserungen: Programm-Updates zeigen Download, Installation und Abschluss verständlich an\n" +
-            "• Verbesserungen: Updates lassen sich auswählen, suchen, zurückstellen und abbrechen\n" +
-            "• Verbesserungen: Dateien zeigen ausgewählte Bereiche und möglichen Speichergewinn direkt an\n" +
-            "• Verbesserungen: Systeminformationen, Verlauf und Berichte lassen sich kopieren oder exportieren\n" +
-            "• Oberfläche: Dashboard, Navigation, Suchfelder und Statusanzeigen wurden übersichtlicher gestaltet\n" +
-            "• Oberfläche: Einstellungen und Changelog besitzen ein einheitliches WinVora-Design\n" +
-            "• Oberfläche: Helles, dunkles oder automatisches Windows-Farbschema verfügbar\n" +
-            "• Sicherheit: Schutz vor unbeabsichtigtem Schließen während laufender Updates\n" +
-            "• Sicherheit: Warnungen vor Neustarts und möglichem Datenverlust bei Deinstallationen\n" +
-            "• Bugfixes: Deinstaller starten ohne offen bleibendes CMD-Fenster\n" +
-            "• Bugfixes: Verlaufsfilter für erfolgreich, fehlgeschlagen und abgebrochen korrigiert\n" +
-            "• Bugfixes: Ladebildschirm, Fensterposition, Skalierung und parallele Ladevorgänge stabilisiert\n" +
-            "• Bugfixes: Verständlichere Meldungen bei Netzwerk-, Installer- und Berechtigungsproblemen";
+            "VERBESSERUNGEN\n" +
+            "• WinVora zeigt beim Start vier nachvollziehbare Ladephasen an\n" +
+            "• Letzte Systemwerte erscheinen sofort und werden anschließend aktualisiert\n" +
+            "• Langsame Updateprüfungen laufen nach kurzer Wartezeit im Hintergrund weiter\n" +
+            "• Programmlisten können als TXT oder CSV gesichert werden\n\n" +
+            "UI\n" +
+            "• Suchfelder, Statusanzeigen und kleine Fenster reagieren übersichtlicher\n" +
+            "• Systeminformationen zeigen den Zeitpunkt der letzten Prüfung\n" +
+            "• Lade-, Leer-, Fehler- und Sicherheitszustände sind verständlicher beschriftet\n\n" +
+            "SICHERHEIT UND DIAGNOSE\n" +
+            "• Supportberichte werden vor dem Speichern angezeigt und anonymisiert\n" +
+            "• Einstellungen erhalten vor einem Import automatisch eine Sicherung\n" +
+            "• Protokolldateien werden begrenzt und ältere Dateien automatisch rotiert\n\n" +
+            "BUGFIXES\n" +
+            "• Der Start wird nicht mehr dauerhaft von WinGet blockiert\n" +
+            "• Sicherheitsstatus unterscheidet Probleme von nicht prüfbaren Werten\n" +
+            "• Verlauf, TPM-Erkennung, Deinstallation und parallele Ladevorgänge wurden stabilisiert";
 
         public const string CurrentEnglish =
-            "• Improvements: Program updates clearly show download, installation and completion\n" +
-            "• Improvements: Updates can be selected, searched, postponed and cancelled\n" +
-            "• Improvements: Files show selected areas and potential storage savings directly\n" +
-            "• Improvements: System information, history and reports can be copied or exported\n" +
-            "• Interface: Dashboard, navigation, search fields and status displays were refined\n" +
-            "• Interface: Settings and changelog now share a consistent WinVora design\n" +
-            "• Interface: Light, dark or automatic Windows color scheme available\n" +
-            "• Safety: Protection against closing WinVora while updates are running\n" +
-            "• Safety: Warnings for restarts and possible data loss during uninstall\n" +
-            "• Bug fixes: Uninstallers start without leaving a command window open\n" +
-            "• Bug fixes: History filters for successful, failed and cancelled actions fixed\n" +
-            "• Bug fixes: Loading screen, window placement, scaling and parallel loading stabilized\n" +
-            "• Bug fixes: Clearer messages for network, installer and permission problems";
+            "IMPROVEMENTS\n" +
+            "• WinVora displays four clear startup phases\n" +
+            "• Previous system values appear immediately and refresh afterwards\n" +
+            "• Slow update checks continue in the background after a short wait\n" +
+            "• Program lists can be saved as TXT or CSV\n\n" +
+            "INTERFACE\n" +
+            "• Search fields, status displays and compact windows are easier to use\n" +
+            "• System information displays the time of the last check\n" +
+            "• Loading, empty, error and security states use clearer wording\n\n" +
+            "SECURITY AND DIAGNOSTICS\n" +
+            "• Support reports are previewed and anonymized before saving\n" +
+            "• Existing settings are backed up before an import\n" +
+            "• Log files are limited and older files rotate automatically\n\n" +
+            "BUG FIXES\n" +
+            "• WinGet no longer blocks startup indefinitely\n" +
+            "• Security status distinguishes problems from unavailable checks\n" +
+            "• History, TPM detection, uninstall and parallel loading were stabilized";
     }
 }

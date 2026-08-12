@@ -10,6 +10,9 @@ namespace WinVora
     {
         public static void Attach(ToolkitControls.SettingsCard card, Func<string> getText)
         {
+            // Schutz gegen versehentliches mehrfaches Initialisieren: Eine
+            // bereits umgebaute große Karte erhält keinen zweiten Button.
+            if (card.Tag as string == "SystemInfoCopyAttached") return;
             if (card.Content is not FrameworkElement originalContent) return;
 
             var button = Create(getText);
@@ -25,6 +28,7 @@ namespace WinVora
             wrapper.Children.Add(originalContent);
             wrapper.Children.Add(button);
             card.Content = wrapper;
+            card.Tag = "SystemInfoCopyAttached";
         }
 
         public static Button Create(Func<string> getText)

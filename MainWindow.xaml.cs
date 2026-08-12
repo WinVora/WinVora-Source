@@ -35,7 +35,11 @@ namespace WinVora
         private bool _isDeletingStorage;
         private bool _isLoadingPrograms;
         private bool _isUninstalling;
+        private SecurityHealthState _securityHealthState = SecurityHealthState.Unknown;
+        private string _lastAntivirusStatus = "Unbekannt";
+        private string _lastFirewallStatus = "Unbekannt";
         private CancellationTokenSource? _wingetUpdateCancellation;
+        private readonly CancellationTokenSource _startupCancellation = new();
         private readonly WingetUpdateService _wingetUpdateService = new();
         private List<WingetPackage>? _cachedPackages;
         private bool _isDarkTheme = true;
@@ -49,6 +53,8 @@ namespace WinVora
         private Microsoft.UI.Xaml.Media.Animation.Storyboard? _startupHexStoryboard;
         private readonly UISettings _uiSettings = new();
         private CancellationTokenSource? _dashboardRefreshDebounce;
+        private CancellationTokenSource? _wingetSearchDebounce;
+        private CancellationTokenSource? _uninstallSearchDebounce;
         private bool _closePromptOpen;
         private Windows.Graphics.RectInt32? _postStartupWindowRect;
 
@@ -80,8 +86,12 @@ namespace WinVora
             this.AppWindow.Closing += MainWindow_Closing;
             this.Closed += (_, __) =>
             {
+                _startupCancellation.Cancel();
+                _startupCancellation.Dispose();
                 _uiSettings.ColorValuesChanged -= SystemColorValuesChanged;
                 _dashboardRefreshDebounce?.Cancel();
+                _wingetSearchDebounce?.Cancel();
+                _uninstallSearchDebounce?.Cancel();
                 SaveWindowPlacement();
                 HardwareMonitorService.Shutdown();
             };
@@ -138,6 +148,7 @@ namespace WinVora
 
         private async void MainWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
+            _startupCancellation.Cancel();
             if (!_isUpdatingWinget) return;
 
             args.Cancel = true;
@@ -349,6 +360,7 @@ namespace WinVora
             // Deinstaller: Action-Bar
             UninstallSearchBox.PlaceholderText = Localization.T("Uninstall.SearchPlaceholder");
             UninstallRefreshButton.Content = new FontIcon { Glyph = "\uE72C" };
+            UninstallExportButton.Content = Localization.CurrentLanguage == "en" ? "Export list" : "Liste exportieren";
             ToolTipService.SetToolTip(UninstallRefreshButton, Localization.T("Common.Refresh"));
             ToolTipService.SetToolTip(WingetSelectAllButton,
                 Localization.CurrentLanguage == "en" ? "Select or deselect all visible updates" : "Alle sichtbaren Updates aus- oder abwählen");
@@ -487,7 +499,9 @@ namespace WinVora
             _startupHexStoryboard?.Stop();
             StartupGlassBandsHost.Children.Clear();
 
-            const double hexSize = 38;
+            // Größere Zellen reduzieren die Anzahl der XAML-Polygone deutlich
+            // und senken damit CPU-/GPU-Last des kurzen Startbildschirms.
+            const double hexSize = 48;
             double hexWidth = hexSize * 2;
             double hexHeight = Math.Sqrt(3) * hexSize;
             double colSpacing = hexWidth * 0.75;
@@ -554,7 +568,7 @@ namespace WinVora
             // unregelmäßige Bereiche. Die Ebenen pulsieren zeitversetzt, sodass
             // einzelne zusammenhängende Fugen wie Lava aufglühen, ohne dass ein
             // sichtbarer Lichtbalken in eine feste Richtung läuft.
-            var glowCanvases = Enumerable.Range(0, 5)
+            var glowCanvases = Enumerable.Range(0, 4)
                 .Select(_ => new Canvas
                 {
                     Width = overlayWidth,
@@ -791,6 +805,7 @@ namespace WinVora
                 Width = 220,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
+            PreventClosedComboBoxWheelChange(languageCombo);
             languageCombo.Items.Add(new ComboBoxItem { Content = "Deutsch", Tag = "de" });
             languageCombo.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
             languageCombo.SelectedIndex = 0;
@@ -833,6 +848,11 @@ namespace WinVora
 
             await LoadInitialDataAsync();
 
+            // Responsive Umbauten während des verdeckten Startladens können
+            // die Scroll-Ankerposition verschieben. Vor dem Einblenden immer
+            // garantiert am echten Seitenanfang starten.
+            RootGrid.UpdateLayout();
+            MainContentScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
             HideStartupOverlay();
 
             // BUGFIX: ContentDialog.ShowAsync() direkt beim allerersten
@@ -881,7 +901,6 @@ namespace WinVora
         // Winget-Status wirklich fertig geladen sind.
         private async Task LoadInitialDataAsync()
         {
-            var phaseTimer = Stopwatch.StartNew();
             // Ganz früh im Hintergrund anstoßen (parallel zum restlichen
             // Laden), damit der CPU-Performance-Counter genug Vorlaufzeit hat
             // und die erste echte Live-Anzeige nicht falsch/niedrig ist.
@@ -891,39 +910,18 @@ namespace WinVora
             // (Treiber laden, Hardware erkennen) kann spürbar dauern.
             _ = Task.Run(() => HardwareMonitorService.WarmUp());
 
-            StartupStatusText.Text = Localization.T("Common.LoadingSystemInfo");
-
-            try
-            {
-                _cachedSnapshot = await SystemInfoProvider.GetFullSnapshotAsync();
-                ApplySnapshot(_cachedSnapshot);
-                Logger.Log($"Startphase Systeminformationen: {phaseTimer.ElapsedMilliseconds} ms.");
-            }
-            catch
-            {
-                // Wird beim Aufruf der Systeminfo-Seite erneut versucht,
-                // falls es hier ausnahmsweise fehlschlägt.
-            }
-
-            StartupStatusText.Text = Localization.T("Common.CheckingUpdates");
-            phaseTimer.Restart();
-
-            try
-            {
-                await LoadWinget();
-                Logger.Log($"Startphase Programm-Updates: {phaseTimer.ElapsedMilliseconds} ms.");
-            }
-            catch
-            {
-                // Wird auf der Winget-Seite mit Fehlermeldung sichtbar,
-                // falls es hier fehlschlägt.
-            }
-
+            StartupStatusText.Text = Localization.CurrentLanguage == "en" ? "Preparing interface..." : "Oberfläche wird vorbereitet...";
             StartLiveUsageTimer();
 
-            phaseTimer.Restart();
-            _ = PopulateDashboardWidgetsAsync();
-            Logger.Log($"Startphase Dashboard angestoßen nach {phaseTimer.ElapsedMilliseconds} ms.");
+            // Letzte bekannte Werte sofort einsetzen. Die frische Abfrage
+            // ersetzt sie anschließend im Hintergrund. Dadurch startet das
+            // Dashboard auch offline nicht mehr mit leeren Platzhaltern.
+            if (StartupSnapshotCache.TryLoad(out var cachedStartupSnapshot, out var cacheTimeUtc))
+            {
+                _cachedSnapshot = cachedStartupSnapshot;
+                ApplySnapshot(cachedStartupSnapshot);
+                Logger.Log($"Startcache angewendet (Stand {cacheTimeUtc.ToLocalTime():G}).");
+            }
 
             // Konfigurierte Startseite anzeigen (Standard: Übersicht).
             switch (_settings.StartupPage)
@@ -934,18 +932,154 @@ namespace WinVora
 
                 case "Updates":
                     SetPage("Updates");
-                    if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
                     break;
 
                 case "Storage":
                     SetPage("Storage");
-                    await LoadStorage();
                     break;
 
                 default:
                     SetPage("Übersicht");
                     break;
             }
+            await LoadDeferredStartupDataAsync();
+        }
+
+        private async Task LoadDeferredStartupDataAsync()
+        {
+            // Alle benötigten Startdaten parallel hinter dem Ladebildschirm
+            // abrufen. Erst wenn diese Aufgaben fertig sind, blendet der
+            // Aufrufer das vollständige Hauptfenster ein.
+            var timer = Stopwatch.StartNew();
+            var cancellationToken = _startupCancellation.Token;
+            void SetPhase(string german, string english, int step)
+            {
+                if (cancellationToken.IsCancellationRequested) return;
+                StartupStatusText.Text = Localization.CurrentLanguage == "en"
+                    ? $"Step {step} of 4 · {english}"
+                    : $"Schritt {step} von 4 · {german}";
+                StartupProgressBar.Value = step;
+                StartupProgressText.Text = Localization.CurrentLanguage == "en"
+                    ? $"Step {step} of 4"
+                    : $"Schritt {step} von 4";
+            }
+            SetPhase("Systeminformationen und Sicherheit werden geladen", "Loading system information and security", 1);
+
+            async Task LoadSystemAsync()
+            {
+                try
+                {
+                    _cachedSnapshot = await StartupPerformanceTracker.MeasureAsync(
+                        "Systeminformationen",
+                        SystemInfoProvider.GetFullSnapshotAsync);
+                    ApplySnapshot(_cachedSnapshot);
+                    _ = Task.Run(() => StartupSnapshotCache.Save(_cachedSnapshot));
+                }
+                catch (Exception ex) { Logger.LogError("Startladen Systeminformationen", ex); }
+            }
+
+            async Task LoadUpdatesAsync()
+            {
+                try
+                {
+                    await StartupPerformanceTracker.MeasureAsync("Programm-Updates", () => LoadWinget());
+                }
+                catch (Exception ex) { Logger.LogError("Startladen Programm-Updates", ex); }
+            }
+
+            var securityTask = SystemInfoProvider.GetFastSecurityStatusAsync();
+            var systemTask = LoadSystemAsync();
+            var updatesTask = LoadUpdatesAsync();
+            var programsTask = StartupPerformanceTracker.MeasureAsync(
+                "Installierte Programme",
+                () => Task.Run(() => InstalledProgramsService.GetInstalledPrograms()));
+            Task storageTask = _currentPageKey == "Storage" ? LoadStorage() : Task.CompletedTask;
+
+            async Task FinishSystemStageAsync()
+            {
+                try
+                {
+                    var fastSecurity = await securityTask;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    ApplyDashboardSecurityStatus(fastSecurity.Antivirus, fastSecurity.Firewall);
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex) { Logger.LogError("Schnelle Sicherheitsprüfung", ex); }
+
+                await systemTask;
+            }
+
+            async Task FinishProgramsStageAsync()
+            {
+                try
+                {
+                    _installedPrograms = await programsTask;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    DashInstalledCountText.Text = _installedPrograms.Count.ToString();
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { Logger.LogError("Startladen Programmliste", ex); }
+            }
+
+            async Task FinishStartupUpdateStageAsync()
+            {
+                // WinGet darf den sichtbaren App-Start nicht unbegrenzt
+                // blockieren. Nach zwölf Sekunden öffnet WinVora vollständig;
+                // die bereits laufende Prüfung aktualisiert die Seite später.
+                Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(12), cancellationToken);
+                if (await Task.WhenAny(updatesTask, timeoutTask) == updatesTask)
+                {
+                    await updatesTask;
+                    return;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                Logger.Log("Startphase 'Programm-Updates' läuft nach 12 Sekunden im Hintergrund weiter.");
+            }
+
+            // Die drei unabhängigen Bereiche werden wirklich nach ihrer
+            // Fertigstellung gezählt. Zuvor wartete die Anzeige immer zuerst
+            // auf die oft langsamen Systeminformationen und blieb bei 0/4,
+            // obwohl Programme oder Updates bereits geladen waren.
+            var pendingStages = new List<(Task Task, string German, string English)>
+            {
+                (FinishSystemStageAsync(), "Systeminformationen und Sicherheit werden geladen", "Loading system information and security"),
+                (FinishProgramsStageAsync(), "Installierte Programme werden geladen", "Loading installed programs"),
+                (FinishStartupUpdateStageAsync(), "Programm-Updates werden geprüft", "Checking program updates")
+            };
+
+            int completedStages = 0;
+            while (pendingStages.Count > 0)
+            {
+                var finishedTask = await Task.WhenAny(pendingStages.Select(stage => stage.Task));
+                int finishedIndex = pendingStages.FindIndex(stage => stage.Task == finishedTask);
+                await finishedTask;
+                pendingStages.RemoveAt(finishedIndex);
+
+                if (cancellationToken.IsCancellationRequested) return;
+                completedStages++;
+                if (pendingStages.Count > 0)
+                {
+                    var nextStage = pendingStages[0];
+                    SetPhase(nextStage.German, nextStage.English, completedStages + 1);
+                }
+                await Task.Yield();
+            }
+
+            SetPhase("Dashboard wird vorbereitet", "Preparing dashboard", 4);
+
+            if (_currentPageKey == "Storage")
+            {
+                StartupStatusText.Text = Localization.CurrentLanguage == "en"
+                    ? "Step 4 of 4 · Analyzing files"
+                    : "Schritt 4 von 4 · Dateien werden analysiert";
+            }
+            await storageTask;
+            if (cancellationToken.IsCancellationRequested) return;
+
+            await StartupPerformanceTracker.MeasureAsync("Dashboard", PopulateDashboardWidgetsAsync);
+            SetPhase("Start abgeschlossen", "Startup complete", 4);
+            Logger.Log($"Alle Startdaten geladen: {timer.ElapsedMilliseconds} ms.");
         }
 
         private void HideStartupOverlay()
@@ -1202,6 +1336,15 @@ namespace WinVora
         }
 
         // Kleines Label+Control-Paar (z.B. für ComboBoxen mit Beschriftung).
+        private static void PreventClosedComboBoxWheelChange(ComboBox comboBox)
+        {
+            comboBox.PointerWheelChanged += (_, args) =>
+            {
+                if (!comboBox.IsDropDownOpen)
+                    args.Handled = true;
+            };
+        }
+
         private StackPanel MakeLabeledControl(string label, FrameworkElement control)
             => SettingsUiBuilder.CreateLabeledControl(label, control, RootGrid.Resources);
 
@@ -1344,6 +1487,43 @@ namespace WinVora
             HealthUpdatesText.FontSize = narrow ? 22 : 24;
             HealthSecurityText.FontSize = narrow ? 22 : 24;
 
+            var statusCards = new[] { StatCardUpdates, StatCardCpu, StatCardRam, StatCardGpu, StatCardSecurity };
+            for (int column = 0; column < DashboardStatusGrid.ColumnDefinitions.Count; column++)
+                DashboardStatusGrid.ColumnDefinitions[column].Width = narrow
+                    ? new GridLength(1, GridUnitType.Star)
+                    : column < 5 ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+
+            if (narrow)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    Grid.SetRow(statusCards[i], 0);
+                    Grid.SetColumn(statusCards[i], i * 2);
+                    Grid.SetColumnSpan(statusCards[i], 2);
+                }
+                Grid.SetRow(StatCardGpu, 1);
+                Grid.SetColumn(StatCardGpu, 0);
+                Grid.SetColumnSpan(StatCardGpu, 3);
+                Grid.SetRow(StatCardSecurity, 1);
+                Grid.SetColumn(StatCardSecurity, 3);
+                Grid.SetColumnSpan(StatCardSecurity, 3);
+            }
+            else
+            {
+                for (int i = 0; i < statusCards.Length; i++)
+                {
+                    Grid.SetRow(statusCards[i], 0);
+                    Grid.SetColumn(statusCards[i], i);
+                    Grid.SetColumnSpan(statusCards[i], 1);
+                }
+            }
+
+            Grid.SetRow(DashCardDisk, 0); Grid.SetColumn(DashCardDisk, 0); Grid.SetColumnSpan(DashCardDisk, narrow ? 2 : 1);
+            Grid.SetRow(DashCardTemp, 0); Grid.SetColumn(DashCardTemp, narrow ? 2 : 1); Grid.SetColumnSpan(DashCardTemp, narrow ? 2 : 1);
+            Grid.SetRow(DashCardPrograms, narrow ? 1 : 0); Grid.SetColumn(DashCardPrograms, narrow ? 0 : 2); Grid.SetColumnSpan(DashCardPrograms, narrow ? 2 : 1);
+            Grid.SetRow(DashCardCleanup, narrow ? 1 : 0); Grid.SetColumn(DashCardCleanup, narrow ? 2 : 3); Grid.SetColumnSpan(DashCardCleanup, narrow ? 2 : 1);
+            Grid.SetRow(DashCardStatus, narrow ? 2 : 1);
+
             ToolTipService.SetToolTip(NavOverviewButton, iconOnly ? LblNavDashboard.Text : null);
             ToolTipService.SetToolTip(NavSystemButton, iconOnly ? LblNavSystem.Text : null);
             ToolTipService.SetToolTip(NavUpdatesButton, iconOnly ? LblNavUpdates.Text : null);
@@ -1363,9 +1543,19 @@ namespace WinVora
         private void RenderHistoryPage()
         {
             HistoryListPanel.Children.Clear();
+            string historyQuery = HistorySearchBox.Text?.Trim() ?? "";
+            DateTimeOffset? fromDate = HistoryFromDatePicker.SelectedDate;
+            DateTimeOffset? toDate = HistoryToDatePicker.SelectedDate;
             var entries = _settings.ActivityLog.Where(entry =>
                 _historyFilter == "All" ||
-                (string.IsNullOrWhiteSpace(entry.Result) ? "Successful" : entry.Result) == _historyFilter).ToList();
+                (string.IsNullOrWhiteSpace(entry.Result) ? "Successful" : entry.Result) == _historyFilter)
+                .Where(entry => string.IsNullOrWhiteSpace(historyQuery) ||
+                    entry.TextDe.Contains(historyQuery, StringComparison.OrdinalIgnoreCase) ||
+                    entry.TextEn.Contains(historyQuery, StringComparison.OrdinalIgnoreCase) ||
+                    (entry.PackageId?.Contains(historyQuery, StringComparison.OrdinalIgnoreCase) ?? false))
+                .Where(entry => !fromDate.HasValue || entry.TimestampUtc.ToLocalTime().Date >= fromDate.Value.Date)
+                .Where(entry => !toDate.HasValue || entry.TimestampUtc.ToLocalTime().Date <= toDate.Value.Date)
+                .ToList();
             foreach (var button in new[] { HistoryAllButton, HistorySuccessButton, HistoryFailedButton, HistoryCancelledButton, HistoryRestartButton })
             {
                 bool active = Equals(button.Tag?.ToString(), _historyFilter);
@@ -1454,6 +1644,47 @@ namespace WinVora
                 card.BorderThickness = new Thickness(4, 0, 0, 0);
                 card.MinHeight = 72;
                 card.Padding = new Thickness(16, 11, 16, 11);
+                if (card.Child is StackPanel detailPanel &&
+                    (normalizedResult == "Failed" || entry.ExitCode is not null))
+                {
+                    var copyDetails = new Button
+                    {
+                        Content = Localization.CurrentLanguage == "en" ? "Copy technical details" : "Technische Details kopieren",
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Padding = new Thickness(10, 5, 10, 5)
+                    };
+                    copyDetails.Click += async (_, __) =>
+                    {
+                        string technical = $"{text}\nPaket: {entry.PackageId}\nVersion: {entry.OldVersion} -> {entry.NewVersion}\nStatus: {normalizedResult}\nExit-Code: {(entry.ExitCode.HasValue ? $"0x{unchecked((uint)entry.ExitCode.Value):X8}" : "-")}\nZeitpunkt: {entry.TimestampUtc.ToLocalTime():O}";
+                        var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                        data.SetText(technical);
+                        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+                        ShowInfo(Localization.CurrentLanguage == "en" ? "Technical details copied." : "Technische Details kopiert.", InfoBarSeverity.Success);
+                        await Task.CompletedTask;
+                    };
+                    detailPanel.Children.Add(copyDetails);
+                }
+                if (card.Child is StackPanel entryPanel)
+                {
+                    var deleteEntry = new Button
+                    {
+                        Content = Localization.CurrentLanguage == "en" ? "Delete entry" : "Eintrag löschen",
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Padding = new Thickness(10, 5, 10, 5)
+                    };
+                    deleteEntry.Click += async (_, __) =>
+                    {
+                        if (!await ConfirmAsync(
+                            Localization.CurrentLanguage == "en" ? "Delete history entry?" : "Verlaufseintrag löschen?",
+                            text,
+                            Localization.CurrentLanguage == "en" ? "Delete" : "Löschen",
+                            respectDeleteConfirmationSetting: false)) return;
+                        _settings.ActivityLog.Remove(entry);
+                        _settings.Save();
+                        RenderHistoryPage();
+                    };
+                    entryPanel.Children.Add(deleteEntry);
+                }
                 HistoryListPanel.Children.Add(card);
             }
 
@@ -1621,6 +1852,7 @@ namespace WinVora
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
+            bool en = Localization.CurrentLanguage == "en";
             if (_settingsWindow != null)
             {
                 _settingsWindow.Activate();
@@ -1882,6 +2114,7 @@ namespace WinVora
 
             // Farbschema: dem Windows-Modus folgen oder fest hell/dunkel.
             var colorSchemeCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            PreventClosedComboBoxWheelChange(colorSchemeCombo);
             var colorSchemeOptions = new (string Value, string De, string En)[]
             {
                 ("System", "System", "System"),
@@ -1946,6 +2179,7 @@ namespace WinVora
 
             // Animationsumfang statt eines missverständlichen Ein/Aus-Schalters.
             var animationCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            PreventClosedComboBoxWheelChange(animationCombo);
             var animationOptions = new (string Value, string De, string En)[]
             {
                 ("Full", "Voll", "Full"),
@@ -1977,6 +2211,7 @@ namespace WinVora
 
             // Startseite
             var startupCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            PreventClosedComboBoxWheelChange(startupCombo);
             var startupOptions = new (string Value, string Label)[]
             {
                 ("Übersicht", "Dashboard"),
@@ -2002,6 +2237,7 @@ namespace WinVora
 
             // Sprache
             var languageCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            PreventClosedComboBoxWheelChange(languageCombo);
             var languageOptions = new (string Value, string Label)[]
             {
                 ("de", "Deutsch"),
@@ -2028,6 +2264,7 @@ namespace WinVora
 
             // Live-Update-Intervall
             var intervalCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            PreventClosedComboBoxWheelChange(intervalCombo);
             var intervalOptions = new[] { 1, 2, 5 };
             foreach (var s in intervalOptions)
                 intervalCombo.Items.Add(new ComboBoxItem { Content = $"{s} Sekunde{(s == 1 ? "" : "n")}", Tag = s });
@@ -2077,7 +2314,101 @@ namespace WinVora
             };
             behaviorContent.Children.Add(confirmToggle);
 
+            var completionNotificationToggle = new ToggleSwitch
+            {
+                Header = en ? "Notification after updates" : "Benachrichtigung nach Updates",
+                IsOn = _settings.NotifyUpdateCompletion,
+                OnContent = Localization.T("Settings.On"),
+                OffContent = Localization.T("Settings.Off")
+            };
+            completionNotificationToggle.Toggled += (_, __) =>
+            {
+                _settings.NotifyUpdateCompletion = completionNotificationToggle.IsOn;
+                _settings.Save();
+            };
+            behaviorContent.Children.Add(completionNotificationToggle);
+
+            var restartNotificationToggle = new ToggleSwitch
+            {
+                Header = en ? "Restart notifications" : "Neustart-Benachrichtigungen",
+                IsOn = _settings.NotifyRestartRequired,
+                OnContent = Localization.T("Settings.On"),
+                OffContent = Localization.T("Settings.Off")
+            };
+            restartNotificationToggle.Toggled += (_, __) =>
+            {
+                _settings.NotifyRestartRequired = restartNotificationToggle.IsOn;
+                _settings.Save();
+            };
+            behaviorContent.Children.Add(restartNotificationToggle);
+
+            foreach (var protection in new[]
+            {
+                (Header: en ? "Protect Downloads" : "Downloads besonders schützen", Get: (Func<bool>)(() => _settings.ConfirmDownloadsCleanup), Set: (Action<bool>)(value => _settings.ConfirmDownloadsCleanup = value)),
+                (Header: en ? "Protect Recycle Bin" : "Papierkorb besonders schützen", Get: (Func<bool>)(() => _settings.ConfirmRecycleBinCleanup), Set: (Action<bool>)(value => _settings.ConfirmRecycleBinCleanup = value)),
+                (Header: en ? "Protect browser data" : "Browserdaten besonders schützen", Get: (Func<bool>)(() => _settings.ConfirmBrowserCleanup), Set: (Action<bool>)(value => _settings.ConfirmBrowserCleanup = value)),
+                (Header: en ? "Offer leftover scan after uninstall" : "Nach Deinstallation nach Resten suchen", Get: (Func<bool>)(() => _settings.OfferUninstallLeftoverScan), Set: (Action<bool>)(value => _settings.OfferUninstallLeftoverScan = value))
+            })
+            {
+                var toggle = new ToggleSwitch
+                {
+                    Header = protection.Header,
+                    IsOn = protection.Get(),
+                    OnContent = Localization.T("Settings.On"),
+                    OffContent = Localization.T("Settings.Off")
+                };
+                toggle.Toggled += (_, __) =>
+                {
+                    protection.Set(toggle.IsOn);
+                    _settings.Save();
+                };
+                behaviorContent.Children.Add(toggle);
+            }
+
             panel.Children.Add(behaviorCard);
+
+            // ---- Dauerhaft ignorierte Updates ----
+            var ignoredUpdatesCard = MakeSettingsCard(
+                en ? "Permanently ignored updates" : "Dauerhaft ignorierte Updates",
+                out var ignoredUpdatesContent);
+            if (_settings.IgnoredUpdateIds.Count == 0)
+            {
+                ignoredUpdatesContent.Children.Add(new TextBlock
+                {
+                    Text = en ? "No programs are permanently ignored." : "Es werden keine Programme dauerhaft ignoriert.",
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+                });
+            }
+            else
+            {
+                foreach (string ignoredId in _settings.IgnoredUpdateIds.ToList())
+                {
+                    var ignoredPackage = _cachedPackages?.FirstOrDefault(package =>
+                        package.Id.Equals(ignoredId, StringComparison.OrdinalIgnoreCase));
+                    var row = new Grid { ColumnSpacing = 10 };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = ignoredPackage == null
+                            ? ignoredId
+                            : $"{ignoredPackage.Name}\n{ignoredId} · {ignoredPackage.Version} → {ignoredPackage.Available}",
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap
+                    });
+                    var restore = new Button { Content = en ? "Allow updates" : "Updates wieder erlauben" };
+                    restore.Click += (_, __) =>
+                    {
+                        _settings.IgnoredUpdateIds.RemoveAll(id => id.Equals(ignoredId, StringComparison.OrdinalIgnoreCase));
+                        _settings.Save();
+                        row.Visibility = Visibility.Collapsed;
+                        _cachedPackages = null;
+                    };
+                    Grid.SetColumn(restore, 1); row.Children.Add(restore);
+                    ignoredUpdatesContent.Children.Add(row);
+                }
+            }
+            panel.Children.Add(ignoredUpdatesCard);
 
             // ---- Wartung ----
             var maintenanceCard = MakeSettingsCard(Localization.T("Settings.Maintenance"), out var maintenanceContent);
@@ -2111,6 +2442,50 @@ namespace WinVora
             logButtonsPanel.Children.Add(clearLogButton);
 
             maintenanceContent.Children.Add(logButtonsPanel);
+
+            var settingsTransferPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            var exportSettingsButton = new Button { Content = en ? "Export settings" : "Einstellungen exportieren" };
+            exportSettingsButton.Click += async (_, __) => await ExportSettingsAsync(settingsWindow);
+            var importSettingsButton = new Button { Content = en ? "Import settings" : "Einstellungen importieren" };
+            importSettingsButton.Click += async (_, __) => await ImportSettingsAsync(settingsWindow);
+            settingsTransferPanel.Children.Add(exportSettingsButton);
+            settingsTransferPanel.Children.Add(importSettingsButton);
+            maintenanceContent.Children.Add(settingsTransferPanel);
+
+            string backupDirectory = System.IO.Path.Combine(
+                System.IO.Path.GetDirectoryName(AppSettings.GetSettingsFilePath())!, "Backups");
+            if (Directory.Exists(backupDirectory))
+            {
+                var backups = Directory.GetFiles(backupDirectory, "settings-*.json")
+                    .OrderByDescending(File.GetLastWriteTimeUtc).Take(5).ToList();
+                if (backups.Count > 0)
+                {
+                    maintenanceContent.Children.Add(new TextBlock
+                    {
+                        Text = en ? "Available settings backups" : "Verfügbare Einstellungssicherungen",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    });
+                    foreach (string backup in backups)
+                    {
+                        var restoreBackup = new Button
+                        {
+                            Content = $"{(en ? "Restore" : "Wiederherstellen")} · {File.GetLastWriteTime(backup):g}",
+                            HorizontalAlignment = HorizontalAlignment.Stretch,
+                            Tag = backup
+                        };
+                        restoreBackup.Click += async (_, __) => await RestoreSettingsBackupAsync(backup);
+                        maintenanceContent.Children.Add(restoreBackup);
+                    }
+                }
+            }
+
+            var diagnosticButton = new Button
+            {
+                Content = en ? "Create anonymized support report" : "Anonymisierten Supportbericht erstellen",
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            diagnosticButton.Click += async (_, __) => await ExportDiagnosticReportAsync(settingsWindow);
+            maintenanceContent.Children.Add(diagnosticButton);
 
             var resetButton = new Button
             {
@@ -2170,6 +2545,141 @@ namespace WinVora
                 settingsWidth, settingsHeight);
             settingsWindow.Activate();
             WindowActivationService.ShowOwnedInFront(this, settingsWindow);
+        }
+
+        private void HistorySearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_currentPageKey == "History") RenderHistoryPage();
+        }
+
+        private void HistoryDatePicker_DateChanged(object sender, DatePickerValueChangedEventArgs args)
+        {
+            if (_currentPageKey == "History") RenderHistoryPage();
+        }
+
+        private void HistoryResetFilters_Click(object sender, RoutedEventArgs e)
+        {
+            _historyFilter = "All";
+            HistorySearchBox.Text = "";
+            HistoryFromDatePicker.SelectedDate = null;
+            HistoryToDatePicker.SelectedDate = null;
+            RenderHistoryPage();
+        }
+
+        private async void HistoryClearAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (_settings.ActivityLog.Count == 0) return;
+            bool en = Localization.CurrentLanguage == "en";
+            if (!await ConfirmAsync(
+                en ? "Clear complete history?" : "Gesamten Verlauf leeren?",
+                en ? $"All {_settings.ActivityLog.Count} entries will be permanently removed." : $"Alle {_settings.ActivityLog.Count} Einträge werden dauerhaft entfernt.",
+                en ? "Clear history" : "Verlauf leeren",
+                respectDeleteConfirmationSetting: false)) return;
+            _settings.ActivityLog.Clear();
+            _settings.Save();
+            RenderHistoryPage();
+        }
+
+        private async Task ExportSettingsAsync(Window owner)
+        {
+            string json = System.Text.Json.JsonSerializer.Serialize(
+                _settings, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            bool saved = await ReportExportService.SaveJsonAsync(owner, "WinVora-Einstellungen-0.8.3", json);
+            if (saved)
+                ShowInfo(Localization.CurrentLanguage == "en" ? "Settings exported." : "Einstellungen wurden exportiert.", InfoBarSeverity.Success);
+        }
+
+        private async Task ImportSettingsAsync(Window owner)
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            picker.FileTypeFilter.Add(".json");
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker, WinRT.Interop.WindowNative.GetWindowHandle(owner));
+            var file = await picker.PickSingleFileAsync();
+            if (file == null) return;
+
+            try
+            {
+                string json = await File.ReadAllTextAsync(file.Path);
+                var imported = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)
+                    ?? throw new InvalidDataException("Die Datei enthält keine gültigen WinVora-Einstellungen.");
+                imported.Validate();
+
+                bool en = Localization.CurrentLanguage == "en";
+                var preview = new TextBlock
+                {
+                    Text = (en ? "The following settings will be imported:" : "Folgende Einstellungen werden importiert:") +
+                           $"\n\n{(en ? "Language" : "Sprache")}: {imported.Language}" +
+                           $"\n{(en ? "Color scheme" : "Farbschema")}: {imported.ColorScheme}" +
+                           $"\n{(en ? "Startup page" : "Startseite")}: {imported.StartupPage}" +
+                           $"\n{(en ? "Ignored updates" : "Ignorierte Updates")}: {imported.IgnoredUpdateIds.Count}" +
+                           $"\n{(en ? "History entries" : "Verlaufseinträge")}: {imported.ActivityLog.Count}" +
+                           (en ? "\n\nYour current settings are backed up first." : "\n\nDie aktuellen Einstellungen werden vorher gesichert."),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                var confirmation = new ContentDialog
+                {
+                    XamlRoot = (owner.Content as FrameworkElement)?.XamlRoot ?? RootGrid.XamlRoot,
+                    Title = en ? "Import settings?" : "Einstellungen importieren?",
+                    Content = preview,
+                    PrimaryButtonText = en ? "Import" : "Importieren",
+                    CloseButtonText = en ? "Cancel" : "Abbrechen",
+                    DefaultButton = ContentDialogButton.Close
+                };
+                if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
+
+                string currentPath = AppSettings.GetSettingsFilePath();
+                if (File.Exists(currentPath))
+                {
+                    string backupDirectory = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(currentPath)!, "Backups");
+                    Directory.CreateDirectory(backupDirectory);
+                    string backupPath = System.IO.Path.Combine(backupDirectory, $"settings-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+                    File.Copy(currentPath, backupPath, overwrite: false);
+                }
+                _settings = imported;
+                _settings.Save();
+                ApplyConfiguredColorScheme();
+                ApplyLanguage();
+                StartLiveUsageTimer();
+                ShowInfo(Localization.CurrentLanguage == "en" ? "Settings imported." : "Einstellungen wurden importiert.", InfoBarSeverity.Success);
+                _settingsWindow?.Close();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Einstellungen importieren", ex);
+                ShowInfo((Localization.CurrentLanguage == "en" ? "Import failed: " : "Import fehlgeschlagen: ") + ex.Message, InfoBarSeverity.Error);
+            }
+        }
+
+        private async Task ExportDiagnosticReportAsync(Window owner)
+        {
+            var snapshot = _cachedSnapshot ?? await SystemInfoProvider.GetFullSnapshotAsync();
+            string log = File.Exists(Logger.GetLogFilePath())
+                ? await File.ReadAllTextAsync(Logger.GetLogFilePath())
+                : "Kein Protokoll vorhanden.";
+            var report = DiagnosticReportBuilder.Build(snapshot, CurrentVersion, log);
+            bool en = Localization.CurrentLanguage == "en";
+            var previewDialog = new ContentDialog
+            {
+                XamlRoot = (owner.Content as FrameworkElement)?.XamlRoot ?? RootGrid.XamlRoot,
+                Title = en ? "Preview anonymized support report" : "Vorschau des anonymisierten Supportberichts",
+                Content = new TextBox
+                {
+                    Text = report,
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.NoWrap,
+                    MinWidth = 520,
+                    MaxHeight = 420
+                },
+                PrimaryButtonText = en ? "Save" : "Speichern",
+                CloseButtonText = en ? "Cancel" : "Abbrechen",
+                DefaultButton = ContentDialogButton.Close
+            };
+            if (await previewDialog.ShowAsync() != ContentDialogResult.Primary) return;
+            bool saved = await ReportExportService.SaveSupportZipAsync(owner, $"WinVora-Supportbericht-{CurrentVersion}", report);
+            if (saved)
+                ShowInfo(Localization.CurrentLanguage == "en" ? "Support report exported." : "Supportbericht wurde exportiert.", InfoBarSeverity.Success);
         }
 
         private async void ContactButton_Click(object sender, RoutedEventArgs e)
@@ -3019,10 +3529,73 @@ namespace WinVora
         // Netzwerkänderungen usw. wurden erst nach einem App-Neustart sichtbar.
         private async void RefreshSystemInfo_Click(object sender, RoutedEventArgs e)
         {
-            _cachedSnapshot = null;
-            await LoadSystemSnapshotIfNeededAsync(
-                "Wird aktualisiert...",
-                "Fehler beim Aktualisieren der Systeminfos");
+            if (_cachedSnapshot == null)
+            {
+                await LoadSystemSnapshotIfNeededAsync("Wird aktualisiert...", "Fehler beim Aktualisieren der Systeminfos");
+                return;
+            }
+
+            var openSections = new List<SystemInfoSection>();
+            if (DeviceExpander.IsExpanded) openSections.Add(SystemInfoSection.Device);
+            if (OsExpander.IsExpanded) openSections.Add(SystemInfoSection.OperatingSystem);
+            if (CpuExpander.IsExpanded) openSections.Add(SystemInfoSection.Cpu);
+            if (RamExpander.IsExpanded) openSections.Add(SystemInfoSection.Ram);
+            if (BoardExpander.IsExpanded) openSections.Add(SystemInfoSection.Board);
+            if (SecurityExpander.IsExpanded) openSections.Add(SystemInfoSection.Security);
+            if (GpuExpander.IsExpanded) openSections.Add(SystemInfoSection.Gpu);
+            if (DrivesExpander.IsExpanded) openSections.Add(SystemInfoSection.Drives);
+            if (NetworkExpander.IsExpanded) openSections.Add(SystemInfoSection.Network);
+            if (BatteryExpander.IsExpanded) openSections.Add(SystemInfoSection.Battery);
+
+            if (openSections.Count == 0)
+            {
+                ShowInfo(Localization.CurrentLanguage == "en"
+                    ? "Open a system information category first."
+                    : "Öffne zuerst eine Systeminfo-Kategorie.");
+                return;
+            }
+
+            RefreshSystemInfoButton.IsEnabled = false;
+            PageSubtitle.Text = Localization.CurrentLanguage == "en" ? "Refreshing open categories..." : "Geöffnete Kategorien werden aktualisiert...";
+            try
+            {
+                await Task.WhenAll(openSections.Select(section => SystemInfoProvider.RefreshSectionAsync(_cachedSnapshot, section)));
+                ApplySnapshot(_cachedSnapshot);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Geöffnete Systeminfo-Kategorien aktualisieren", ex);
+                ShowInfo(ex.Message, InfoBarSeverity.Error);
+            }
+            finally { RefreshSystemInfoButton.IsEnabled = true; }
+        }
+
+        private async Task RestoreSettingsBackupAsync(string backupPath)
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            if (!await ConfirmAsync(
+                en ? "Restore settings backup?" : "Einstellungssicherung wiederherstellen?",
+                $"{File.GetLastWriteTime(backupPath):G}",
+                en ? "Restore" : "Wiederherstellen",
+                respectDeleteConfirmationSetting: false)) return;
+            try
+            {
+                var restored = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(await File.ReadAllTextAsync(backupPath))
+                    ?? throw new InvalidDataException("Ungültige Sicherung.");
+                restored.Validate();
+                _settings = restored;
+                _settings.Save();
+                ApplyConfiguredColorScheme();
+                ApplyLanguage();
+                StartLiveUsageTimer();
+                ShowInfo(en ? "Settings backup restored." : "Einstellungssicherung wurde wiederhergestellt.", InfoBarSeverity.Success);
+                _settingsWindow?.Close();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Einstellungssicherung wiederherstellen", ex);
+                ShowInfo(ex.Message, InfoBarSeverity.Error);
+            }
         }
 
         private void ExpandAllSystem_Click(object sender, RoutedEventArgs e)
@@ -3168,18 +3741,59 @@ namespace WinVora
             }
 
             SysBattery.Text = s.BatteryStatus;
-            var defenderOk = s.DefenderStatus.Contains("Aktiv", StringComparison.OrdinalIgnoreCase) ||
-                              s.DefenderStatus.Contains("Active", StringComparison.OrdinalIgnoreCase);
-            var firewallOk = s.FirewallStatus.Contains("Aktiv", StringComparison.OrdinalIgnoreCase) ||
-                              s.FirewallStatus.Contains("Active", StringComparison.OrdinalIgnoreCase);
+            if (_currentPageKey == "System")
+                PageSubtitle.Text = Localization.CurrentLanguage == "en"
+                    ? $"Last checked: {DateTime.Now:G}"
+                    : $"Zuletzt geprüft: {DateTime.Now:G}";
+            // Nur ein ausdrücklich deaktivierter Schutz löst eine Warnung aus.
+            // WMI liefert Defender/Firewall auf manchen PCs als "Unbekannt"
+            // oder "Nicht verfügbar"; das ist kein Beleg für ein
+            // Sicherheitsproblem und darf den Dashboardstatus nicht dauerhaft
+            // gelb färben.
+            ApplyDashboardSecurityStatus(s.DefenderStatus, s.FirewallStatus);
+        }
 
-            HealthSecurityText.Text = (defenderOk, firewallOk) switch
+        private void ApplyDashboardSecurityStatus(string antivirusStatus, string firewallStatus)
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            _lastAntivirusStatus = antivirusStatus;
+            _lastFirewallStatus = firewallStatus;
+            _securityHealthState = SecurityStatusEvaluator.Evaluate(antivirusStatus, firewallStatus);
+            HealthSecurityText.Text = _securityHealthState switch
             {
-                (true, true) => en ? "Active" : "Aktiv",
-                (false, true) => en ? "Check Defender" : "Defender prüfen",
-                (true, false) => en ? "Check Firewall" : "Firewall prüfen",
-                _ => en ? "Check" : "Prüfen"
+                SecurityHealthState.Active => en ? "Active" : "Aktiv",
+                SecurityHealthState.Problem => en ? "Check" : "Prüfen",
+                _ => en ? "Not verifiable" : "Nicht prüfbar"
             };
+            HealthSecurityText.Foreground = new SolidColorBrush(_securityHealthState switch
+            {
+                SecurityHealthState.Active => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73),
+                SecurityHealthState.Problem => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D),
+                _ => Windows.UI.Color.FromArgb(0xFF, 0xA0, 0xA0, 0xA0)
+            });
+            UpdateDashboardStatusSummary();
+        }
+
+        private async void SecurityCard_Tapped(object sender, TappedRoutedEventArgs e)
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            string explanation = _securityHealthState switch
+            {
+                SecurityHealthState.Active => en ? "No security problem was detected." : "Es wurde kein Sicherheitsproblem erkannt.",
+                SecurityHealthState.Problem => en ? "At least one protection component reports a problem." : "Mindestens eine Schutzkomponente meldet ein Problem.",
+                _ => en ? "At least one value could not be checked reliably without additional permissions." : "Mindestens ein Wert konnte ohne zusätzliche Rechte nicht zuverlässig geprüft werden."
+            };
+            await new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = en ? "Security details" : "Sicherheitsdetails",
+                Content = new TextBlock
+                {
+                    Text = $"{explanation}\n\n{(en ? "Antivirus" : "Virenschutz")}: {_lastAntivirusStatus}\n{(en ? "Firewall" : "Firewall")}: {_lastFirewallStatus}",
+                    TextWrapping = TextWrapping.Wrap
+                },
+                CloseButtonText = en ? "Close" : "Schließen"
+            }.ShowAsync();
         }
 
         // Kleine Hilfsmethode, um schnell eine SettingsCard mit Header/Beschreibung/Inhalt zu bauen
@@ -3224,9 +3838,6 @@ namespace WinVora
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            var headerGrid = new Grid { ColumnSpacing = 12 };
-            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var headerText = new TextBlock
             {
                 Text = header,
@@ -3235,12 +3846,7 @@ namespace WinVora
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             };
-            var copyButton = SystemInfoCopyButton.Create(
-                () => SystemInfoFormatter.Card(header, description, content));
-            Grid.SetColumn(copyButton, 1);
-            headerGrid.Children.Add(headerText);
-            headerGrid.Children.Add(copyButton);
-            panel.Children.Add(headerGrid);
+            panel.Children.Add(headerText);
 
             if (!string.IsNullOrWhiteSpace(description))
             {
@@ -3432,7 +4038,9 @@ namespace WinVora
             // Installierte Programme (Registry-Scan - im Hintergrund, kann kurz dauern)
             try
             {
-                var count = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms().Count);
+                var count = _installedPrograms.Count > 0
+                    ? _installedPrograms.Count
+                    : await Task.Run(() => InstalledProgramsService.GetInstalledPrograms().Count);
                 DashInstalledCountText.Text = count.ToString();
             }
             catch (Exception ex)
@@ -3539,24 +4147,28 @@ namespace WinVora
             int updateCount = _cachedPackages?.Count ?? 0;
             DashUpdatesCountText.Text = updateCount == 0 ? (en ? "None" : "Keine") : updateCount.ToString();
 
-            bool securityOk = HealthSecurityText.Text.Contains("Aktiv", StringComparison.OrdinalIgnoreCase) ||
-                               HealthSecurityText.Text.Contains("Active", StringComparison.OrdinalIgnoreCase) ||
-                               HealthSecurityText.Text.Contains("OK", StringComparison.OrdinalIgnoreCase);
+            bool securityOk = _securityHealthState == SecurityHealthState.Active;
+            bool securityUnknown = _securityHealthState == SecurityHealthState.Unknown;
 
             var green = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73));
             var yellow = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D));
             DashUpdatesStatusDot.Fill = updateCount == 0 ? green : yellow;
-            DashSecurityStatusDot.Fill = securityOk ? green : yellow;
+            var gray = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xA0, 0xA0, 0xA0));
+            DashSecurityStatusDot.Fill = securityOk ? green : securityUnknown ? gray : yellow;
             DashUpdatesStatusText.Text = updateCount == 0
                 ? (en ? "No updates" : "Keine Updates")
                 : (en ? $"{updateCount} update(s)" : $"{updateCount} Update(s)");
             DashSecurityStatusText.Text = securityOk
                 ? (en ? "Security active" : "Sicherheit aktiv")
-                : (en ? "Check security" : "Sicherheit prüfen");
+                : securityUnknown
+                    ? (en ? "Security not verifiable" : "Sicherheit nicht prüfbar")
+                    : (en ? "Check security" : "Sicherheit prüfen");
             DashSystemStatusText.Text = en ? "System monitoring running" : "Systemüberwachung läuft";
             bool everythingOk = updateCount == 0 && securityOk;
             DashOverallBadgeText.Text = everythingOk
                 ? (en ? "Everything looks good" : "Alles in Ordnung")
+                : updateCount == 0 && securityUnknown
+                    ? (en ? "Security not verifiable" : "Sicherheit nicht prüfbar")
                 : updateCount > 0 && !securityOk
                     ? (en ? "Updates and security need attention" : "Updates und Sicherheit prüfen")
                     : updateCount > 0
@@ -3564,7 +4176,7 @@ namespace WinVora
                         : (en ? "Check security" : "Sicherheit prüfen");
             DashOverallBadgeText.Foreground = everythingOk
                 ? green
-                : yellow;
+                : updateCount == 0 && securityUnknown ? gray : yellow;
 
             if (updateCount == 0 && securityOk)
             {
@@ -3648,8 +4260,14 @@ namespace WinVora
             StartUpdateButton.IsEnabled = count > 0 && !_isLoadingWinget && !_isUpdatingWinget;
         }
 
-        private void WingetSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        private async void WingetSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            _wingetSearchDebounce?.Cancel();
+            var debounce = _wingetSearchDebounce = new CancellationTokenSource();
+            try { await Task.Delay(160, debounce.Token); }
+            catch (OperationCanceledException) { return; }
+            if (debounce != _wingetSearchDebounce) return;
+
             var query = WingetSearchBox.Text?.Trim() ?? "";
             WingetClearSearchButton.Visibility = string.IsNullOrEmpty(query) ? Visibility.Collapsed : Visibility.Visible;
 
@@ -3685,6 +4303,7 @@ namespace WinVora
         private async Task LoadWinget(bool forceRefresh = false)
         {
             if (_isLoadingWinget || _isUpdatingWinget) return;
+            var loadCancellationToken = _startupCancellation.Token;
             // BUGFIX (Teil 2): Wenn schon ein Ergebnis vorliegt und kein
             // erzwungener Refresh angefordert wurde, einfach das gecachte
             // Ergebnis erneut anzeigen statt "winget upgrade" neu zu starten.
@@ -3749,12 +4368,24 @@ namespace WinVora
                     };
 
                     p.Start();
+                    using var cancellationRegistration = loadCancellationToken.Register(() =>
+                    {
+                        try
+                        {
+                            if (!p.HasExited) p.Kill(entireProcessTree: true);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError("Abbruch der WinGet-Startprüfung", ex);
+                        }
+                    });
 
                     bool hasStartedRows = false;
                     string? line;
 
                     while ((line = p.StandardOutput.ReadLine()) != null)
                     {
+                        loadCancellationToken.ThrowIfCancellationRequested();
                         if (string.IsNullOrWhiteSpace(line))
                         {
                             // Nach den ersten echten Paketzeilen markiert eine Leerzeile
@@ -3915,7 +4546,9 @@ namespace WinVora
             DateTime now = DateTime.UtcNow;
             _settings.DeferredUpdates.RemoveAll(entry => entry.HiddenUntilUtc.HasValue && entry.HiddenUntilUtc <= now);
             var allPackages = packages.ToList();
-            var hiddenIds = _settings.DeferredUpdates.Select(entry => entry.PackageId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var hiddenIds = _settings.DeferredUpdates.Select(entry => entry.PackageId)
+                .Concat(_settings.IgnoredUpdateIds)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             int hiddenCount = packages.Count(package => hiddenIds.Contains(package.Id));
             packages = packages.Where(package => !hiddenIds.Contains(package.Id)).ToList();
             _settings.Save();
@@ -3942,6 +4575,8 @@ namespace WinVora
                     restore.Click += (_, __) =>
                     {
                         _settings.DeferredUpdates.Remove(deferred);
+                        _settings.IgnoredUpdateIds.RemoveAll(id =>
+                            id.Equals(deferred.PackageId, StringComparison.OrdinalIgnoreCase));
                         _settings.Save();
                         if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
                     };
@@ -3949,6 +4584,30 @@ namespace WinVora
                     {
                         Header = package?.Name ?? deferred.PackageId,
                         Description = until,
+                        HeaderIcon = new FontIcon { Glyph = "\uE823" },
+                        Content = restore,
+                        CornerRadius = new CornerRadius(12)
+                    });
+                }
+                foreach (var ignoredId in _settings.IgnoredUpdateIds.ToList())
+                {
+                    if (_settings.DeferredUpdates.Any(entry =>
+                        entry.PackageId.Equals(ignoredId, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+                    var package = allPackages.FirstOrDefault(item =>
+                        item.Id.Equals(ignoredId, StringComparison.OrdinalIgnoreCase));
+                    var restore = new Button { Content = en ? "Restore" : "Wieder anzeigen" };
+                    restore.Click += (_, __) =>
+                    {
+                        _settings.IgnoredUpdateIds.RemoveAll(id =>
+                            id.Equals(ignoredId, StringComparison.OrdinalIgnoreCase));
+                        _settings.Save();
+                        if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
+                    };
+                    ContentArea.Children.Add(new ToolkitControls.SettingsCard
+                    {
+                        Header = package?.Name ?? ignoredId,
+                        Description = en ? "Permanently ignored" : "Dauerhaft ignoriert",
                         HeaderIcon = new FontIcon { Glyph = "\uE823" },
                         Content = restore,
                         CornerRadius = new CornerRadius(12)
@@ -4022,14 +4681,15 @@ namespace WinVora
                     Padding = new Thickness(10, 4, 10, 4)
                 };
                 ToolTipService.SetToolTip(detailsButton, en ? "Show technical package details" : "Technische Paketdetails anzeigen");
+                var detailsText = new TextBlock
+                {
+                    Text = UpdateUiBuilder.TechnicalDetails(pkg, en),
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 420
+                };
                 detailsButton.Flyout = new Flyout
                 {
-                    Content = new TextBlock
-                    {
-                        Text = UpdateUiBuilder.TechnicalDetails(pkg, en),
-                        TextWrapping = TextWrapping.Wrap,
-                        MaxWidth = 420
-                    }
+                    Content = detailsText
                 };
                 var cardActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
                 cardActions.Children.Add(new Border
@@ -4055,7 +4715,8 @@ namespace WinVora
                     HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter-App-Icon
                     Content = cardActions,
                     BorderThickness = new Thickness(1),
-                    BorderBrush = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"] // startet ausgewählt
+                    BorderBrush = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"], // startet ausgewählt
+                    Tag = detailsText
                 };
                 card.MinHeight = 128;
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(card,
@@ -4097,11 +4758,20 @@ namespace WinVora
         {
             _settings.DeferredUpdates.RemoveAll(entry =>
                 entry.PackageId.Equals(package.Id, StringComparison.OrdinalIgnoreCase));
-            _settings.DeferredUpdates.Add(new DeferredUpdateEntry
+            _settings.IgnoredUpdateIds.RemoveAll(id =>
+                id.Equals(package.Id, StringComparison.OrdinalIgnoreCase));
+            if (days.HasValue)
             {
-                PackageId = package.Id,
-                HiddenUntilUtc = days.HasValue ? DateTime.UtcNow.AddDays(days.Value) : null
-            });
+                _settings.DeferredUpdates.Add(new DeferredUpdateEntry
+                {
+                    PackageId = package.Id,
+                    HiddenUntilUtc = DateTime.UtcNow.AddDays(days.Value)
+                });
+            }
+            else
+            {
+                _settings.IgnoredUpdateIds.Add(package.Id);
+            }
             _settings.Save();
             if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
             ShowInfo(days.HasValue
@@ -4146,12 +4816,16 @@ namespace WinVora
             var publisherLabel = Localization.T("Winget.Publisher");
             var sizeLabel = Localization.T("Winget.Size");
 
-            var pending = new System.Collections.Concurrent.ConcurrentQueue<(ToolkitControls.SettingsCard Card, string Text)>();
+            var pending = new System.Collections.Concurrent.ConcurrentQueue<(ToolkitControls.SettingsCard Card, string Text, string Details)>();
 
             void FlushPending()
             {
                 while (pending.TryDequeue(out var item))
+                {
                     item.Card.Description = item.Text;
+                    if (item.Card.Tag is TextBlock detailsText)
+                        detailsText.Text = item.Details;
+                }
             }
 
             var flushTimer = DispatcherQueue.CreateTimer();
@@ -4169,8 +4843,11 @@ namespace WinVora
                     {
                         var (publisher, size) = await GetWingetDetailsAsync(
                             row.Package.Id, row.Package.Name, installedPrograms);
+                        row.Package.Publisher = publisher;
+                        row.Package.DownloadSize = size;
                         pending.Enqueue((row.Card,
-                            $"{row.BaseDescription}\n{sizeLabel.ToUpperInvariant()}   {size}     {publisherLabel.ToUpperInvariant()}   {publisher}"));
+                            $"{row.BaseDescription}\n{sizeLabel.ToUpperInvariant()}   {size}     {publisherLabel.ToUpperInvariant()}   {publisher}",
+                            UpdateUiBuilder.TechnicalDetails(row.Package, Localization.CurrentLanguage == "en")));
                     }
                     finally
                     {
@@ -4369,7 +5046,9 @@ namespace WinVora
                 };
                 CurrentPackageStatusText.Text = string.IsNullOrWhiteSpace(p.Text)
                     ? phaseText
-                    : $"{phaseText} · {p.Text}";
+                    : $"{phaseText} · {p.Text}" +
+                      (string.IsNullOrWhiteSpace(p.Speed) ? "" : $" · {p.Speed}") +
+                      (string.IsNullOrWhiteSpace(p.Eta) ? "" : $" · {(en ? "Remaining" : "Restzeit")} {p.Eta}");
 
                 if (p.Percent.HasValue)
                 {
@@ -4438,7 +5117,12 @@ namespace WinVora
                     $"{successCount} program(s) updated");
             }
 
-            NotificationService.ShowUpdateSummary(successCount, failedCount, cancelledCount, restartCount);
+            if (_settings.NotifyUpdateCompletion || (restartCount > 0 && _settings.NotifyRestartRequired))
+            {
+                NotificationService.ShowUpdateSummary(
+                    successCount, failedCount, cancelledCount,
+                    _settings.NotifyRestartRequired ? restartCount : 0);
+            }
 
             await ShowUpdateSummaryAsync(results, selected.Count - results.Count);
 
@@ -4557,10 +5241,29 @@ namespace WinVora
                 XamlRoot = RootGrid.XamlRoot,
                 Title = en ? "Update summary" : "Update-Abschlussbericht",
                 Content = new ScrollViewer { Content = panel, MaxHeight = 430 },
+                PrimaryButtonText = results.Any(item => item.Result.Status == WingetUpdateStatus.Failed)
+                    ? (en ? "Retry failed" : "Fehlgeschlagene erneut versuchen")
+                    : null,
                 CloseButtonText = en ? "Close" : "Schließen",
                 DefaultButton = ContentDialogButton.Close
             };
-            await dialog.ShowAsync();
+            var choice = await dialog.ShowAsync();
+            if (choice == ContentDialogResult.Primary)
+            {
+                var retryResults = new List<(WingetPackage Package, WingetUpdateResult Result)>();
+                foreach (var failed in results.Where(item => item.Result.Status == WingetUpdateStatus.Failed))
+                {
+                    SetGlobalStatus(en ? $"Retrying {failed.Package.Name}..." : $"{failed.Package.Name} wird erneut versucht...");
+                    var retry = await _wingetUpdateService.UpgradeAsync(
+                        failed.Package.Id,
+                        new Progress<WingetUpdateProgress>(_ => { }),
+                        CancellationToken.None);
+                    retryResults.Add((failed.Package, retry));
+                    LogWingetUpdateActivity(failed.Package, retry);
+                }
+                SetGlobalStatus(null);
+                await ShowUpdateSummaryAsync(retryResults, 0);
+            }
         }
 
         // Ermittelt die Spaltenstart-Positionen sprachunabhängig:
@@ -4858,6 +5561,7 @@ namespace WinVora
         private static string GetStorageIconGlyph(string categoryKey) => categoryKey switch
         {
             "user_temp" or "windows_temp" => "\uE74D",       // Papierkorb-artiges Symbol für Temp
+            "downloads" => "\uE896",
             "prefetch" => "\uE945",                          // Blitz / Performance
             "recycle_bin" => "\uE74D",                        // Papierkorb
             "dx_shader_cache" => "\uE7F4",                    // Grafikkarte
@@ -4889,6 +5593,27 @@ namespace WinVora
             return $"\n\nHinweis: {string.Join(" und ", runningBrowsers)} läuft gerade - " +
                    "einige Cache-Dateien sind dadurch in Benutzung und werden übersprungen. " +
                    "Für eine vollständige Bereinigung den Browser vorher schließen.";
+        }
+
+        private bool RequiresProtectedCleanupConfirmation(IEnumerable<StorageCategory> categories)
+        {
+            var keys = categories.Select(category => category.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return (_settings.ConfirmDownloadsCleanup && keys.Contains("downloads")) ||
+                   (_settings.ConfirmRecycleBinCleanup && keys.Contains("recycle_bin")) ||
+                   (_settings.ConfirmBrowserCleanup && (keys.Contains("browser_cache") || keys.Contains("inet_cache")));
+        }
+
+        private string GetProtectedCleanupWarning(IEnumerable<StorageCategory> categories)
+        {
+            var keys = categories.Select(category => category.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var warnings = new List<string>();
+            if (_settings.ConfirmDownloadsCleanup && keys.Contains("downloads"))
+                warnings.Add("Downloads können persönliche Dateien enthalten");
+            if (_settings.ConfirmRecycleBinCleanup && keys.Contains("recycle_bin"))
+                warnings.Add("Dateien im Papierkorb werden endgültig gelöscht");
+            if (_settings.ConfirmBrowserCleanup && (keys.Contains("browser_cache") || keys.Contains("inet_cache")))
+                warnings.Add("Browserdaten können Anmeldungen oder Offline-Inhalte beeinflussen");
+            return warnings.Count == 0 ? "" : "\n\nBesonders geschützt: " + string.Join("; ", warnings) + ".";
         }
 
         // Löscht eine oder mehrere Storage-Kategorien. Kategorien, die
@@ -4980,7 +5705,9 @@ namespace WinVora
             bool confirmed = await ConfirmAsync(
                 "Bereich löschen?",
                 $"\"{category.Name}\" wird bereinigt. Das kann nicht rückgängig gemacht werden. Fortfahren?" +
-                GetRunningProcessWarning(new[] { category }));
+                GetProtectedCleanupWarning(new[] { category }) +
+                GetRunningProcessWarning(new[] { category }),
+                respectDeleteConfirmationSetting: !RequiresProtectedCleanupConfirmation(new[] { category }));
 
             if (!confirmed) return;
 
@@ -5042,10 +5769,11 @@ namespace WinVora
             bool confirmed = await ConfirmAsync(
                 "Ausgewählte Bereiche löschen?",
                 $"{selected.Count} Bereich(e) werden bereinigt: {string.Join(", ", selected.Select(c => c.Name))}. Das kann nicht rückgängig gemacht werden. Fortfahren?" +
-                GetRunningProcessWarning(selected));
+                GetProtectedCleanupWarning(selected) +
+                GetRunningProcessWarning(selected),
+                respectDeleteConfirmationSetting: !RequiresProtectedCleanupConfirmation(selected));
 
             if (!confirmed) return;
-            _isDeletingStorage = true;
             _isDeletingStorage = true;
 
             StorageRefreshButton.IsEnabled = false;
@@ -5137,6 +5865,49 @@ namespace WinVora
         private async void UninstallRefresh_Click(object sender, RoutedEventArgs e)
         {
             await LoadInstalledPrograms();
+        }
+
+        private async Task<List<InstalledProgram>> GetProgramsForExportAsync() => _installedPrograms.Count > 0
+            ? _installedPrograms
+            : await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+
+        private async void UninstallExportTxt_Click(object sender, RoutedEventArgs e)
+        {
+            var programs = await GetProgramsForExportAsync();
+            bool en = Localization.CurrentLanguage == "en";
+            if (!await ConfirmProgramExportAsync(programs.Count, "TXT")) return;
+            if (await ReportExportService.SaveTextAsync(this, $"WinVora-Programmliste-{DateTime.Now:yyyyMMdd}", ProgramListExporter.ToText(programs, en)))
+                ShowInfo(en ? "Program list exported." : "Programmliste wurde exportiert.", InfoBarSeverity.Success);
+        }
+
+        private async void UninstallExportCsv_Click(object sender, RoutedEventArgs e)
+        {
+            var programs = await GetProgramsForExportAsync();
+            bool en = Localization.CurrentLanguage == "en";
+            char separator = sender is MenuFlyoutItem item && item.Tag?.ToString() == ";" ? ';' : ',';
+            if (!await ConfirmProgramExportAsync(programs.Count, separator == ';' ? "CSV (Excel/Semikolon)" : "CSV (Komma)")) return;
+            if (await ReportExportService.SaveCsvAsync(this, $"WinVora-Programmliste-{DateTime.Now:yyyyMMdd}", ProgramListExporter.ToCsv(programs, en, separator)))
+                ShowInfo(en ? "CSV program list exported." : "CSV-Programmliste wurde exportiert.", InfoBarSeverity.Success);
+        }
+
+        private async Task<bool> ConfirmProgramExportAsync(int count, string format)
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            var dialog = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = en ? "Export program list?" : "Programmliste exportieren?",
+                Content = new TextBlock
+                {
+                    Text = $"{(en ? "Programs" : "Programme")}: {count}\nFormat: {format}\n" +
+                           (en ? "Fields: Name, version, publisher, size, install date" : "Felder: Name, Version, Herausgeber, Größe, Installationsdatum"),
+                    TextWrapping = TextWrapping.Wrap
+                },
+                PrimaryButtonText = en ? "Export" : "Exportieren",
+                CloseButtonText = en ? "Cancel" : "Abbrechen",
+                DefaultButton = ContentDialogButton.Primary
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
         }
 
         private async Task LoadInstalledPrograms()
@@ -5295,8 +6066,14 @@ namespace WinVora
             }
         }
 
-        private void UninstallSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        private async void UninstallSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            _uninstallSearchDebounce?.Cancel();
+            var debounce = _uninstallSearchDebounce = new CancellationTokenSource();
+            try { await Task.Delay(160, debounce.Token); }
+            catch (OperationCanceledException) { return; }
+            if (debounce != _uninstallSearchDebounce) return;
+
             var query = UninstallSearchBox.Text?.Trim() ?? "";
             UninstallClearSearchButton.Visibility = string.IsNullOrEmpty(query) ? Visibility.Collapsed : Visibility.Visible;
             int visibleCount = 0;
@@ -5375,6 +6152,13 @@ namespace WinVora
                     $"Deinstaller für {program.DisplayName} gestartet",
                     $"Uninstaller for {program.DisplayName} started");
                 ScheduleDashboardRefresh();
+                if (_settings.OfferUninstallLeftoverScan)
+                {
+                    await Task.Delay(1200);
+                    var leftovers = await Task.Run(() => InstalledProgramsService.FindPotentialLeftovers(program));
+                    if (leftovers.Count > 0)
+                        await ShowUninstallLeftoversAsync(program.DisplayName, leftovers);
+                }
             }
             else
             {
@@ -5395,6 +6179,69 @@ namespace WinVora
             }
         }
 
+        private async Task ShowUninstallLeftoversAsync(string programName, List<string> leftovers)
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            var panel = new StackPanel { Spacing = 8, MaxWidth = 620 };
+            panel.Children.Add(new TextBlock
+            {
+                Text = en
+                    ? "Nothing is deleted automatically. Review each possible leftover."
+                    : "Es wird nichts automatisch gelöscht. Prüfe jeden möglichen Rest einzeln.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
+            foreach (string leftover in leftovers)
+            {
+                string value = leftover.Contains(':') ? leftover[(leftover.IndexOf(':') + 1)..].Trim() : leftover;
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(new TextBlock { Text = leftover, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+                if (leftover.StartsWith("Ordner:", StringComparison.OrdinalIgnoreCase) && Directory.Exists(value))
+                {
+                    var open = new Button { Content = en ? "Open" : "Öffnen" };
+                    open.Click += (_, __) => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{value}\"") { UseShellExecute = true });
+                    Grid.SetColumn(open, 1); row.Children.Add(open);
+                }
+                var copy = new Button { Content = en ? "Copy" : "Kopieren" };
+                copy.Click += (_, __) =>
+                {
+                    var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                    data.SetText(value);
+                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+                };
+                Grid.SetColumn(copy, 2); row.Children.Add(copy);
+                panel.Children.Add(new Border
+                {
+                    Padding = new Thickness(10), CornerRadius = new CornerRadius(8),
+                    Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"], Child = row
+                });
+            }
+            var dialog = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = en ? $"Possible leftovers from {programName}" : $"Mögliche Reste von {programName}",
+                Content = new ScrollViewer { Content = panel, MaxHeight = 430 },
+                PrimaryButtonText = en ? "Check again" : "Erneut prüfen",
+                CloseButtonText = en ? "Close" : "Schließen"
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                var program = _installedPrograms.FirstOrDefault(item =>
+                    item.DisplayName.Equals(programName, StringComparison.OrdinalIgnoreCase));
+                if (program != null)
+                {
+                    var refreshed = await Task.Run(() => InstalledProgramsService.FindPotentialLeftovers(program));
+                    if (refreshed.Count == 0)
+                        ShowInfo(en ? "No leftovers were found." : "Es wurden keine Reste mehr gefunden.", InfoBarSeverity.Success);
+                    else
+                        await ShowUninstallLeftoversAsync(programName, refreshed);
+                }
+            }
+        }
+
     }
 
     public class WingetPackage
@@ -5404,5 +6251,7 @@ namespace WinVora
         public string Version { get; set; } = "";
         public string Available { get; set; } = "";
         public string Source { get; set; } = "";
+        public string Publisher { get; set; } = "Unbekannt";
+        public string DownloadSize { get; set; } = "Unbekannt";
     }
 }

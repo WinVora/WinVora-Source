@@ -1,0 +1,80 @@
+name: Build and release WinVora
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without v prefix (for example 0.8.3)
+        required: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.version }}" } else { "${{ github.ref_name }}".TrimStart('v') }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Verify project version
+        shell: pwsh
+        run: .\scripts\Validate-Release.ps1 -ExpectedVersion "${{ steps.version.outputs.value }}"
+
+      - name: Publish
+        run: dotnet publish WinVora.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -o publish
+
+      - name: Install Inno Setup
+        run: winget install --id JRSoftware.InnoSetup --exact --accept-package-agreements --accept-source-agreements --silent
+
+      - name: Build installer
+        shell: pwsh
+        run: '& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" WinVoraSetup.iss'
+
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $installer = "installer_output\WinVora-Setup-${{ steps.version.outputs.value }}.exe"
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash
+          "$hash  $(Split-Path $installer -Leaf)" | Set-Content "installer_output\SHA256SUMS.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WinVora-${{ steps.version.outputs.value }}
+          path: |
+            installer_output/WinVora-Setup-${{ steps.version.outputs.value }}.exe
+            installer_output/SHA256SUMS.txt
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: WinVora-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish tagged GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/WinVora-Setup-*.exe
+            release-assets/SHA256SUMS.txt

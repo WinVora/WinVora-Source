@@ -18,7 +18,9 @@ namespace WinVora
     internal sealed record WingetUpdateProgress(
         WingetUpdatePhase Phase,
         string Text,
-        double? Percent);
+        double? Percent,
+        string? Speed = null,
+        string? Eta = null);
 
     internal sealed record WingetUpdateResult(
         WingetUpdateStatus Status,

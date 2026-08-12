@@ -39,10 +39,18 @@ namespace WinVora
             string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
             string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             string systemDrive = Path.GetPathRoot(windows) ?? "C:\\";
+            string downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
             bool en = Localization.CurrentLanguage == "en";
 
             return new List<StorageCategory>
             {
+                new StorageCategory
+                {
+                    Key = "downloads",
+                    Name = en ? "Downloads" : "Downloads",
+                    Description = en ? "Files in your Downloads folder (personal files may be included)" : "Dateien im Downloads-Ordner (kann persönliche Dateien enthalten)",
+                    Paths = new[] { downloads }
+                },
                 new StorageCategory
                 {
                     Key = "user_temp",

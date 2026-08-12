@@ -18,6 +18,7 @@ namespace WinVora
         public string SizeDisplay { get; set; } = "";
         public string UninstallString { get; set; } = "";
         public string QuietUninstallString { get; set; } = "";
+        public string InstallLocation { get; set; } = "";
 
         // Aufgelöster Dateipfad (.exe oder .ico), aus dem das echte Icon extrahiert werden kann.
         // Leer, falls nichts Passendes gefunden wurde.
@@ -91,6 +92,7 @@ namespace WinVora
 
                             var displayIcon = subKey.GetValue("DisplayIcon") as string;
                             var installLocation = subKey.GetValue("InstallLocation") as string;
+                            program.InstallLocation = installLocation ?? "";
                             program.IconPath = ResolveIconPath(displayIcon, installLocation);
 
                             results.Add(program);
@@ -113,6 +115,31 @@ namespace WinVora
                 .Select(g => g.First())
                 .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        public static List<string> FindPotentialLeftovers(InstalledProgram program)
+        {
+            var leftovers = new List<string>();
+            if (!string.IsNullOrWhiteSpace(program.InstallLocation) && Directory.Exists(program.InstallLocation))
+                leftovers.Add($"Ordner: {program.InstallLocation}");
+
+            foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
+            {
+                try
+                {
+                    using var run = hive.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
+                    if (run == null) continue;
+                    foreach (string valueName in run.GetValueNames())
+                    {
+                        string value = run.GetValue(valueName)?.ToString() ?? "";
+                        if (valueName.Contains(program.DisplayName, StringComparison.OrdinalIgnoreCase) ||
+                            (!string.IsNullOrWhiteSpace(program.InstallLocation) && value.Contains(program.InstallLocation, StringComparison.OrdinalIgnoreCase)))
+                            leftovers.Add($"Autostart: {valueName}");
+                    }
+                }
+                catch { }
+            }
+            return leftovers.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         // Versucht, für ein Programm anhand des (ungefähren) Namens einen Dateipfad

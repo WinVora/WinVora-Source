@@ -54,8 +54,8 @@ namespace WinVora
             Log($"FEHLER in {context}: {ex.GetType().Name}: {ex.Message}");
         }
 
-        // Rotiert die Logdatei, statt bei jedem Grenzwert die komplette Datei
-        // einzulesen und neu zu schreiben. Eine vorherige Sitzung bleibt erhalten.
+        // Rotiert die Logdatei, statt sie unbegrenzt wachsen zu lassen. Bis zu
+        // fünf ältere Dateien bleiben für Diagnosen erhalten.
         private static void TrimIfTooLarge()
         {
             const long maxBytes = 2 * 1024 * 1024; // 2 MB
@@ -63,9 +63,16 @@ namespace WinVora
             var info = new FileInfo(LogFilePath);
             if (!info.Exists || info.Length <= maxBytes) return;
 
-            string previousPath = LogFilePath + ".1";
-            if (File.Exists(previousPath)) File.Delete(previousPath);
-            File.Move(LogFilePath, previousPath);
+            const int retainedLogs = 5;
+            string oldest = LogFilePath + $".{retainedLogs}";
+            if (File.Exists(oldest)) File.Delete(oldest);
+            for (int index = retainedLogs - 1; index >= 1; index--)
+            {
+                string source = LogFilePath + $".{index}";
+                string target = LogFilePath + $".{index + 1}";
+                if (File.Exists(source)) File.Move(source, target, overwrite: true);
+            }
+            File.Move(LogFilePath, LogFilePath + ".1", overwrite: true);
             File.WriteAllText(LogFilePath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Logdatei rotiert.{Environment.NewLine}");
         }
     }

@@ -11,10 +11,48 @@ using Microsoft.Win32;
 
 namespace WinVora
 {
+    public enum SystemInfoSection { Device, OperatingSystem, Cpu, Ram, Board, Security, Gpu, Drives, Network, Battery }
+
     [SupportedOSPlatform("windows")]
     public static class SystemInfoProvider
     {
         private static PerformanceCounter? _cpuCounter;
+
+        public static Task<(string Antivirus, string Firewall)> GetFastSecurityStatusAsync()
+        {
+            return Task.Run(() =>
+            {
+                bool en = Localization.CurrentLanguage == "en";
+                string antivirus = en ? "Unknown" : "Unbekannt";
+                string firewall = en ? "Unknown" : "Unbekannt";
+
+                try
+                {
+                    using var products = new ManagementObjectSearcher(@"root\SecurityCenter2", "SELECT displayName FROM AntiVirusProduct");
+                    var names = products.Get().Cast<ManagementObject>()
+                        .Select(item => item["displayName"]?.ToString())
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .ToList();
+                    if (names.Count > 0)
+                        antivirus = (en ? "Protection registered: " : "Schutz registriert: ") + string.Join(", ", names);
+                }
+                catch { }
+
+                try
+                {
+                    string[] profiles = { "DomainProfile", "PublicProfile", "StandardProfile" };
+                    bool enabled = profiles.Any(profile =>
+                    {
+                        using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\{profile}");
+                        return Convert.ToInt32(key?.GetValue("EnableFirewall", 0)) == 1;
+                    });
+                    firewall = enabled ? (en ? "Active" : "Aktiv") : (en ? "Disabled" : "Deaktiviert");
+                }
+                catch { }
+
+                return (antivirus, firewall);
+            });
+        }
 
         // ================= FULL SNAPSHOT =================
         public static async Task<SystemInfoSnapshot> GetFullSnapshotAsync()
@@ -43,6 +81,23 @@ namespace WinVora
 
             return s;
         }
+
+        public static Task RefreshSectionAsync(SystemInfoSnapshot snapshot, SystemInfoSection section) => Task.Run(() =>
+        {
+            switch (section)
+            {
+                case SystemInfoSection.Device: FillBasic(snapshot); FillSystemInfo(snapshot); break;
+                case SystemInfoSection.OperatingSystem: FillOS(snapshot); FillLastUpdate(snapshot); FillDirectX(snapshot); break;
+                case SystemInfoSection.Cpu: FillCpu(snapshot); break;
+                case SystemInfoSection.Ram: FillRam(snapshot); break;
+                case SystemInfoSection.Board: FillBoardAndBios(snapshot); break;
+                case SystemInfoSection.Security: FillSecurity(snapshot); break;
+                case SystemInfoSection.Gpu: FillGpu(snapshot); break;
+                case SystemInfoSection.Drives: FillDrives(snapshot); break;
+                case SystemInfoSection.Network: FillNetwork(snapshot); break;
+                case SystemInfoSection.Battery: FillBattery(snapshot); break;
+            }
+        });
 
         // Initialisiert den CPU-Performance-Counter frühzeitig, im Hintergrund
         // beim App-Start. PerformanceCounter braucht zwei Messungen mit etwas
@@ -335,17 +390,19 @@ namespace WinVora
             try
             {
                 using var tpm = new ManagementObjectSearcher(@"root\CIMV2\Security\MicrosoftTpm", "SELECT SpecVersion FROM Win32_Tpm");
-                s.TpmVersion = en ? "No TPM detected" : "Kein TPM erkannt";
+                s.TpmVersion = en ? "Not available" : "Nicht verfügbar";
 
                 foreach (ManagementObject mo in tpm.Get())
                 {
                     s.TpmVersion = mo["SpecVersion"]?.ToString() ?? (en ? "TPM present" : "TPM vorhanden");
                     break;
                 }
+                if (s.TpmVersion is "Not available" or "Nicht verfügbar")
+                    s.TpmVersion = DetectTpmFromAcpi(en);
             }
             catch
             {
-                s.TpmVersion = en ? "No TPM detected" : "Kein TPM erkannt";
+                s.TpmVersion = DetectTpmFromAcpi(en);
             }
 
             // Windows Defender
@@ -362,10 +419,14 @@ namespace WinVora
                     s.DefenderStatus = av && rt ? (en ? "Active" : "Aktiv") : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
                     break;
                 }
+                if (s.DefenderStatus.Contains("Inactive", StringComparison.OrdinalIgnoreCase) ||
+                    s.DefenderStatus.Contains("Inaktiv", StringComparison.OrdinalIgnoreCase))
+                    ApplyRegisteredAntivirusFallback(s, en);
             }
             catch
             {
                 s.DefenderStatus = en ? "Unknown" : "Unbekannt";
+                ApplyRegisteredAntivirusFallback(s, en);
             }
 
             // Firewall
@@ -383,7 +444,20 @@ namespace WinVora
             }
             catch
             {
-                s.FirewallStatus = en ? "Unknown" : "Unbekannt";
+                // Die WMI-Abfrage benötigt auf einigen Systemen erhöhte
+                // Rechte. Die Profilwerte in der Registry sind lesbar und ein
+                // zuverlässiger Fallback für den Dashboardstatus.
+                try
+                {
+                    string[] profiles = { "DomainProfile", "PublicProfile", "StandardProfile" };
+                    bool enabled = profiles.Any(profile =>
+                    {
+                        using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\{profile}");
+                        return Convert.ToInt32(key?.GetValue("EnableFirewall", 0)) == 1;
+                    });
+                    s.FirewallStatus = enabled ? (en ? "Active" : "Aktiv") : (en ? "Unknown" : "Unbekannt");
+                }
+                catch { s.FirewallStatus = en ? "Unknown" : "Unbekannt"; }
             }
 
             // BitLocker (Laufwerk C:)
@@ -411,6 +485,40 @@ namespace WinVora
                 // Ohne Admin-Rechte oft nicht abfragbar
                 s.BitLockerStatus = en ? "Not available (admin rights may be required)" : "Nicht verfügbar (ggf. Adminrechte nötig)";
             }
+        }
+
+        private static string DetectTpmFromAcpi(bool en)
+        {
+            try
+            {
+                using var acpi = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ACPI");
+                var hardwareIds = acpi?.GetSubKeyNames() ?? Array.Empty<string>();
+                if (hardwareIds.Any(id => id.Equals("MSFT0101", StringComparison.OrdinalIgnoreCase)))
+                    return en ? "TPM 2.0 present" : "TPM 2.0 vorhanden";
+                if (hardwareIds.Any(id => id.Equals("IFX0102", StringComparison.OrdinalIgnoreCase) ||
+                                          id.Contains("TPM", StringComparison.OrdinalIgnoreCase)))
+                    return en ? "TPM present" : "TPM vorhanden";
+            }
+            catch { }
+
+            return en
+                ? "Not available (administrator rights may be required)"
+                : "Nicht verfügbar (ggf. Administratorrechte erforderlich)";
+        }
+
+        private static void ApplyRegisteredAntivirusFallback(SystemInfoSnapshot s, bool en)
+        {
+            try
+            {
+                using var products = new ManagementObjectSearcher(@"root\SecurityCenter2", "SELECT displayName FROM AntiVirusProduct");
+                var names = products.Get().Cast<ManagementObject>()
+                    .Select(item => item["displayName"]?.ToString())
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .ToList();
+                if (names.Count > 0)
+                    s.DefenderStatus = (en ? "Protection registered: " : "Schutz registriert: ") + string.Join(", ", names);
+            }
+            catch { }
         }
 
         // ================= BOARD + BIOS + SERIAL =================

@@ -10,6 +10,7 @@ namespace WinVora
 {
     internal sealed class WingetUpdateService
     {
+        private readonly Stopwatch _downloadWatch = new();
         private static readonly Regex ProgressWithPercentRegex = new(
             @"(\d{1,3})\s*%.*?([\d.,]+\s?[KMGT]?B)\s*/\s*([\d.,]+\s?[KMGT]?B)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -25,6 +26,7 @@ namespace WinVora
         {
             try
             {
+                _downloadWatch.Restart();
                 var startInfo = CreateStartInfo(packageId);
                 using var process = new Process { StartInfo = startInfo };
                 process.Start();
@@ -120,7 +122,7 @@ namespace WinVora
             return startInfo;
         }
 
-        private static async Task ReadOutputAsync(
+        private async Task ReadOutputAsync(
             System.IO.StreamReader reader,
             StringBuilder output,
             IProgress<WingetUpdateProgress>? progress,
@@ -137,7 +139,7 @@ namespace WinVora
             }
         }
 
-        private static void ReportProgress(string line, IProgress<WingetUpdateProgress> progress)
+        private void ReportProgress(string line, IProgress<WingetUpdateProgress> progress)
         {
             WingetUpdatePhase phase = line.Contains("download", StringComparison.OrdinalIgnoreCase) ||
                                       line.Contains("herunter", StringComparison.OrdinalIgnoreCase)
@@ -151,10 +153,20 @@ namespace WinVora
             if (withPercent.Success)
             {
                 double percent = double.Parse(withPercent.Groups[1].Value, CultureInfo.InvariantCulture);
+                double downloaded = ParseSizeBytes(withPercent.Groups[2].Value);
+                double total = ParseSizeBytes(withPercent.Groups[3].Value);
+                double seconds = Math.Max(0.1, _downloadWatch.Elapsed.TotalSeconds);
+                double bytesPerSecond = downloaded / seconds;
+                string? speed = bytesPerSecond > 0 ? $"{FormatRate(bytesPerSecond)}/s" : null;
+                string? eta = bytesPerSecond > 0 && total > downloaded
+                    ? TimeSpan.FromSeconds((total - downloaded) / bytesPerSecond).ToString(@"mm\:ss")
+                    : null;
                 progress.Report(new WingetUpdateProgress(
                     WingetUpdatePhase.Downloading,
                     $"{withPercent.Groups[2].Value.Trim()} / {withPercent.Groups[3].Value.Trim()}",
-                    percent));
+                    percent,
+                    speed,
+                    eta));
                 return;
             }
 
@@ -171,5 +183,26 @@ namespace WinVora
             if (phase != WingetUpdatePhase.Waiting)
                 progress.Report(new WingetUpdateProgress(phase, "", null));
         }
+
+        private static double ParseSizeBytes(string value)
+        {
+            var match = Regex.Match(value.Trim(), @"([\d.,]+)\s*([KMGT]?B)", RegexOptions.IgnoreCase);
+            if (!match.Success) return 0;
+            string number = match.Groups[1].Value.Replace(',', '.');
+            if (!double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double amount)) return 0;
+            double factor = match.Groups[2].Value.ToUpperInvariant() switch
+            {
+                "KB" => 1024d,
+                "MB" => 1024d * 1024,
+                "GB" => 1024d * 1024 * 1024,
+                "TB" => 1024d * 1024 * 1024 * 1024,
+                _ => 1d
+            };
+            return amount * factor;
+        }
+
+        private static string FormatRate(double bytesPerSecond) => bytesPerSecond >= 1024 * 1024
+            ? $"{bytesPerSecond / 1024 / 1024:0.0} MB"
+            : $"{bytesPerSecond / 1024:0.0} KB";
     }
 }
