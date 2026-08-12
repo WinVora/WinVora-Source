@@ -9,7 +9,7 @@
 
 		<RootNamespace>WinVora</RootNamespace>
 		<AssemblyName>WinVora</AssemblyName>
-		<Version>0.8.1</Version>
+		<Version>0.8.2</Version>
 		<InformationalVersion>$(Version)</InformationalVersion>
 		<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 		<ApplicationIcon>app.ico</ApplicationIcon>

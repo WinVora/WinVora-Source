@@ -6,7 +6,7 @@
     Title="WinVora">
 
     <!-- LIQUID GLASS BACKDROP -->
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden">
 
         <!-- THEME-BRUSHES: gemeinsam genutzte Instanzen, deren Color-Wert beim
              Umschalten zwischen Dunkel/Hell im Code-Behind (ApplyTheme) live
@@ -457,6 +457,13 @@
                                  Maximum="100"
                                  Height="4"
                                  Foreground="{StaticResource AppAccentBrush}"/>
+
+                    <Button x:Name="CancelUpdateButton"
+                            Content="Abbrechen"
+                            HorizontalAlignment="Right"
+                            Visibility="Collapsed"
+                            AutomationProperties.Name="Laufenden Updatevorgang abbrechen"
+                            Click="CancelUpdate_Click"/>
                 </StackPanel>
 
                 <!-- Fortschrittsanzeige während der Bereinigung -->

@@ -1,0 +1,166 @@
+using System;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace WinVora
+{
+    internal sealed class WingetUpdateService
+    {
+        private static readonly Regex ProgressWithPercentRegex = new(
+            @"(\d{1,3})\s*%.*?([\d.,]+\s?[KMGT]?B)\s*/\s*([\d.,]+\s?[KMGT]?B)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ProgressSizeOnlyRegex = new(
+            @"([\d.,]+\s?[KMGT]?B)\s*/\s*([\d.,]+\s?[KMGT]?B)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        public async Task<WingetUpdateResult> UpgradeAsync(
+            string packageId,
+            IProgress<WingetUpdateProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var startInfo = CreateStartInfo(packageId);
+                using var process = new Process { StartInfo = startInfo };
+                process.Start();
+
+                using var cancellationRegistration = cancellationToken.Register(() =>
+                {
+                    try
+                    {
+                        if (!process.HasExited)
+                            process.Kill(entireProcessTree: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Abbruch von winget für {packageId}", ex);
+                    }
+                });
+
+                var standardOutput = new StringBuilder();
+                var errorOutput = new StringBuilder();
+
+                Task outputTask = ReadOutputAsync(process.StandardOutput, standardOutput, progress);
+                Task errorTask = ReadOutputAsync(process.StandardError, errorOutput, null);
+
+                progress.Report(new WingetUpdateProgress(WingetUpdatePhase.Waiting, "", null));
+                await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync());
+
+                string combinedOutput = $"{standardOutput}\n{errorOutput}";
+                bool restartRequired = WingetErrorTranslator.ContainsRestartRequired(combinedOutput) ||
+                                       process.ExitCode is 3010 or 1641;
+                WingetUpdateStatus status = cancellationToken.IsCancellationRequested
+                    ? WingetUpdateStatus.Cancelled
+                    : restartRequired
+                        ? WingetUpdateStatus.RestartRequired
+                        : process.ExitCode == 0
+                            ? WingetUpdateStatus.Successful
+                            : WingetUpdateStatus.Failed;
+
+                if (process.ExitCode != 0)
+                {
+                    string error = errorOutput.ToString().Trim();
+                    Logger.Log($"winget upgrade '{packageId}' beendet mit ExitCode {process.ExitCode}" +
+                               (string.IsNullOrEmpty(error) ? "." : $": {error}"));
+                }
+
+                return new WingetUpdateResult(
+                    status,
+                    process.ExitCode,
+                    WingetErrorTranslator.GetFriendlyMessage(process.ExitCode, combinedOutput, status),
+                    restartRequired);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"WingetUpdateService.UpgradeAsync({packageId})", ex);
+                bool cancelled = cancellationToken.IsCancellationRequested;
+                return new WingetUpdateResult(
+                    cancelled ? WingetUpdateStatus.Cancelled : WingetUpdateStatus.Failed,
+                    -1,
+                    cancelled
+                        ? (Localization.CurrentLanguage == "en" ? "Installer was cancelled." : "Installer wurde abgebrochen.")
+                        : ex.Message,
+                    false);
+            }
+        }
+
+        private static ProcessStartInfo CreateStartInfo(string packageId)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "winget",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            startInfo.ArgumentList.Add("upgrade");
+            startInfo.ArgumentList.Add("--id");
+            startInfo.ArgumentList.Add(packageId);
+            startInfo.ArgumentList.Add("--exact");
+            startInfo.ArgumentList.Add("--interactive");
+            startInfo.ArgumentList.Add("--accept-package-agreements");
+            startInfo.ArgumentList.Add("--accept-source-agreements");
+            return startInfo;
+        }
+
+        private static async Task ReadOutputAsync(
+            System.IO.StreamReader reader,
+            StringBuilder output,
+            IProgress<WingetUpdateProgress>? progress)
+        {
+            while (!reader.EndOfStream)
+            {
+                string? line = await reader.ReadLineAsync();
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                output.AppendLine(line);
+                if (progress != null)
+                    ReportProgress(line, progress);
+            }
+        }
+
+        private static void ReportProgress(string line, IProgress<WingetUpdateProgress> progress)
+        {
+            WingetUpdatePhase phase = line.Contains("download", StringComparison.OrdinalIgnoreCase) ||
+                                      line.Contains("herunter", StringComparison.OrdinalIgnoreCase)
+                ? WingetUpdatePhase.Downloading
+                : line.Contains("install", StringComparison.OrdinalIgnoreCase) ||
+                  line.Contains("package", StringComparison.OrdinalIgnoreCase)
+                    ? WingetUpdatePhase.Installing
+                    : WingetUpdatePhase.Waiting;
+
+            var withPercent = ProgressWithPercentRegex.Match(line);
+            if (withPercent.Success)
+            {
+                double percent = double.Parse(withPercent.Groups[1].Value, CultureInfo.InvariantCulture);
+                progress.Report(new WingetUpdateProgress(
+                    WingetUpdatePhase.Downloading,
+                    $"{withPercent.Groups[2].Value.Trim()} / {withPercent.Groups[3].Value.Trim()}",
+                    percent));
+                return;
+            }
+
+            var sizeOnly = ProgressSizeOnlyRegex.Match(line);
+            if (sizeOnly.Success)
+            {
+                progress.Report(new WingetUpdateProgress(
+                    WingetUpdatePhase.Downloading,
+                    $"{sizeOnly.Groups[1].Value.Trim()} / {sizeOnly.Groups[2].Value.Trim()}",
+                    null));
+                return;
+            }
+
+            if (phase != WingetUpdatePhase.Waiting)
+                progress.Report(new WingetUpdateProgress(phase, "", null));
+        }
+    }
+}

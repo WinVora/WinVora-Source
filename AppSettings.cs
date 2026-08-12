@@ -11,6 +11,11 @@ namespace WinVora
         public string IconGlyph { get; set; } = "\uE73E";
         public string TextDe { get; set; } = "";
         public string TextEn { get; set; } = "";
+        public string? PackageId { get; set; }
+        public string? OldVersion { get; set; }
+        public string? NewVersion { get; set; }
+        public string? Result { get; set; }
+        public int? ExitCode { get; set; }
     }
 
     public class AppSettings
@@ -57,6 +62,14 @@ namespace WinVora
         public int? WindowY { get; set; }
         public int WindowWidth { get; set; } = 1280;
         public int WindowHeight { get; set; } = 800;
+        public int? SettingsWindowX { get; set; }
+        public int? SettingsWindowY { get; set; }
+        public int SettingsWindowWidth { get; set; } = 460;
+        public int SettingsWindowHeight { get; set; } = 620;
+        public int? ChangelogWindowX { get; set; }
+        public int? ChangelogWindowY { get; set; }
+        public int ChangelogWindowWidth { get; set; } = 560;
+        public int ChangelogWindowHeight { get; set; } = 720;
 
         private static string SettingsFilePath =>
             Path.Combine(
@@ -101,6 +114,10 @@ namespace WinVora
             GlassIntensity = Math.Clamp(GlassIntensity, 0, 64);
             WindowWidth = Math.Clamp(WindowWidth, 900, 3840);
             WindowHeight = Math.Clamp(WindowHeight, 650, 2160);
+            SettingsWindowWidth = Math.Clamp(SettingsWindowWidth, 420, 1920);
+            SettingsWindowHeight = Math.Clamp(SettingsWindowHeight, 480, 1440);
+            ChangelogWindowWidth = Math.Clamp(ChangelogWindowWidth, 480, 1920);
+            ChangelogWindowHeight = Math.Clamp(ChangelogWindowHeight, 520, 1440);
             ActivityLog ??= new();
         }
 

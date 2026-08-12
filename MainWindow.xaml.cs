@@ -12,7 +12,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Foundation;
@@ -34,6 +33,8 @@ namespace WinVora
         private bool _isLoadingStorage;
         private bool _isDeletingStorage;
         private bool _isLoadingPrograms;
+        private CancellationTokenSource? _wingetUpdateCancellation;
+        private readonly WingetUpdateService _wingetUpdateService = new();
         private List<WingetPackage>? _cachedPackages;
         private bool _isDarkTheme = true;
 
@@ -42,7 +43,7 @@ namespace WinVora
         private TextBlock? _wingetNoResultsText;
         private TextBlock? _uninstallNoResultsText;
         private AppSettings _settings = AppSettings.Load();
-        private readonly Random _startupRandom = new();
+        private Microsoft.UI.Xaml.Media.Animation.Storyboard? _startupHexStoryboard;
 
         // Eine zentrale Versionsquelle: <Version> in WinVora.csproj. So können
         // Sidebar, Einstellungen und Updatevergleich nicht mehr auseinanderlaufen.
@@ -60,6 +61,7 @@ namespace WinVora
         public MainWindow()
         {
             this.InitializeComponent();
+            SetupSystemInfoCopyButtons();
             this.Title = "WinVora";
             NavVersionText.Text = $"Version {CurrentVersion}";
             this.Activated += MainWindow_Activated;
@@ -404,14 +406,24 @@ namespace WinVora
         // insgesamt lebendig wirkt statt wie ein statisches Bild.
         private void BuildHexGridBackground()
         {
-            const double hexSize = 38; // Mittelpunkt-zu-Ecke - kleiner, feineres Muster
+            const double hexSize = 38;
             double hexWidth = hexSize * 2;
             double hexHeight = Math.Sqrt(3) * hexSize;
             double colSpacing = hexWidth * 0.75;
             double rowSpacing = hexHeight;
 
-            const int cols = 74;
-            const int rows = 40;
+            // Nur die tatsächlich sichtbare Fläche plus eine Zelle Reserve
+            // aufbauen. Das frühere feste 74x40-Raster erzeugte fast 3.000
+            // XAML-Elemente und machte das Verschieben des Fensters unnötig
+            // teuer.
+            double overlayWidth = Math.Max(StartupOverlay.ActualWidth, this.Bounds.Width);
+            double overlayHeight = Math.Max(StartupOverlay.ActualHeight, this.Bounds.Height);
+            if (overlayWidth <= 0) overlayWidth = 1200;
+            if (overlayHeight <= 0) overlayHeight = 720;
+            StartupGlassBandsHost.CacheMode = new BitmapCache();
+
+            int cols = Math.Max(1, (int)Math.Ceiling(overlayWidth / colSpacing) + 2);
+            int rows = Math.Max(1, (int)Math.Ceiling(overlayHeight / rowSpacing) + 2);
             double gridWidth = (cols - 1) * colSpacing + hexWidth;
             double gridHeight = (rows - 1) * rowSpacing + rowSpacing + hexHeight / 2;
 
@@ -427,13 +439,27 @@ namespace WinVora
             // nicht final aufgelöst) - das Raster saß dadurch weit außerhalb
             // der Mitte, nur ein Randstreifen war sichtbar. this.Bounds (die
             // tatsächliche Fenstergröße) ist an dieser Stelle zuverlässiger.
-            double overlayWidth = this.Bounds.Width > 0 ? this.Bounds.Width : 1600;
-            double overlayHeight = this.Bounds.Height > 0 ? this.Bounds.Height : 900;
             double startOffsetX = (overlayWidth - gridWidth) / 2;
             double startOffsetY = (overlayHeight - gridHeight) / 2;
 
-            double maxX = (cols - 1) * colSpacing;
-            double maxY = (rows - 1) * rowSpacing + rowSpacing / 2;
+            var sharedStrokeBrush = new SolidColorBrush(
+                Windows.UI.Color.FromArgb(0x18, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
+            var sharedFillBrush = new SolidColorBrush(
+                Windows.UI.Color.FromArgb(0x08, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
+            var glowStrokeBrush = new SolidColorBrush(
+                Windows.UI.Color.FromArgb(0xE0, AccentColorLight.R, AccentColorLight.G, AccentColorLight.B));
+            var transparentFillBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+            // Zweite, deckungsgleiche Ebene: Ein schmaler bewegter Clip macht
+            // immer nur einen Ausschnitt sichtbar. Dadurch läuft die helle
+            // Welle wieder über die Waben, benötigt aber weiterhin nur eine
+            // einzige Animation.
+            var glowCanvas = new Canvas
+            {
+                Width = overlayWidth,
+                Height = overlayHeight,
+                IsHitTestVisible = false
+            };
 
             for (int col = 0; col < cols; col++)
             {
@@ -444,29 +470,41 @@ namespace WinVora
                 {
                     double y = startOffsetY + row * rowSpacing + yOffset;
 
-                    var hex = CreateHexCell(hexSize, out var strokeBrush);
+                    var hex = CreateHexCell(hexSize, sharedStrokeBrush, sharedFillBrush);
                     Canvas.SetLeft(hex, x);
                     Canvas.SetTop(hex, y);
                     StartupGlassBandsHost.Children.Add(hex);
 
-                    // Diagonale Welle von unten-links nach oben-rechts: In
-                    // Bildschirmkoordinaten wächst Y nach unten, "unten links"
-                    // ist also (x klein, y groß) und "oben rechts" ist
-                    // (x groß, y klein). Je größer (x - y), desto später
-                    // kommt die Welle dort an.
-                    double diagValue = x - y;
-                    double minDiag = startOffsetX - (startOffsetY + maxY);
-                    double maxDiag = (startOffsetX + maxX) - startOffsetY;
-                    double wavePosition = (diagValue - minDiag) / (maxDiag - minDiag);
-
-                    AnimateHexGlow(strokeBrush, wavePosition);
+                    var glowHex = CreateHexCell(hexSize, glowStrokeBrush, transparentFillBrush);
+                    Canvas.SetLeft(glowHex, x);
+                    Canvas.SetTop(glowHex, y);
+                    glowCanvas.Children.Add(glowHex);
                 }
             }
+
+            const double glowBandWidth = 240;
+            double glowBandLength = Math.Sqrt(overlayWidth * overlayWidth + overlayHeight * overlayHeight) * 1.5;
+            var clipTransform = new CompositeTransform
+            {
+                Rotation = -45,
+                TranslateX = -glowBandWidth,
+                TranslateY = overlayHeight + glowBandWidth
+            };
+            glowCanvas.Clip = new RectangleGeometry
+            {
+                Rect = new Rect(-glowBandWidth / 2, -glowBandLength / 2, glowBandWidth, glowBandLength),
+                Transform = clipTransform
+            };
+            StartupGlassBandsHost.Children.Add(glowCanvas);
+            StartSharedHexAnimation(clipTransform, overlayWidth, overlayHeight, glowBandWidth);
         }
 
         // Ein einzelnes Sechseck: dünner Umriss (per SolidColorBrush, wird für
         // den Leucht-Effekt separat animiert), ganz leichte Füllung.
-        private Microsoft.UI.Xaml.Shapes.Polygon CreateHexCell(double size, out SolidColorBrush strokeBrush)
+        private Microsoft.UI.Xaml.Shapes.Polygon CreateHexCell(
+            double size,
+            SolidColorBrush strokeBrush,
+            SolidColorBrush fillBrush)
         {
             var points = new PointCollection();
             for (int i = 0; i < 6; i++)
@@ -478,8 +516,6 @@ namespace WinVora
             // Dunkler Startzustand: bewusst sehr niedrige Deckkraft, damit die
             // Linien dort, wo die Welle gerade NICHT ist, deutlich dunkel und
             // fast unsichtbar wirken - starker Kontrast zum hellen Leuchten.
-            strokeBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(0x12, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
-
             return new Microsoft.UI.Xaml.Shapes.Polygon
             {
                 Points = points,
@@ -487,7 +523,7 @@ namespace WinVora
                 Height = size * 2,
                 Stroke = strokeBrush,
                 StrokeThickness = 1.4,
-                Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0x08, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B))
+                Fill = fillBrush
             };
         }
 
@@ -496,57 +532,37 @@ namespace WinVora
         // Verzögerung (0-1, Position entlang der Diagonalen unten-links nach
         // oben-rechts) sorgt dafür, dass alle Zellen zusammen wie eine
         // durchlaufende Farbwelle wirken statt unabhängig voneinander zu blinken.
-        private void AnimateHexGlow(SolidColorBrush strokeBrush, double wavePosition)
+        private void StartSharedHexAnimation(
+            CompositeTransform clipTransform,
+            double overlayWidth,
+            double overlayHeight,
+            double glowBandWidth)
         {
-            // Zwei getrennte Werte statt einem gemeinsamen:
-            // - spreadDuration steuert, wie schnell die Welle einmal komplett
-            //   über das Grid läuft (Verzögerung pro Zelle) UND die Länge
-            //   eines kompletten Wiederholungs-Zyklus
-            // - rampSeconds steuert, wie lange eine einzelne Zelle für den
-            //   Übergang dunkel->hell->dunkel braucht - kürzer = schmalere,
-            //   deutlicher abgegrenzte Leucht-Bande statt einem breiten,
-            //   langsamen Verlauf
-            //
-            // BUGFIX: Mit einer einfachen AutoReverse-Animation läuft jede
-            // Zelle mit ihrer eigenen kurzen Zykluslänge weiter, sobald sie
-            // einmal gestartet ist - dadurch würden mit der Zeit mehrere
-            // Wellen gleichzeitig sichtbar (Aliasing), statt einer einzigen
-            // sauber durchlaufenden. Mit expliziten Keyframes über die volle
-            // Zykluslänge (spreadDuration) bleibt es garantiert eine Welle.
-            const double spreadDurationSeconds = 6.5;
-            const double rampSeconds = 0.7;
-            // Verzögerung auf (spreadDuration - rampSeconds) begrenzen, sonst
-            // würden Zellen ganz am Ende der Welle (wavePosition nahe 1) einen
-            // Peak/Ende-Zeitpunkt jenseits der Zyklusdauer bekommen.
-            double delay = wavePosition * (spreadDurationSeconds - rampSeconds);
-            double peakTime = delay + rampSeconds / 2;
-            double endTime = delay + rampSeconds;
-
-            var dim = Windows.UI.Color.FromArgb(0x12, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B);
-            var glow = Windows.UI.Color.FromArgb(0xFF, AccentColorLight.R, AccentColorLight.G, AccentColorLight.B);
-
-            var anim = new Microsoft.UI.Xaml.Media.Animation.ColorAnimationUsingKeyFrames
+            var animationX = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
             {
-                Duration = TimeSpan.FromSeconds(spreadDurationSeconds),
-                RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever
+                From = -glowBandWidth,
+                To = overlayWidth + glowBandWidth,
+                Duration = TimeSpan.FromSeconds(3.8),
+                RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+                EnableDependentAnimation = true
+            };
+            var animationY = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+            {
+                From = overlayHeight + glowBandWidth,
+                To = -glowBandWidth,
+                Duration = TimeSpan.FromSeconds(3.8),
+                RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+                EnableDependentAnimation = true
             };
 
-            anim.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
-            { KeyTime = TimeSpan.FromSeconds(0), Value = dim });
-            anim.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
-            { KeyTime = TimeSpan.FromSeconds(delay), Value = dim });
-            anim.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
-            { KeyTime = TimeSpan.FromSeconds(peakTime), Value = glow });
-            anim.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
-            { KeyTime = TimeSpan.FromSeconds(Math.Min(endTime, spreadDurationSeconds)), Value = dim });
-            anim.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
-            { KeyTime = TimeSpan.FromSeconds(spreadDurationSeconds), Value = dim });
-
-            var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(anim, strokeBrush);
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(anim, "Color");
-            storyboard.Children.Add(anim);
-            storyboard.Begin();
+            _startupHexStoryboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animationX, clipTransform);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animationX, "TranslateX");
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animationY, clipTransform);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animationY, "TranslateY");
+            _startupHexStoryboard.Children.Add(animationX);
+            _startupHexStoryboard.Children.Add(animationY);
+            _startupHexStoryboard.Begin();
         }
 
         // Startet die Diagonal-Bewegung samt sanftem "Atmen" für ein einzelnes Band.
@@ -629,6 +645,23 @@ namespace WinVora
                     FontSize = 11,
                     Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
                 });
+
+                if (!string.IsNullOrWhiteSpace(entry.PackageId))
+                {
+                    string versionText = !string.IsNullOrWhiteSpace(entry.OldVersion) && !string.IsNullOrWhiteSpace(entry.NewVersion)
+                        ? $"{entry.OldVersion} → {entry.NewVersion}"
+                        : entry.PackageId;
+                    string exitText = entry.ExitCode is int exitCode && exitCode != 0
+                        ? $" · Exit 0x{unchecked((uint)exitCode):X8}"
+                        : "";
+                    textPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"{entry.PackageId} · {versionText}{exitText}",
+                        FontSize = 11,
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"],
+                        TextWrapping = TextWrapping.Wrap
+                    });
+                }
 
                 row.Children.Add(textPanel);
                 ActivityLogPanel.Children.Add(row);
@@ -895,7 +928,13 @@ namespace WinVora
             Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Opacity");
             storyboard.Children.Add(animation);
 
-            storyboard.Completed += (_, __) => StartupOverlay.Visibility = Visibility.Collapsed;
+            storyboard.Completed += (_, __) =>
+            {
+                StartupOverlay.Visibility = Visibility.Collapsed;
+                _startupHexStoryboard?.Stop();
+                _startupHexStoryboard = null;
+                StartupGlassBandsHost.Children.Clear();
+            };
             storyboard.Begin();
         }
 
@@ -1142,6 +1181,27 @@ namespace WinVora
             titleBar.SetDragRectangles(new[] { new Windows.Graphics.RectInt32(0, 0, dragWidth, 40) });
         }
 
+        private void SaveSecondaryWindowPlacement(Window window, bool settingsWindow)
+        {
+            var position = window.AppWindow.Position;
+            var size = window.AppWindow.Size;
+            if (settingsWindow)
+            {
+                _settings.SettingsWindowX = position.X;
+                _settings.SettingsWindowY = position.Y;
+                _settings.SettingsWindowWidth = size.Width;
+                _settings.SettingsWindowHeight = size.Height;
+            }
+            else
+            {
+                _settings.ChangelogWindowX = position.X;
+                _settings.ChangelogWindowY = position.Y;
+                _settings.ChangelogWindowWidth = size.Width;
+                _settings.ChangelogWindowHeight = size.Height;
+            }
+            _settings.Save();
+        }
+
         // Dünne Trennlinie unter der (ausgeblendeten) Titelleiste. Wird in eine
         // eigene, feste Grid.Row (nicht in den scrollbaren Bereich) gesetzt,
         // damit sie garantiert nicht mitscrollt.
@@ -1166,33 +1226,22 @@ namespace WinVora
             Margin = new Thickness(16, 0, 0, 0)
         };
 
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool BringWindowToTop(IntPtr hWnd);
-
-        // Windows aktiviert neu erstellte Fenster nicht immer automatisch in
-        // den Vordergrund (landen manchmal hinter dem Hauptfenster). Das hier
-        // erzwingt es explizit über den nativen Fenster-Handle.
-        private static void BringWindowToFront(Window window)
-        {
-            try
-            {
-                var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
-                BringWindowToTop(hWnd);
-                SetForegroundWindow(hWnd);
-            }
-            catch
-            {
-                // Best effort - falls das fehlschlägt, bleibt das Fenster
-                // einfach wie bisher (kein kritischer Fehler).
-            }
-        }
-
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_settingsWindow != null)
+            {
+                _settingsWindow.Activate();
+                WindowActivationService.ShowOwnedInFront(this, _settingsWindow);
+                return;
+            }
+
             _settingsWindow = new Window { Title = Localization.T("Settings.WindowTitle") };
+            var settingsWindow = _settingsWindow;
+            settingsWindow.Closed += (_, __) =>
+            {
+                SaveSecondaryWindowPlacement(settingsWindow, settingsWindow: true);
+                _settingsWindow = null;
+            };
 
             var root = new Grid
             {
@@ -1614,12 +1663,13 @@ namespace WinVora
             root.Children.Add(divider);
             root.Children.Add(titleLabel);
 
-            _settingsWindow.Content = root;
-            _settingsWindow.Activate();
-            BringWindowToFront(_settingsWindow);
-
-            // Schmaler passend zur Kartenbreite, Höhe bleibt wie gehabt
-            StyleDarkWindow(_settingsWindow, 460, 620);
+            settingsWindow.Content = root;
+            StyleDarkWindow(settingsWindow, _settings.SettingsWindowWidth, _settings.SettingsWindowHeight);
+            WindowActivationService.PlaceWindow(this, settingsWindow,
+                _settings.SettingsWindowX, _settings.SettingsWindowY,
+                _settings.SettingsWindowWidth, _settings.SettingsWindowHeight);
+            settingsWindow.Activate();
+            WindowActivationService.ShowOwnedInFront(this, settingsWindow);
         }
 
         private async void ContactButton_Click(object sender, RoutedEventArgs e)
@@ -1666,9 +1716,22 @@ namespace WinVora
 
         private void ChangelogButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_changelogWindow != null)
+            {
+                _changelogWindow.Activate();
+                WindowActivationService.ShowOwnedInFront(this, _changelogWindow);
+                return;
+            }
+
             _changelogWindow = new Window
             {
                 Title = Localization.T("Changelog.WindowTitle")
+            };
+            var changelogWindow = _changelogWindow;
+            changelogWindow.Closed += (_, __) =>
+            {
+                SaveSecondaryWindowPlacement(changelogWindow, settingsWindow: false);
+                _changelogWindow = null;
             };
 
             var root = new Grid
@@ -1691,6 +1754,39 @@ namespace WinVora
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
             });
+
+            panel.Children.Add(MakeChangelogCard(
+    "Version 0.8.2",
+    "• Programm-Updates öffnen ihre Hersteller-Installer jetzt sichtbar statt\n" +
+    "  unbemerkt im Hintergrund\n" +
+    "• Deutliche Warnung vor möglichen Neustarts – mit besonderem Hinweis bei\n" +
+    "  der EA App\n" +
+    "• Laufende Updates können abgebrochen werden\n" +
+    "• Download, Installation und Warten auf den Abschluss werden getrennt angezeigt\n" +
+    "• Neuer übersichtlicher Abschlussbericht mit verständlichen Fehlermeldungen\n" +
+    "• WinVora erkennt, wenn Windows nach einem Update neu gestartet werden muss\n" +
+    "• Der Aktivitätsverlauf enthält jetzt Programm, Version und Ergebnis\n" +
+    "• Windows-Benachrichtigung nach abgeschlossenen Programm-Updates\n" +
+    "• Systeminformationen lassen sich pro Bereich bequem kopieren\n" +
+    "• Einstellungen und Changelog öffnen zuverlässig im Vordergrund und merken\n" +
+    "  sich Größe und Position\n" +
+    "• Der Ladebildschirm läuft beim Verschieben deutlich flüssiger, behält aber\n" +
+    "  seine diagonale Waben-Leuchtwelle\n" +
+    "• Mehrere interne Bereiche wurden aufgeräumt und für zukünftige Updates stabiler gemacht",
+    "• Program updates now show their publisher installers instead of running\n" +
+    "  unnoticed in the background\n" +
+    "• Clear warning about possible restarts, including a special warning for EA App\n" +
+    "• Running updates can be cancelled\n" +
+    "• Downloading, installing and waiting for completion are shown separately\n" +
+    "• New clear completion report with understandable error messages\n" +
+    "• WinVora detects when Windows requires a restart after an update\n" +
+    "• Activity history now includes program, version and result\n" +
+    "• Windows notification after program updates finish\n" +
+    "• System information can be copied by section\n" +
+    "• Settings and changelog reliably open in front and remember size and position\n" +
+    "• The loading screen stays smooth while moving and keeps its diagonal hex wave\n" +
+    "• Internal components were cleaned up for more reliable future updates"
+));
 
             panel.Children.Add(MakeChangelogCard(
     "Version 0.8.1",
@@ -2232,12 +2328,13 @@ namespace WinVora
             root.Children.Add(divider);
             root.Children.Add(titleLabel);
 
-            _changelogWindow.Content = root;
-            _changelogWindow.Activate();
-            BringWindowToFront(_changelogWindow);
-
-            // Angenehme Startgröße mit Scroll-Reserve für künftige Einträge
-            StyleDarkWindow(_changelogWindow, 560, 720);
+            changelogWindow.Content = root;
+            StyleDarkWindow(changelogWindow, _settings.ChangelogWindowWidth, _settings.ChangelogWindowHeight);
+            WindowActivationService.PlaceWindow(this, changelogWindow,
+                _settings.ChangelogWindowX, _settings.ChangelogWindowY,
+                _settings.ChangelogWindowWidth, _settings.ChangelogWindowHeight);
+            changelogWindow.Activate();
+            WindowActivationService.ShowOwnedInFront(this, changelogWindow);
         }
 
         private Border MakeChangelogCard(string title, string textDe, string? textEn = null)
@@ -2426,6 +2523,34 @@ namespace WinVora
 
         // ================= SYSTEM =================
 
+        private void SetupSystemInfoCopyButtons()
+        {
+            string FromSnapshot(Func<SystemInfoSnapshot, string> format) =>
+                _cachedSnapshot == null ? "" : format(_cachedSnapshot);
+
+            SystemInfoCopyButton.Attach(SysCardDevice,
+                () => FromSnapshot(SystemInfoFormatter.Device));
+            SystemInfoCopyButton.Attach(SysCardOs,
+                () => FromSnapshot(SystemInfoFormatter.OperatingSystem));
+            SystemInfoCopyButton.Attach(SysCardCpu,
+                () => FromSnapshot(snapshot => SystemInfoFormatter.Cpu(snapshot, Localization.CurrentLanguage == "en")));
+            SystemInfoCopyButton.Attach(SysCardRam,
+                () => FromSnapshot(snapshot => SystemInfoFormatter.Ram(snapshot, Localization.CurrentLanguage == "en")));
+            SystemInfoCopyButton.Attach(SysCardBoard,
+                () => FromSnapshot(SystemInfoFormatter.Board));
+            SystemInfoCopyButton.Attach(SysCardSecurity,
+                () => FromSnapshot(SystemInfoFormatter.Security));
+            SystemInfoCopyButton.Attach(SysCardGpu,
+                () => FromSnapshot(SystemInfoFormatter.Gpus));
+            SystemInfoCopyButton.Attach(SysCardDrives,
+                () => FromSnapshot(SystemInfoFormatter.Drives));
+            SystemInfoCopyButton.Attach(SysCardNetwork,
+                () => FromSnapshot(SystemInfoFormatter.Network));
+            SystemInfoCopyButton.Attach(SysCardBattery,
+                () => FromSnapshot(SystemInfoFormatter.Battery));
+
+        }
+
         private async void System_Click(object sender, RoutedEventArgs e)
         {
             SetPage("System");
@@ -2554,14 +2679,23 @@ namespace WinVora
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            panel.Children.Add(new TextBlock
+            var headerGrid = new Grid { ColumnSpacing = 12 };
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var headerText = new TextBlock
             {
                 Text = header,
                 FontSize = 17,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"],
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
-            });
+            };
+            var copyButton = SystemInfoCopyButton.Create(
+                () => SystemInfoFormatter.Card(header, description, content));
+            Grid.SetColumn(copyButton, 1);
+            headerGrid.Children.Add(headerText);
+            headerGrid.Children.Add(copyButton);
+            panel.Children.Add(headerGrid);
 
             if (!string.IsNullOrWhiteSpace(description))
             {
@@ -3339,18 +3473,55 @@ namespace WinVora
                 return;
             }
 
+            bool en = Localization.CurrentLanguage == "en";
+            bool containsEaApp = selected.Any(package =>
+                package.Id.Equals("ElectronicArts.EADesktop", StringComparison.OrdinalIgnoreCase));
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = en ? "Install selected updates?" : "Ausgewählte Updates installieren?",
+                Content = containsEaApp
+                    ? (en
+                        ? "The EA app is selected. Its installer previously restarted this PC without warning. WinVora will now open installers visibly, but a publisher installer may still request or initiate a restart. Save your work before continuing."
+                        : "Die EA App ist ausgewählt. Ihr Installer hat diesen PC bereits ohne Warnung neu gestartet. WinVora öffnet Installer jetzt sichtbar, trotzdem kann ein Hersteller-Installer einen Neustart anfordern oder auslösen. Speichere vor dem Fortfahren deine Arbeit.")
+                    : (en
+                        ? "Publisher installers will be shown visibly. Some installers may request a restart. Save your work before continuing."
+                        : "Die Installer der Hersteller werden sichtbar geöffnet. Einige Installer können einen Neustart verlangen. Speichere vor dem Fortfahren deine Arbeit."),
+                PrimaryButtonText = en ? "Install" : "Installieren",
+                CloseButtonText = en ? "Cancel" : "Abbrechen",
+                DefaultButton = ContentDialogButton.Close
+            };
+
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            {
+                _isUpdatingWinget = false;
+                UpdateWingetSelectionButton();
+                return;
+            }
+
             RefreshButton.IsEnabled = false;
             StartUpdateButton.IsEnabled = false;
+            CancelUpdateButton.Visibility = Visibility.Visible;
+            CancelUpdateButton.IsEnabled = true;
+            _wingetUpdateCancellation = new CancellationTokenSource();
 
             UpdateProgressPanel.Visibility = Visibility.Visible;
             UpdateProgressBar.Maximum = selected.Count;
             UpdateProgressBar.Value = 0;
 
-            var failed = new List<string>();
+            var results = new List<(WingetPackage Package, WingetUpdateResult Result)>();
 
-            var progress = new Progress<(string Text, double? Percent)>(p =>
+            var progress = new Progress<WingetUpdateProgress>(p =>
             {
-                CurrentPackageStatusText.Text = p.Text;
+                string phaseText = p.Phase switch
+                {
+                    WingetUpdatePhase.Downloading => en ? "Downloading" : "Wird heruntergeladen",
+                    WingetUpdatePhase.Installing => en ? "Installer is running" : "Installer läuft",
+                    _ => en ? "Waiting for completion" : "Warte auf Abschluss"
+                };
+                CurrentPackageStatusText.Text = string.IsNullOrWhiteSpace(p.Text)
+                    ? phaseText
+                    : $"{phaseText} · {p.Text}";
 
                 if (p.Percent.HasValue)
                 {
@@ -3371,21 +3542,44 @@ namespace WinVora
                 CurrentPackageProgressBar.IsIndeterminate = true;
                 CurrentPackageProgressBar.Value = 0;
 
-                var success = await RunWingetUpgrade(pkg.Id, progress);
-                if (!success)
-                    failed.Add(pkg.Name);
+                if (_wingetUpdateCancellation.IsCancellationRequested)
+                    break;
+
+                Logger.Log($"Programm-Update gestartet: {pkg.Name} [{pkg.Id}] {pkg.Version} -> {pkg.Available}");
+                bool pendingRestartBefore = RestartDetectionService.IsRestartPending();
+                var result = await _wingetUpdateService.UpgradeAsync(pkg.Id, progress, _wingetUpdateCancellation.Token);
+                bool pendingRestartAfter = RestartDetectionService.IsRestartPending();
+                if (!pendingRestartBefore && pendingRestartAfter && result.Status == WingetUpdateStatus.Successful)
+                    result = result with
+                    {
+                        Status = WingetUpdateStatus.RestartRequired,
+                        RestartRequired = true,
+                        Message = en ? "Installed; Windows reports that a restart is required." : "Installiert; Windows meldet einen erforderlichen Neustart."
+                    };
+
+                results.Add((pkg, result));
+                LogWingetUpdateActivity(pkg, result);
+                Logger.Log($"Programm-Update beendet: {pkg.Name} [{pkg.Id}], Status={result.Status}, " +
+                           $"ExitCode=0x{unchecked((uint)result.ExitCode):X8}, Meldung={result.Message}");
 
                 CurrentPackageProgressBar.IsIndeterminate = false;
                 CurrentPackageProgressBar.Value = 100;
                 UpdateProgressBar.Value = i + 1;
             }
 
-            UpdateProgressText.Text = failed.Count == 0
-                ? "Alle ausgewählten Updates wurden installiert."
-                : $"Fertig mit Fehlern bei: {string.Join(", ", failed)}";
+            bool cancelled = _wingetUpdateCancellation.IsCancellationRequested;
+            int successCount = results.Count(item => item.Result.Status == WingetUpdateStatus.Successful);
+            int failedCount = results.Count(item => item.Result.Status == WingetUpdateStatus.Failed);
+            int cancelledCount = results.Count(item => item.Result.Status == WingetUpdateStatus.Cancelled) +
+                                 Math.Max(0, selected.Count - results.Count);
+            int restartCount = results.Count(item => item.Result.RestartRequired);
+            UpdateProgressText.Text = cancelled
+                ? (en ? "Update process cancelled." : "Updatevorgang abgebrochen.")
+                : failedCount == 0
+                    ? (en ? "All selected updates were installed." : "Alle ausgewählten Updates wurden installiert.")
+                    : (en ? $"Finished with {failedCount} error(s)." : $"Mit {failedCount} Fehler(n) beendet.");
             CurrentPackageStatusText.Text = "";
 
-            int successCount = selected.Count - failed.Count;
             if (successCount > 0)
             {
                 LogActivity("\uE895",
@@ -3393,9 +3587,16 @@ namespace WinVora
                     $"{successCount} program(s) updated");
             }
 
+            NotificationService.ShowUpdateSummary(successCount, failedCount, cancelledCount, restartCount);
+
+            await ShowUpdateSummaryAsync(results, selected.Count - results.Count);
+
             // Kurz die Abschlussmeldung stehen lassen, dann automatisch neu laden
             await Task.Delay(2000);
             UpdateProgressPanel.Visibility = Visibility.Collapsed;
+            CancelUpdateButton.Visibility = Visibility.Collapsed;
+            _wingetUpdateCancellation.Dispose();
+            _wingetUpdateCancellation = null;
 
             // Nach einer Installation ist der Cache veraltet - erzwungener Reload.
             _cachedPackages = null;
@@ -3403,88 +3604,112 @@ namespace WinVora
             await LoadWinget(forceRefresh: true);
         }
 
-        // Erkennt Zeilen wie "50% 12,3 MB / 24,6 MB" oder nur "12.3 MB / 24.6 MB"
-        // (Format kann je nach winget-Version/Sprache leicht abweichen).
-        private static readonly Regex ProgressWithPercentRegex = new(
-            @"(\d{1,3})\s*%.*?([\d.,]+\s?[KMGT]?B)\s*/\s*([\d.,]+\s?[KMGT]?B)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        private static readonly Regex ProgressSizeOnlyRegex = new(
-            @"([\d.,]+\s?[KMGT]?B)\s*/\s*([\d.,]+\s?[KMGT]?B)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        private async Task<bool> RunWingetUpgrade(string packageId, IProgress<(string Text, double? Percent)> progress)
+        private void CancelUpdate_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "winget",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                };
-
-                psi.ArgumentList.Add("upgrade");
-                psi.ArgumentList.Add("--id");
-                psi.ArgumentList.Add(packageId);
-                psi.ArgumentList.Add("--silent");
-                psi.ArgumentList.Add("--accept-package-agreements");
-                psi.ArgumentList.Add("--accept-source-agreements");
-                psi.ArgumentList.Add("--disable-interactivity");
-
-                using var p = new Process { StartInfo = psi };
-
-                p.Start();
-
-                var outputTask = Task.Run(async () =>
-                {
-                    while (!p.StandardOutput.EndOfStream)
-                    {
-                        var line = await p.StandardOutput.ReadLineAsync();
-                        if (!string.IsNullOrWhiteSpace(line))
-                            ReportIfProgress(line, progress);
-                    }
-                });
-
-                var errorTask = Task.Run(async () =>
-                {
-                    while (!p.StandardError.EndOfStream)
-                        await p.StandardError.ReadLineAsync();
-                });
-
-                await Task.WhenAll(outputTask, errorTask, p.WaitForExitAsync());
-
-                return p.ExitCode == 0;
-            }
-            catch
-            {
-                return false;
-            }
+            CancelUpdateButton.IsEnabled = false;
+            CurrentPackageStatusText.Text = Localization.CurrentLanguage == "en"
+                ? "Cancelling current installer..."
+                : "Aktueller Installer wird abgebrochen...";
+            _wingetUpdateCancellation?.Cancel();
+            Logger.Log("Programm-Update wurde vom Benutzer abgebrochen.");
         }
 
-        private void ReportIfProgress(string line, IProgress<(string Text, double? Percent)> progress)
+        private void LogWingetUpdateActivity(WingetPackage package, WingetUpdateResult result)
         {
-            var withPercent = ProgressWithPercentRegex.Match(line);
-            if (withPercent.Success)
+            string resultDe = result.Status switch
             {
-                var pct = double.Parse(withPercent.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-                var downloaded = withPercent.Groups[2].Value.Trim();
-                var total = withPercent.Groups[3].Value.Trim();
-                progress.Report(($"{downloaded} / {total}", pct));
-                return;
+                WingetUpdateStatus.Successful => "Erfolgreich",
+                WingetUpdateStatus.RestartRequired => "Neustart erforderlich",
+                WingetUpdateStatus.Cancelled => "Abgebrochen",
+                _ => "Fehlgeschlagen"
+            };
+            string resultEn = result.Status switch
+            {
+                WingetUpdateStatus.Successful => "Successful",
+                WingetUpdateStatus.RestartRequired => "Restart required",
+                WingetUpdateStatus.Cancelled => "Cancelled",
+                _ => "Failed"
+            };
+
+            _settings.ActivityLog.Insert(0, new ActivityLogEntry
+            {
+                TimestampUtc = DateTime.UtcNow,
+                IconGlyph = result.Status is WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired
+                    ? "\uE895"
+                    : "\uEA39",
+                TextDe = $"{package.Name}: {resultDe}",
+                TextEn = $"{package.Name}: {resultEn}",
+                PackageId = package.Id,
+                OldVersion = package.Version,
+                NewVersion = package.Available,
+                Result = result.Status.ToString(),
+                ExitCode = result.ExitCode
+            });
+
+            while (_settings.ActivityLog.Count > 20)
+                _settings.ActivityLog.RemoveAt(_settings.ActivityLog.Count - 1);
+            _settings.Save();
+            RenderActivityLog();
+        }
+
+        private async Task ShowUpdateSummaryAsync(
+            List<(WingetPackage Package, WingetUpdateResult Result)> results,
+            int notStartedCount)
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            var panel = new StackPanel { Spacing = 10, MaxWidth = 560 };
+
+            foreach (var item in results)
+            {
+                string symbol = item.Result.Status switch
+                {
+                    WingetUpdateStatus.Successful => "✓",
+                    WingetUpdateStatus.RestartRequired => "↻",
+                    WingetUpdateStatus.Cancelled => "■",
+                    _ => "!"
+                };
+                Windows.UI.Color statusColor = item.Result.Status switch
+                {
+                    WingetUpdateStatus.Successful => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73),
+                    WingetUpdateStatus.RestartRequired => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D),
+                    WingetUpdateStatus.Cancelled => Windows.UI.Color.FromArgb(0xFF, 0xB0, 0xB0, 0xB0),
+                    _ => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B)
+                };
+                panel.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    BorderThickness = new Thickness(3, 0, 0, 0),
+                    BorderBrush = new SolidColorBrush(statusColor),
+                    Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
+                    Padding = new Thickness(12, 10, 12, 10),
+                    Child = new TextBlock
+                    {
+                        Text = $"{symbol}  {item.Package.Name}  ·  {item.Package.Version} → {item.Package.Available}\n{item.Result.Message}",
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
+                    }
+                });
             }
 
-            var sizeOnly = ProgressSizeOnlyRegex.Match(line);
-            if (sizeOnly.Success)
+            if (notStartedCount > 0)
             {
-                var downloaded = sizeOnly.Groups[1].Value.Trim();
-                var total = sizeOnly.Groups[2].Value.Trim();
-                progress.Report(($"{downloaded} / {total}", null));
+                panel.Children.Add(new TextBlock
+                {
+                    Text = en ? $"■  {notStartedCount} update(s) were not started." : $"■  {notStartedCount} Update(s) wurden nicht gestartet.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
+                });
             }
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = en ? "Update summary" : "Update-Abschlussbericht",
+                Content = new ScrollViewer { Content = panel, MaxHeight = 430 },
+                CloseButtonText = en ? "Close" : "Schließen",
+                DefaultButton = ContentDialogButton.Close
+            };
+            await dialog.ShowAsync();
         }
 
         // Ermittelt die Spaltenstart-Positionen sprachunabhängig:
