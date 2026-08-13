@@ -1,33 +1,39 @@
 # WinVora
 
-WinVora bündelt Programm-Updates, Systeminformationen, Dateibereinigung, Autostart-Verwaltung, Deinstallation und einen verständlichen Aktivitätsverlauf in einer Windows-App.
+WinVora combines program updates, system information, file cleanup, startup management, uninstallation, and a clear activity history in one Windows application.
+
+> Looking for the installer? Visit [**WinVora Releases**](https://github.com/WinVora/WinVora-Releases/releases/latest).
 
 ## Version 0.8.4
 
+### Main Features
+
+- Program updates with selection, progress, cancellation, and a completion report
+- Clear explanations for errors and required restarts
+- System information with copy and export options
+- Safe file cleanup with size and risk information
+- Management of installed programs and startup entries
+- Searchable and filterable activity history
+- Light, dark, or automatic Windows theme
+
 ### Installation
 
-1. Lade `WinVora-Setup-0.8.4.exe` aus dem aktuellen GitHub-Release herunter.
-2. Starte die Datei und folge dem Installationsassistenten.
-3. WinVora prüft anschließend verfügbare Programm-Updates und den Systemstatus.
+1. Open the [latest WinVora release](https://github.com/WinVora/WinVora-Releases/releases/latest).
+2. Download `WinVora-Setup-0.8.4.exe`.
+3. Run the installer and follow the displayed steps.
 
-### Wichtige Funktionen
+### System Requirements
 
-- Programm-Updates mit Auswahl, Fortschritt, Abbruch und Abschlussbericht
-- Verständliche Hinweise bei Fehlern und erforderlichen Neustarts
-- Systeminformationen mit Kopier- und Exportfunktion
-- Sichere Dateibereinigung mit Größenanzeige
-- Verwaltung installierter Programme und Autostarts
-- Filterbarer Aktivitätsverlauf
-- Helles, dunkles oder automatisches Windows-Farbschema
+- Windows 10 version 2004 or later, or Windows 11
+- 64-bit system
+- Internet access for program and WinVora updates
 
-### Systemanforderungen
+Technical package identifiers are intentionally hidden behind “Details” in the interface. Third-party installers may open their own windows or request a system restart.
 
-- Windows 10 ab Version 2004 oder Windows 11
-- 64-Bit-System
-- Internetzugang für Programm- und WinVora-Updates
+## Downloads
 
-Technische Paketnamen werden in der Oberfläche bewusst nur unter „Details“ angezeigt. Installer anderer Hersteller können eigene Fenster öffnen oder einen Neustart verlangen.
+Official installers and checksums are available in the [WinVora Releases repository](https://github.com/WinVora/WinVora-Releases).
 
-## Download
+## License
 
-Offizielle Versionen: [WinVora Releases](https://github.com/WinVora/WinVora-Releases/releases)
+WinVora is available under the [MIT License](LICENSE).
