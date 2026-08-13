@@ -63,9 +63,15 @@ namespace WinVora
         // Eine zentrale Versionsquelle: <Version> in WinVora.csproj. So können
         // Sidebar, Einstellungen und Updatevergleich nicht mehr auseinanderlaufen.
         private static readonly string CurrentVersion =
-            Assembly.GetExecutingAssembly().GetName().Version is { } version
-                ? $"{version.Major}.{version.Minor}.{version.Build}"
-                : "0.0.0";
+            Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion
+                .Split('+', 2)[0]
+            ?? (Assembly.GetExecutingAssembly().GetName().Version is { } version
+                ? version.Revision > 0
+                    ? $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}"
+                    : $"{version.Major}.{version.Minor}.{version.Build}"
+                : "0.0.0");
 
         // Vom Hintergrund-Check gefundenes Update (falls vorhanden) - damit
         // das Einstellungen-Fenster nicht nochmal extra suchen muss.
