@@ -67,9 +67,29 @@ namespace WinVora
             panel.Children.Add(changelogHeader);
 
             panel.Children.Add(MakeChangelogCard(
-    "Version 0.8.4",
+    "Version 0.8.4.1",
     ReleaseNotes.CurrentGerman,
     ReleaseNotes.CurrentEnglish
+));
+
+            panel.Children.Add(MakeChangelogCard(
+    "Version 0.8.4",
+    "• Verbesserungen: Die neue Seite Veränderungen zeigt installierte, entfernte und aktualisierte Programme\n" +
+    "• Verbesserungen: Autostart-Änderungen und ungewöhnliches Speicherwachstum werden erkannt\n" +
+    "• Verbesserungen: Systeminformationen werden bereichsweise gespeichert und aktualisiert\n" +
+    "• Verbesserungen: Programmlisten lassen sich als TXT oder CSV sichern\n" +
+    "• Sicherheit: TPM, Defender, Firewall, Secure Boot und BitLocker werden unabhängig geprüft\n" +
+    "• Sicherheit: Supportberichte werden vor dem Speichern angezeigt und anonymisiert\n" +
+    "• Oberfläche: Zustände und Systeminformationen sind verständlicher beschriftet\n" +
+    "• Bugfixes: Verlauf, TPM-Erkennung, Deinstallation und parallele Ladevorgänge wurden stabilisiert",
+    "• Improvements: The new Changes page shows installed, removed and updated programs\n" +
+    "• Improvements: Startup changes and unusual storage growth are detected\n" +
+    "• Improvements: System information is cached and refreshed by category\n" +
+    "• Improvements: Program lists can be saved as TXT or CSV\n" +
+    "• Security: TPM, Defender, Firewall, Secure Boot and BitLocker are checked independently\n" +
+    "• Security: Support reports are previewed and anonymized before saving\n" +
+    "• Interface: States and system information use clearer wording\n" +
+    "• Bug fixes: History, TPM detection, uninstall and parallel loading were stabilized"
 ));
 
             panel.Children.Add(MakeChangelogCard(
