@@ -37,3 +37,5 @@ Official installers and checksums are available in the [WinVora Releases reposit
 ## License
 
 WinVora is available under the [MIT License](LICENSE).
+Third-party components and their licenses are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

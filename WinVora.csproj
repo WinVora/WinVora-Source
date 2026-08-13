@@ -78,6 +78,10 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<TargetPath>app-logo.png</TargetPath>
 		</Content>
+		<Content Include="THIRD-PARTY-NOTICES.md">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<TargetPath>THIRD-PARTY-NOTICES.md</TargetPath>
+		</Content>
 	</ItemGroup>
 
 	<!-- Schließt ungenutzte KI/ML-Laufzeitkomponenten aus, die das
