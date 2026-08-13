@@ -94,65 +94,10 @@ namespace WinVora
             }
         }
 
-        private async Task DeleteSingleCategory(StorageCategory category, Button sourceButton)
-        {
-            if (_isDeletingStorage || _isLoadingStorage) return;
-
-            bool confirmed = await ConfirmAsync(
-                "Bereich löschen?",
-                $"\"{category.Name}\" wird bereinigt. Das kann nicht rückgängig gemacht werden. Fortfahren?" +
-                GetProtectedCleanupWarning(new[] { category }) +
-                GetRunningProcessWarning(new[] { category }),
-                respectDeleteConfirmationSetting: !RequiresProtectedCleanupConfirmation(new[] { category }));
-
-            if (!confirmed) return;
-
-            sourceButton.IsEnabled = false;
-            StorageRefreshButton.IsEnabled = false;
-            StorageDeleteSelectedButton.IsEnabled = false;
-
-            StorageProgressPanel.Visibility = Visibility.Visible;
-            StorageProgressBar.Maximum = 1;
-            StorageProgressBar.Value = 0;
-            StorageProgressText.Text = category.RequiresAdmin
-                ? $"Lösche {category.Name}... (Admin-Bestätigung nötig)"
-                : $"Lösche {category.Name}...";
-
-            var (success, message) = await DeleteCategoriesAsync(new List<StorageCategory> { category });
-            Logger.Log($"Storage-Löschung '{category.Name}': {(success ? "OK" : "Fehler")} - {message}");
-
-            if (success)
-            {
-                _settings.LastCleanupUtc = DateTime.UtcNow;
-                _settings.Save();
-                LogActivity("\uE74D",
-                    $"{category.Name} bereinigt ({category.SizeDisplay})",
-                    $"Cleaned {category.Name} ({category.SizeDisplay})");
-            }
-            else
-            {
-                LogActivity("\uEA39",
-                    $"Bereinigung von {category.Name} fehlgeschlagen",
-                    $"Failed to clean {category.Name}",
-                    "Failed");
-            }
-
-            StorageProgressBar.Value = 1;
-            StorageProgressText.Text = success
-                ? $"{category.Name}: {message}"
-                : $"{category.Name} - Fehler: {message}";
-
-            await Task.Delay(1500);
-            StorageProgressPanel.Visibility = Visibility.Collapsed;
-
-            _isDeletingStorage = false;
-            await LoadStorage();
-        }
-
         private async void StorageDeleteSelected_Click(object sender, RoutedEventArgs e)
         {
             if (_isDeletingStorage || _isLoadingStorage) return;
-            var selected = _storageRows.Where(r => r.Toggle.IsOn).Select(r => r.Category).ToList();
+            var selected = _storageRows.Where(r => r.Toggle.IsChecked == true).Select(r => r.Category).ToList();
 
             if (selected.Count == 0)
             {
@@ -249,4 +194,3 @@ namespace WinVora
         }
     }
 }
-

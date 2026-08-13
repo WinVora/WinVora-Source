@@ -17,6 +17,10 @@ namespace WinVora
 
             Debug.Assert(WingetErrorTranslator.ContainsRestartRequired("Restart required"));
             Debug.Assert(!WingetErrorTranslator.ContainsRestartRequired("Installation complete"));
+            string shellExecuteFailure = WingetErrorTranslator.GetFriendlyMessage(
+                unchecked((int)0x8A150006), "", WingetUpdateStatus.Failed);
+            Debug.Assert(shellExecuteFailure.Contains("Installer", StringComparison.OrdinalIgnoreCase));
+            Debug.Assert(!shellExecuteFailure.Contains("0x8A150006", StringComparison.OrdinalIgnoreCase));
 
             var settings = new AppSettings
             {

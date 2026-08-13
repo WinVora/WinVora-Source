@@ -13,7 +13,7 @@ namespace WinVora
     public sealed partial class MainWindow
     {
         private async Task LoadWingetIconsInBackground(
-            List<(WingetPackage Package, ToggleSwitch Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> rows)
+            List<(WingetPackage Package, CheckBox Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> rows)
         {
             try
             {
@@ -42,7 +42,7 @@ namespace WinVora
         // Ergebnisse werden gesammelt und nur alle 300ms in einem Rutsch
         // angewendet, statt sofort bei jedem einzelnen Treffer.
         private async Task LoadWingetDetailsInBackground(
-            List<(WingetPackage Package, ToggleSwitch Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> rows)
+            List<(WingetPackage Package, CheckBox Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> rows)
         {
             using var semaphore = new SemaphoreSlim(2);
             var installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
@@ -79,7 +79,7 @@ namespace WinVora
                         row.Package.Publisher = publisher;
                         row.Package.DownloadSize = size;
                         pending.Enqueue((row.Card,
-                            $"{row.BaseDescription}\n{sizeLabel.ToUpperInvariant()}   {size}     {publisherLabel.ToUpperInvariant()}   {publisher}",
+                            $"{row.BaseDescription}     {sizeLabel.ToUpperInvariant()}  {size}     {publisherLabel.ToUpperInvariant()}  {publisher}",
                             UpdateUiBuilder.TechnicalDetails(row.Package, Localization.CurrentLanguage == "en")));
                     }
                     finally

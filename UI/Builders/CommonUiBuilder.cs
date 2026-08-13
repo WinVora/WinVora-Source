@@ -13,9 +13,9 @@ namespace WinVora
             {
                 CornerRadius = new CornerRadius(cornerRadius),
                 Padding = new Thickness(padding),
-                Background = (SolidColorBrush)resources["AppOverlay18"],
-                BorderBrush = (SolidColorBrush)resources["AppOverlay28"],
-                BorderThickness = new Thickness(1),
+                Background = (SolidColorBrush)resources["AppCardSurfaceBrush"],
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0),
                 Child = child
             };
         }

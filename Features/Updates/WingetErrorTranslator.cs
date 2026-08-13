@@ -40,6 +40,15 @@ namespace WinVora
             if (normalized.Contains("no applicable installer") || normalized.Contains("kein zutreffendes installationsprogramm"))
                 return en ? "No compatible installer is available for this PC." : "Für diesen PC ist kein passender Installer verfügbar.";
 
+            // APPINSTALLER_CLI_ERROR_SHELLEXEC_INSTALL_FAILED: Der Download
+            // kann bereits erfolgreich gewesen sein, Windows konnte den
+            // Hersteller-Installer anschließend aber nicht starten.
+            if (unchecked((uint)exitCode) == 0x8A150006 || normalized.Contains("0x8a150006") ||
+                normalized.Contains("shellexecute failed") || normalized.Contains("running shellexecute failed"))
+                return en
+                    ? "Windows could not start the installer. Close the affected app, try again and approve an administrator prompt if one appears."
+                    : "Windows konnte den Installer nicht starten. Schließe das betroffene Programm, versuche es erneut und bestätige eine mögliche Administratorabfrage.";
+
             return en
                 ? $"The update failed (code 0x{unchecked((uint)exitCode):X8})."
                 : $"Das Update ist fehlgeschlagen (Code 0x{unchecked((uint)exitCode):X8}).";

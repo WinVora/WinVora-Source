@@ -18,6 +18,7 @@ namespace WinVora
         {
             ContentArea.Children.Clear();
             _wingetRows.Clear();
+            _wingetStatusBadges.Clear();
 
             bool en = Localization.CurrentLanguage == "en";
             DateTime now = DateTime.UtcNow;
@@ -57,12 +58,17 @@ namespace WinVora
                         _settings.Save();
                         if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
                     };
+                    var hiddenActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                    hiddenActions.Children.Add(CommonUiBuilder.CreateStatusBadge(
+                        deferred.HiddenUntilUtc.HasValue ? (en ? "Postponed" : "Zurückgestellt") : (en ? "Ignored" : "Ignoriert"),
+                        warning: true, resources: RootGrid.Resources));
+                    hiddenActions.Children.Add(restore);
                     ContentArea.Children.Add(new ToolkitControls.SettingsCard
                     {
                         Header = package?.Name ?? deferred.PackageId,
                         Description = until,
                         HeaderIcon = new FontIcon { Glyph = "\uE823" },
-                        Content = restore,
+                        Content = hiddenActions,
                         CornerRadius = new CornerRadius(12)
                     });
                 }
@@ -81,12 +87,16 @@ namespace WinVora
                         _settings.Save();
                         if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
                     };
+                    var ignoredActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                    ignoredActions.Children.Add(CommonUiBuilder.CreateStatusBadge(
+                        en ? "Ignored" : "Ignoriert", warning: true, resources: RootGrid.Resources));
+                    ignoredActions.Children.Add(restore);
                     ContentArea.Children.Add(new ToolkitControls.SettingsCard
                     {
                         Header = package?.Name ?? ignoredId,
                         Description = en ? "Permanently ignored" : "Dauerhaft ignoriert",
                         HeaderIcon = new FontIcon { Glyph = "\uE823" },
-                        Content = restore,
+                        Content = ignoredActions,
                         CornerRadius = new CornerRadius(12)
                     });
                 }
@@ -123,7 +133,13 @@ namespace WinVora
 
             foreach (var pkg in packages)
             {
-                var toggle = new ToggleSwitch { IsOn = true, OnContent = "", OffContent = "" };
+                var toggle = new CheckBox
+                {
+                    IsChecked = true,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MinWidth = 22,
+                    Padding = new Thickness(0)
+                };
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle,
                     en ? $"Select update for {pkg.Name}" : $"Update für {pkg.Name} auswählen");
                 var baseDescription = UpdateUiBuilder.VersionSummary(pkg, en);
@@ -168,42 +184,65 @@ namespace WinVora
                 {
                     Content = detailsText
                 };
-                var cardActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-                cardActions.Children.Add(new Border
+                var statusText = new TextBlock
                 {
-                    Background = (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"],
+                    Text = en ? "Ready" : "Bereit",
+                    FontSize = 11,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"],
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var statusBadge = new Border
+                {
+                    Background = (SolidColorBrush)RootGrid.Resources["AppAccentOverlay10"],
                     CornerRadius = new CornerRadius(8),
-                    Padding = new Thickness(9, 5, 9, 5),
-                    Child = new TextBlock
-                    {
-                        Text = en ? "Available" : "Verfügbar",
-                        FontSize = 12,
-                        Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
-                    }
-                });
-                cardActions.Children.Add(toggle);
+                    Padding = new Thickness(8, 4, 8, 4),
+                    Child = statusText
+                };
+                _wingetStatusBadges[pkg.Id] = statusText;
+
+                var cardActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                cardActions.Children.Add(statusBadge);
                 cardActions.Children.Add(detailsButton);
                 cardActions.Children.Add(deferButton);
 
+                var compactHeader = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                compactHeader.Children.Add(toggle);
+                compactHeader.Children.Add(new TextBlock
+                {
+                    Text = pkg.Name,
+                    FontSize = 15,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+
                 var card = new ToolkitControls.SettingsCard
                 {
-                    Header = pkg.Name,
-                    Description = $"{baseDescription}\n{sizeLabel.ToUpperInvariant()}   {loadingLabel}     {publisherLabel.ToUpperInvariant()}   {loadingLabel}",
+                    Header = compactHeader,
+                    Description = $"{baseDescription}     {sizeLabel.ToUpperInvariant()}  {loadingLabel}     {publisherLabel.ToUpperInvariant()}  {loadingLabel}",
                     HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter-App-Icon
                     Content = cardActions,
-                    BorderThickness = new Thickness(1),
-                    BorderBrush = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"], // startet ausgewählt
+                    Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"],
+                    BorderThickness = new Thickness(0),
+                    BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                     Tag = detailsText
                 };
-                card.MinHeight = 128;
+                card.MinHeight = 88;
+                card.Padding = new Thickness(14, 10, 14, 10);
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(card,
                     en ? $"Available update for {pkg.Name}" : $"Verfügbares Update für {pkg.Name}");
 
-                // Akzentfarbener Rand, solange das Paket zum Aktualisieren ausgewählt ist.
-                var defaultBorder = (SolidColorBrush)RootGrid.Resources["AppOverlay28"];
-                var accentBorder = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"];
-                toggle.Toggled += (_, __) => card.BorderBrush = toggle.IsOn ? accentBorder : defaultBorder;
-                toggle.Toggled += (_, __) => UpdateWingetSelectionButton();
+                void UpdateSelectionVisual()
+                {
+                    if (_isBulkUpdatingWingetSelection) return;
+                    UpdateWingetSelectionButton();
+                }
+                toggle.Checked += (_, __) => UpdateSelectionVisual();
+                toggle.Unchecked += (_, __) => UpdateSelectionVisual();
 
                 ContentArea.Children.Add(card);
                 _wingetRows.Add((pkg, toggle, card, baseDescription));
@@ -257,4 +296,3 @@ namespace WinVora
         }
     }
 }
-

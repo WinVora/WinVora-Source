@@ -160,25 +160,65 @@ namespace WinVora
                 detailParts.Add(en ? $"installed on {program.InstallDate}" : $"installiert am {program.InstallDate}");
             if (!string.IsNullOrWhiteSpace(program.SizeDisplay)) detailParts.Add(program.SizeDisplay);
 
-            var uninstallButton = new Button { Content = Localization.T("Nav.Uninstall") };
+            var selection = new CheckBox
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                IsChecked = false
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(selection,
+                en ? $"Select {program.DisplayName}" : $"{program.DisplayName} auswählen");
+            var uninstallButton = new Button
+            {
+                Content = Localization.T("Nav.Uninstall"),
+                IsEnabled = false,
+                CornerRadius = new CornerRadius(8),
+                UseLayoutRounding = true,
+                BorderThickness = new Thickness(0)
+            };
             var normalBackground = uninstallButton.Background;
-            uninstallButton.PointerEntered += (_, __) =>
-                uninstallButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x35, 0xFF, 0x6B, 0x6B));
-            uninstallButton.PointerExited += (_, __) => uninstallButton.Background = normalBackground;
+            var dangerBackground = (SolidColorBrush)RootGrid.Resources["AppDangerSurfaceBrush"];
+            uninstallButton.Resources["ButtonBackgroundPointerOver"] = dangerBackground;
+            uninstallButton.Resources["ButtonBackgroundPressed"] = dangerBackground;
+            uninstallButton.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            uninstallButton.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(uninstallButton,
                 en ? $"Uninstall {program.DisplayName}" : $"{program.DisplayName} deinstallieren");
             uninstallButton.Click += async (_, __) => await UninstallProgramAsync(program, uninstallButton);
+
+            selection.Checked += (_, __) =>
+            {
+                uninstallButton.IsEnabled = true;
+                uninstallButton.Foreground = (SolidColorBrush)RootGrid.Resources["AppErrorBrush"];
+                uninstallButton.Background = dangerBackground;
+            };
+            selection.Unchecked += (_, __) =>
+            {
+                uninstallButton.IsEnabled = false;
+                uninstallButton.ClearValue(Button.ForegroundProperty);
+                uninstallButton.Background = normalBackground;
+            };
+
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            actions.Children.Add(selection);
+            actions.Children.Add(uninstallButton);
 
             var card = new ToolkitControls.SettingsCard
             {
                 Header = program.DisplayName,
                 Description = $"{(en ? "PUBLISHER" : "HERAUSGEBER")}   {program.Publisher}\n" +
                               $"{(en ? "DETAILS" : "DETAILS")}   {string.Join("   ·   ", detailParts)}",
-                HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter, bis echtes Icon geladen ist
-                Content = uninstallButton,
+                HeaderIcon = new FontIcon { Glyph = "\uE7B8", FontSize = 28, Width = 34, Height = 34 },
+                Content = actions,
+                Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"],
+                BorderThickness = new Thickness(0),
                 Tag = program.DisplayName // für die Suche/Filterung
             };
-            card.MinHeight = 108;
+            card.MinHeight = 104;
             ToolTipService.SetToolTip(card, program.DisplayName);
 
             return card;
@@ -197,7 +237,7 @@ namespace WinVora
                 var bitmap = await BytesToBitmapImageAsync(pngBytes);
                 if (bitmap == null) return;
 
-                card.HeaderIcon = new ImageIcon { Source = bitmap };
+                card.HeaderIcon = new ImageIcon { Source = bitmap, Width = 34, Height = 34 };
             }
             catch
             {

@@ -32,18 +32,18 @@ namespace WinVora
         {
             if (_storageRows.Count == 0) return;
 
-            bool allSelected = _storageRows.All(r => r.Toggle.IsOn);
+            bool allSelected = _storageRows.All(r => r.Toggle.IsChecked == true);
             bool newState = !allSelected;
 
             foreach (var row in _storageRows)
-                row.Toggle.IsOn = newState;
+                row.Toggle.IsChecked = newState;
 
             UpdateStorageSelectionSummary();
         }
 
         private void UpdateStorageSelectionSummary()
         {
-            var selected = _storageRows.Where(row => row.Toggle.IsOn).Select(row => row.Category).ToList();
+            var selected = _storageRows.Where(row => row.Toggle.IsChecked == true).Select(row => row.Category).ToList();
             long bytes = selected.Sum(category => category.SizeBytes);
             bool en = Localization.CurrentLanguage == "en";
             StorageSelectAllButton.Content = selected.Count == _storageRows.Count && selected.Count > 0

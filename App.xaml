@@ -17,6 +17,25 @@
             <SolidColorBrush x:Key="WinVoraPurpleHoverBrush" Color="#7D6FF0"/>
             <SolidColorBrush x:Key="WinVoraPurplePressedBrush" Color="#5848CD"/>
             <SolidColorBrush x:Key="WinVoraPurpleDisabledBrush" Color="#596C5CE7"/>
+            <SolidColorBrush x:Key="WinVoraSecondaryButtonBrush" Color="#302B50"/>
+            <SolidColorBrush x:Key="WinVoraToggleOffBrush" Color="#383838"/>
+            <SolidColorBrush x:Key="WinVoraTransparentBrush" Color="Transparent"/>
+
+            <!-- Deckende Auswahlflächen ohne die feine Systemkontur, die bei
+                 Skalierung als helle Mischkante an den Rundungen sichtbar war. -->
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="Transparent"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="Transparent"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="Transparent"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#6C5CE7"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#7D6FF0"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="#5848CD"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#383838"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#424242"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPressed" Color="#303030"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="Transparent"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="Transparent"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="Transparent"/>
+            <x:Double x:Key="ToggleSwitchOuterBorderStrokeThickness">0</x:Double>
             <SolidColorBrush x:Key="AccentButtonBackground" Color="#6C5CE7"/>
             <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#7D6FF0"/>
             <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#5848CD"/>
@@ -28,11 +47,12 @@
             <Style x:Key="WinVoraButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
-                <Setter Property="Background" Value="#246C5CE7"/>
+                <Setter Property="Background" Value="{StaticResource WinVoraSecondaryButtonBrush}"/>
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/>
-                <Setter Property="BorderBrush" Value="#706C5CE7"/>
-                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="UseLayoutRounding" Value="True"/>
             </Style>
         </ResourceDictionary>
     </Application.Resources>

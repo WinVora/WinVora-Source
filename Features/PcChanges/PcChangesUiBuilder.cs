@@ -28,7 +28,8 @@ namespace WinVora
             return new Border
             {
                 CornerRadius = new CornerRadius(16), Padding = new Thickness(18), MinHeight = 118,
-                Background = background, BorderBrush = border, BorderThickness = new Thickness(1), Child = content
+                Background = background, BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0), Child = content
             };
         }
 
@@ -65,8 +66,8 @@ namespace WinVora
             return new Border
             {
                 CornerRadius = new CornerRadius(16), Padding = new Thickness(18), Background = background,
-                BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(100, 245, 185, 66)),
-                BorderThickness = new Thickness(1), Child = layout
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0), Child = layout
             };
         }
 

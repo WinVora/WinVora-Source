@@ -32,8 +32,16 @@ namespace WinVora
             _wingetSelectAllState = !_wingetSelectAllState;
             bool newState = _wingetSelectAllState;
 
-            foreach (var row in visibleRows)
-                row.Toggle.IsOn = newState;
+            _isBulkUpdatingWingetSelection = true;
+            try
+            {
+                foreach (var row in visibleRows)
+                    row.Toggle.IsChecked = newState;
+            }
+            finally
+            {
+                _isBulkUpdatingWingetSelection = false;
+            }
 
             UpdateWingetSelectAllAppearance();
             UpdateWingetSelectionButton();
@@ -46,21 +54,22 @@ namespace WinVora
             WingetSelectAllIcon.Visibility = allSelected ? Visibility.Visible : Visibility.Collapsed;
             WingetSelectAllIndicator.Background = allSelected
                 ? (SolidColorBrush)RootGrid.Resources["AppAccentBrush"]
-                : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                : (SolidColorBrush)RootGrid.Resources["AppSelectionEmptyBrush"];
         }
 
         private void UpdateWingetSelectionButton()
         {
-            int count = _wingetRows.Count(row => row.Toggle.IsOn);
+            if (_isBulkUpdatingWingetSelection) return;
+            int count = _wingetRows.Count(row => row.Toggle.IsChecked == true);
             var visibleSelection = SelectionSummary.From(_wingetRows
                 .Where(row => row.Card.Visibility == Visibility.Visible)
-                .Select(row => row.Toggle.IsOn));
+                .Select(row => row.Toggle.IsChecked == true));
             int visibleCount = visibleSelection.Total;
             int visibleSelected = visibleSelection.Selected;
             _wingetSelectAllState = visibleSelection.All;
             UpdateWingetSelectAllAppearance();
-            WingetSelectAllIndicator.Opacity = visibleSelection.Partial ? 0.55 : 1;
-            WingetSelectAllIcon.Glyph = visibleSelection.Partial ? "\uE738" : "\uE73E";
+            WingetSelectAllIndicator.Opacity = 1;
+            WingetSelectAllIcon.Text = visibleSelection.Partial ? "−" : "✓";
             WingetSelectAllIcon.Visibility = visibleSelected > 0 ? Visibility.Visible : Visibility.Collapsed;
             bool en = Localization.CurrentLanguage == "en";
             StartUpdateButton.Content = count == 1

@@ -44,9 +44,11 @@ namespace WinVora
         private List<WingetPackage>? _cachedPackages;
         private bool _isDarkTheme = true;
         private bool _wingetSelectAllState = true;
+        private bool _isBulkUpdatingWingetSelection;
 
-        private readonly List<(WingetPackage Package, ToggleSwitch Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> _wingetRows = new();
-        private readonly List<(StorageCategory Category, ToggleSwitch Toggle)> _storageRows = new();
+        private readonly List<(WingetPackage Package, CheckBox Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> _wingetRows = new();
+        private readonly Dictionary<string, TextBlock> _wingetStatusBadges = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(StorageCategory Category, CheckBox Toggle)> _storageRows = new();
         private TextBlock? _wingetNoResultsText;
         private TextBlock? _uninstallNoResultsText;
         private AppSettings _settings = AppSettings.Load();
@@ -72,6 +74,9 @@ namespace WinVora
         private string _historyFilter = "All";
         private readonly Dictionary<string, double> _pageScrollOffsets = new();
         private PcChangeSummary? _pcChangeSummary;
+        private Grid? _dashboardPrimaryGrid;
+        private bool? _narrowLayoutState;
+        private bool? _compactHeightState;
 
 
         public MainWindow()
@@ -80,7 +85,11 @@ namespace WinVora
             this.InitializeComponent();
             CoreLogicSelfTests.Run();
             SetupSystemInfoCopyButtons();
-            RootGrid.SizeChanged += (_, args) => ApplyResponsiveLayout(args.NewSize);
+            RootGrid.SizeChanged += (_, args) =>
+            {
+                ApplyResponsiveLayout(args.NewSize);
+            };
+            RootGrid.Loaded += (_, __) => RemoveRoundedDecorativeBorders(RootGrid);
             this.Title = "WinVora";
             NavVersionText.Text = $"Version {CurrentVersion}";
             this.Activated += MainWindow_Activated;
@@ -125,6 +134,8 @@ namespace WinVora
             // Glas-Intensität, RequestedTheme für Standard-Controls wie Buttons/Toggles).
             ApplyConfiguredColorScheme(persist: false);
 
+            BuildDashboardHierarchy();
+            NormalizeCardMetrics();
             SetupOverviewCardHoverEffects();
 
             Localization.CurrentLanguage = _settings.Language;
@@ -429,19 +440,17 @@ namespace WinVora
             StartStartupGlassBarAnimation();
         }
 
-        // Dezente Hover-Animation UND weicher Schatten für die Dashboard-/
-        // Statuskarten auf der Übersicht. ThemeShadow braucht eine leichte
-        // Z-Anhebung (Translation), sonst wird kein Schatten gerendert.
+        // Ruhiger Hover-Zustand ohne zusätzlichen Außenrahmen oder Schatten.
+        // Ein Akzentrahmen über einem bereits abgerundeten, halbtransparenten
+        // Rand erzeugte bei Windows-Skalierung sichtbare Pixelmuster an den
+        // Ecken. Deshalb ändert Hover nur noch dezent die Flächenfarbe.
         private void AttachCardHoverEffect(Border card)
         {
-            var originalBorderBrush = card.BorderBrush;
-            var hoverBrush = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"];
+            var originalBackground = card.Background;
+            var hoverBackground = (SolidColorBrush)RootGrid.Resources["AppOverlay22"];
 
-            card.PointerEntered += (_, __) => card.BorderBrush = hoverBrush;
-            card.PointerExited += (_, __) => card.BorderBrush = originalBorderBrush;
-
-            card.Shadow = new ThemeShadow();
-            card.Translation = new System.Numerics.Vector3(0, 0, 16);
+            card.PointerEntered += (_, __) => card.Background = hoverBackground;
+            card.PointerExited += (_, __) => card.Background = originalBackground;
         }
 
         private void SetupOverviewCardHoverEffects()
@@ -469,6 +478,102 @@ namespace WinVora
                         Margin = new Thickness(0, 3, 0, 0)
                     });
                 }
+            }
+        }
+
+        private void BuildDashboardHierarchy()
+        {
+            // Wichtigste Informationen zuerst: Gesamtstatus, Updates,
+            // Sicherheit und Speicher. CPU/RAM/GPU bilden darunter einen
+            // klar getrennten Systemleistungsbereich.
+            LiveDashboardGrid.Children.Remove(DashCardStatus);
+            LiveDashboardGrid.Children.Remove(DashCardDisk);
+            DashboardStatusGrid.Children.Remove(StatCardUpdates);
+            DashboardStatusGrid.Children.Remove(StatCardSecurity);
+            while (DashboardStatusGrid.ColumnDefinitions.Count > 3)
+                DashboardStatusGrid.ColumnDefinitions.RemoveAt(DashboardStatusGrid.ColumnDefinitions.Count - 1);
+            OverviewPanel.Children.Remove(LiveDashboardCard);
+            OverviewPanel.Children.Remove(DashboardStatusGrid);
+
+            _dashboardPrimaryGrid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
+            for (int i = 0; i < 3; i++)
+                _dashboardPrimaryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            Grid.SetRow(DashCardStatus, 0); Grid.SetColumn(DashCardStatus, 0); Grid.SetColumnSpan(DashCardStatus, 3);
+            Grid.SetRow(StatCardUpdates, 1); Grid.SetColumn(StatCardUpdates, 0); Grid.SetColumnSpan(StatCardUpdates, 1);
+            Grid.SetRow(StatCardSecurity, 1); Grid.SetColumn(StatCardSecurity, 1); Grid.SetColumnSpan(StatCardSecurity, 1);
+            Grid.SetRow(DashCardDisk, 1); Grid.SetColumn(DashCardDisk, 2); Grid.SetColumnSpan(DashCardDisk, 1);
+            _dashboardPrimaryGrid.Children.Add(DashCardStatus);
+            _dashboardPrimaryGrid.Children.Add(StatCardUpdates);
+            _dashboardPrimaryGrid.Children.Add(StatCardSecurity);
+            _dashboardPrimaryGrid.Children.Add(DashCardDisk);
+
+            var systemSection = new StackPanel { Spacing = 12 };
+            systemSection.Children.Add(new TextBlock
+            {
+                Text = Localization.CurrentLanguage == "en" ? "System performance" : "Systemleistung",
+                FontSize = 17,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
+            });
+            systemSection.Children.Add(DashboardStatusGrid);
+            OverviewPanel.Children.Insert(0, _dashboardPrimaryGrid);
+            OverviewPanel.Children.Insert(1, systemSection);
+        }
+
+        private void NormalizeCardMetrics()
+        {
+            // Eine gemeinsame visuelle Grundlinie für alle kompakten
+            // Dashboard-Karten: gleiche Höhe, Innenabstände und Ecken.
+            foreach (var dashboardCard in new[]
+            {
+                StatCardUpdates, StatCardSecurity, DashCardDisk,
+                StatCardCpu, StatCardRam, StatCardGpu
+            })
+            {
+                dashboardCard.MinHeight = 150;
+                dashboardCard.Padding = new Thickness(24);
+                dashboardCard.CornerRadius = new CornerRadius(16);
+                dashboardCard.BorderThickness = new Thickness(0);
+                dashboardCard.Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"];
+            }
+            DashCardStatus.BorderThickness = new Thickness(0);
+            DashChangesCard.BorderThickness = new Thickness(0);
+            foreach (var secondaryCard in new[]
+            {
+                DashCardTemp, DashCardPrograms, DashCardCleanup,
+                DashCardUpdatesDetail, DashCardRam
+            })
+                secondaryCard.BorderThickness = new Thickness(0);
+
+            // Systeminformationen bleiben zweispaltig, erhalten aber überall
+            // dieselbe Kartenhöhe und denselben Innenabstand.
+            foreach (var systemCard in new[]
+            {
+                SysCardDevice, SysCardOs, SysCardCpu, SysCardRam, SysCardBoard,
+                SysCardSecurity, SysCardGpu, SysCardDrives, SysCardNetwork, SysCardBattery
+            })
+            {
+                systemCard.MinHeight = 140;
+                systemCard.Padding = new Thickness(20);
+                systemCard.CornerRadius = new CornerRadius(16);
+                systemCard.BorderThickness = new Thickness(0);
+                systemCard.Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"];
+            }
+        }
+
+        private static void RemoveRoundedDecorativeBorders(DependencyObject root)
+        {
+            int childCount = VisualTreeHelper.GetChildrenCount(root);
+            for (int index = 0; index < childCount; index++)
+            {
+                var child = VisualTreeHelper.GetChild(root, index);
+                if (child is Border border && border.CornerRadius != new CornerRadius(0))
+                    border.BorderThickness = new Thickness(0);
+                RemoveRoundedDecorativeBorders(child);
             }
         }
 
@@ -735,6 +840,26 @@ namespace WinVora
                 warningBrush.Color = dark
                     ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D)
                     : Windows.UI.Color.FromArgb(0xFF, 0xA8, 0x68, 0x00);
+            if (RootGrid.Resources["AppCardSurfaceBrush"] is SolidColorBrush cardSurface)
+                cardSurface.Color = dark
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x1C, 0x1C, 0x1C)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF2);
+            if (RootGrid.Resources["AppDangerSurfaceBrush"] is SolidColorBrush dangerSurface)
+                dangerSurface.Color = dark
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x3A, 0x23, 0x28)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xFC, 0xE8, 0xEA);
+            if (RootGrid.Resources["AppSelectionEmptyBrush"] is SolidColorBrush emptySelection)
+                emptySelection.Color = dark
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x45, 0x45, 0x45)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xD0, 0xD0, 0xD0);
+            if (Application.Current.Resources["WinVoraSecondaryButtonBrush"] is SolidColorBrush secondaryButton)
+                secondaryButton.Color = dark
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x30, 0x2B, 0x50)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xE7, 0xE3, 0xFA);
+            if (Application.Current.Resources["WinVoraToggleOffBrush"] is SolidColorBrush toggleOff)
+                toggleOff.Color = dark
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x38, 0x38, 0x38)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xD8, 0xD8, 0xD8);
 
             if (RootGrid.Resources["AppRootBackgroundBrush"] is SolidColorBrush rootBrush)
                 rootBrush.Color = dark
@@ -1124,7 +1249,7 @@ namespace WinVora
             {
                 From = 1,
                 To = 0,
-                Duration = TimeSpan.FromMilliseconds(350)
+                Duration = TimeSpan.FromMilliseconds(160)
             };
 
             var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
@@ -1378,7 +1503,14 @@ namespace WinVora
 
         private void ApplyResponsiveLayout(Size windowSize)
         {
-            bool compact = windowSize.Height < 760;
+            _compactHeightState = _compactHeightState switch
+            {
+                null => windowSize.Height < 760,
+                true when windowSize.Height > 790 => false,
+                false when windowSize.Height < 730 => true,
+                _ => _compactHeightState
+            };
+            bool compact = _compactHeightState == true;
             foreach (var button in new[]
             {
                 NavOverviewButton, NavSystemButton, NavUpdatesButton, NavCleanerButton, NavUninstallButton, NavChangesButton
@@ -1389,7 +1521,14 @@ namespace WinVora
                 button.Margin = new Thickness(0, 0, 0, compact ? 6 : 12);
             }
 
-            bool narrow = windowSize.Width < 1180;
+            _narrowLayoutState = _narrowLayoutState switch
+            {
+                null => windowSize.Width < 1180,
+                true when windowSize.Width > 1220 => false,
+                false when windowSize.Width < 1140 => true,
+                _ => _narrowLayoutState
+            };
+            bool narrow = _narrowLayoutState == true;
             MainCard.Padding = new Thickness(narrow ? 14 : 20);
             PageTitle.FontSize = narrow ? 30 : 34;
             WingetSearchBox.Width = narrow ? 220 : 280;
@@ -1452,42 +1591,53 @@ namespace WinVora
             HealthUpdatesText.FontSize = narrow ? 22 : 24;
             HealthSecurityText.FontSize = narrow ? 22 : 24;
 
-            var statusCards = new[] { StatCardUpdates, StatCardCpu, StatCardRam, StatCardGpu, StatCardSecurity };
+            var statusCards = new[] { StatCardCpu, StatCardRam, StatCardGpu };
             for (int column = 0; column < DashboardStatusGrid.ColumnDefinitions.Count; column++)
-                DashboardStatusGrid.ColumnDefinitions[column].Width = narrow
+                DashboardStatusGrid.ColumnDefinitions[column].Width = column < 3
                     ? new GridLength(1, GridUnitType.Star)
-                    : column < 5 ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+                    : new GridLength(0);
 
             if (narrow)
             {
-                for (int i = 0; i < 3; i++)
+                DashboardStatusGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+                DashboardStatusGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+                DashboardStatusGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                Grid.SetRow(StatCardCpu, 0); Grid.SetColumn(StatCardCpu, 0); Grid.SetColumnSpan(StatCardCpu, 1);
+                Grid.SetRow(StatCardRam, 0); Grid.SetColumn(StatCardRam, 1); Grid.SetColumnSpan(StatCardRam, 1);
+                Grid.SetRow(StatCardGpu, 1); Grid.SetColumn(StatCardGpu, 0); Grid.SetColumnSpan(StatCardGpu, 2);
+
+                if (_dashboardPrimaryGrid != null)
                 {
-                    Grid.SetRow(statusCards[i], 0);
-                    Grid.SetColumn(statusCards[i], i * 2);
-                    Grid.SetColumnSpan(statusCards[i], 2);
+                    _dashboardPrimaryGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+                    _dashboardPrimaryGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+                    _dashboardPrimaryGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                    Grid.SetRow(DashCardStatus, 0); Grid.SetColumn(DashCardStatus, 0); Grid.SetColumnSpan(DashCardStatus, 2);
+                    Grid.SetRow(StatCardUpdates, 1); Grid.SetColumn(StatCardUpdates, 0); Grid.SetColumnSpan(StatCardUpdates, 1);
+                    Grid.SetRow(StatCardSecurity, 1); Grid.SetColumn(StatCardSecurity, 1); Grid.SetColumnSpan(StatCardSecurity, 1);
+                    Grid.SetRow(DashCardDisk, 2); Grid.SetColumn(DashCardDisk, 0); Grid.SetColumnSpan(DashCardDisk, 2);
                 }
-                Grid.SetRow(StatCardGpu, 1);
-                Grid.SetColumn(StatCardGpu, 0);
-                Grid.SetColumnSpan(StatCardGpu, 3);
-                Grid.SetRow(StatCardSecurity, 1);
-                Grid.SetColumn(StatCardSecurity, 3);
-                Grid.SetColumnSpan(StatCardSecurity, 3);
             }
             else
             {
+                foreach (var column in DashboardStatusGrid.ColumnDefinitions)
+                    column.Width = new GridLength(1, GridUnitType.Star);
                 for (int i = 0; i < statusCards.Length; i++)
                 {
                     Grid.SetRow(statusCards[i], 0);
                     Grid.SetColumn(statusCards[i], i);
                     Grid.SetColumnSpan(statusCards[i], 1);
                 }
-            }
 
-            Grid.SetRow(DashCardDisk, 0); Grid.SetColumn(DashCardDisk, 0); Grid.SetColumnSpan(DashCardDisk, narrow ? 2 : 1);
-            Grid.SetRow(DashCardTemp, 0); Grid.SetColumn(DashCardTemp, narrow ? 2 : 1); Grid.SetColumnSpan(DashCardTemp, narrow ? 2 : 1);
-            Grid.SetRow(DashCardPrograms, narrow ? 1 : 0); Grid.SetColumn(DashCardPrograms, narrow ? 0 : 2); Grid.SetColumnSpan(DashCardPrograms, narrow ? 2 : 1);
-            Grid.SetRow(DashCardCleanup, narrow ? 1 : 0); Grid.SetColumn(DashCardCleanup, narrow ? 2 : 3); Grid.SetColumnSpan(DashCardCleanup, narrow ? 2 : 1);
-            Grid.SetRow(DashCardStatus, narrow ? 2 : 1);
+                if (_dashboardPrimaryGrid != null)
+                {
+                    foreach (var column in _dashboardPrimaryGrid.ColumnDefinitions)
+                        column.Width = new GridLength(1, GridUnitType.Star);
+                    Grid.SetRow(DashCardStatus, 0); Grid.SetColumn(DashCardStatus, 0); Grid.SetColumnSpan(DashCardStatus, 3);
+                    Grid.SetRow(StatCardUpdates, 1); Grid.SetColumn(StatCardUpdates, 0); Grid.SetColumnSpan(StatCardUpdates, 1);
+                    Grid.SetRow(StatCardSecurity, 1); Grid.SetColumn(StatCardSecurity, 1); Grid.SetColumnSpan(StatCardSecurity, 1);
+                    Grid.SetRow(DashCardDisk, 1); Grid.SetColumn(DashCardDisk, 2); Grid.SetColumnSpan(DashCardDisk, 1);
+                }
+            }
 
             ToolTipService.SetToolTip(NavOverviewButton, iconOnly ? LblNavDashboard.Text : null);
             ToolTipService.SetToolTip(NavSystemButton, iconOnly ? LblNavSystem.Text : null);

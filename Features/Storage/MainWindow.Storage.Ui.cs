@@ -14,14 +14,14 @@ namespace WinVora
 
         private ToolkitControls.SettingsCard MakeStorageCard(StorageCategory category)
         {
-            var toggle = new ToggleSwitch { IsOn = false, OnContent = "", OffContent = "" };
-
-            var deleteButton = new Button { Content = "Löschen" };
-            var deleteNormalBackground = deleteButton.Background;
-            deleteButton.PointerEntered += (_, __) =>
-                deleteButton.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x35, 0xFF, 0x6B, 0x6B));
-            deleteButton.PointerExited += (_, __) => deleteButton.Background = deleteNormalBackground;
-            deleteButton.Click += async (_, __) => await DeleteSingleCategory(category, deleteButton);
+            bool en = Localization.CurrentLanguage == "en";
+            var toggle = new CheckBox
+            {
+                IsChecked = false,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle,
+                en ? $"Select {category.Name}" : $"{category.Name} auswählen");
 
             var actionsPanel = new StackPanel
             {
@@ -36,6 +36,12 @@ namespace WinVora
                     : (Localization.CurrentLanguage == "en" ? "Safe cleanup" : "Unbedenklich"),
                 advanced,
                 RootGrid.Resources);
+            if (!advanced && cautionBadge.Child is TextBlock safeText)
+            {
+                var neutral = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"];
+                safeText.Foreground = neutral;
+                cautionBadge.Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"];
+            }
             ToolTipService.SetToolTip(cautionBadge, advanced
                 ? (Localization.CurrentLanguage == "en"
                     ? "Optional cleanup of Windows, diagnostic, or startup data. Review it before deleting."
@@ -43,9 +49,38 @@ namespace WinVora
                 : (Localization.CurrentLanguage == "en"
                     ? "Normally removes only temporary or automatically recreated files."
                     : "Entfernt normalerweise nur temporäre oder automatisch neu erstellte Dateien."));
+            var sizePanel = new StackPanel { Spacing = 1, MinWidth = 105 };
+            sizePanel.Children.Add(new TextBlock
+            {
+                Text = en ? "Expected gain" : "Speichergewinn",
+                FontSize = 11,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
+            });
+            sizePanel.Children.Add(new TextBlock
+            {
+                Text = category.SizeDisplay,
+                FontSize = 14,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            });
+            var detailsButton = new Button
+            {
+                Content = en ? "Details" : "Details",
+                Height = 34,
+                Padding = new Thickness(10, 4, 10, 4)
+            };
+            detailsButton.Flyout = new Flyout
+            {
+                Content = new TextBlock
+                {
+                    Text = category.Description,
+                    MaxWidth = 360,
+                    TextWrapping = TextWrapping.Wrap
+                }
+            };
+            actionsPanel.Children.Add(sizePanel);
             actionsPanel.Children.Add(cautionBadge);
             actionsPanel.Children.Add(toggle);
-            actionsPanel.Children.Add(deleteButton);
+            actionsPanel.Children.Add(detailsButton);
 
             var descriptionSuffix = category.RequiresAdmin
                 ? (Localization.CurrentLanguage == "en" ? "  •  Administrator rights required" : "  •  Administratorrechte erforderlich")
@@ -56,18 +91,17 @@ namespace WinVora
             var card = new ToolkitControls.SettingsCard
             {
                 Header = category.Name,
-                Description = $"{category.Description}{descriptionSuffix}  •  {category.SizeDisplay}",
+                Description = $"{category.Description}{descriptionSuffix}",
                 HeaderIcon = new FontIcon { Glyph = GetStorageIconGlyph(category.Key) },
                 Content = actionsPanel,
-                BorderThickness = new Thickness(1),
-                BorderBrush = (SolidColorBrush)RootGrid.Resources["AppOverlay28"]
+                Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"],
+                BorderThickness = new Thickness(0),
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent)
             };
 
             // Akzentfarbener Rand, solange die Kategorie zum Löschen ausgewählt ist.
-            var defaultBorder = card.BorderBrush;
-            var accentBorder = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"];
-            toggle.Toggled += (_, __) => card.BorderBrush = toggle.IsOn ? accentBorder : defaultBorder;
-            toggle.Toggled += (_, __) => UpdateStorageSelectionSummary();
+            toggle.Checked += (_, __) => UpdateStorageSelectionSummary();
+            toggle.Unchecked += (_, __) => UpdateStorageSelectionSummary();
 
             _storageRows.Add((category, toggle));
             return card;

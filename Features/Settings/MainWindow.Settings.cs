@@ -102,7 +102,8 @@ namespace WinVora
 
             var root = new Grid
             {
-                Background = (SolidColorBrush)RootGrid.Resources["AppRootBackgroundBrush"]
+                Background = (SolidColorBrush)RootGrid.Resources["AppRootBackgroundBrush"],
+                UseLayoutRounding = true
             };
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -150,12 +151,12 @@ namespace WinVora
                 VerticalContentAlignment = VerticalAlignment.Stretch,
                 CornerRadius = new CornerRadius(10),
                 Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
-                BorderBrush = (SolidColorBrush)RootGrid.Resources["AppOverlay30"],
-                BorderThickness = new Thickness(1)
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0)
             };
-            settingsSearchBox.Resources["TextControlBorderBrushFocused"] = RootGrid.Resources["AppAccentBrushLight"];
-            settingsSearchBox.Resources["TextControlBorderBrushPointerOver"] = RootGrid.Resources["AppAccentBrushLight"];
-            settingsSearchBox.Resources["TextControlBorderBrush"] = RootGrid.Resources["AppOverlay30"];
+            settingsSearchBox.Resources["TextControlBorderBrushFocused"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            settingsSearchBox.Resources["TextControlBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            settingsSearchBox.Resources["TextControlBorderBrush"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(settingsSearchBox,
                 Localization.CurrentLanguage == "en" ? "Search settings" : "Einstellungen durchsuchen");
             var noSettingsResults = new TextBlock
@@ -574,6 +575,7 @@ namespace WinVora
             };
             behaviorContent.Children.Add(restartNotificationToggle);
 
+            var securityCard = MakeSettingsCard(en ? "Security" : "Sicherheit", out var securityContent);
             foreach (var protection in new[]
             {
                 (Header: en ? "Protect Downloads" : "Downloads besonders schützen", Get: (Func<bool>)(() => _settings.ConfirmDownloadsCleanup), Set: (Action<bool>)(value => _settings.ConfirmDownloadsCleanup = value)),
@@ -594,10 +596,11 @@ namespace WinVora
                     protection.Set(toggle.IsOn);
                     _settings.Save();
                 };
-                behaviorContent.Children.Add(toggle);
+                securityContent.Children.Add(toggle);
             }
 
             panel.Children.Add(behaviorCard);
+            panel.Children.Add(securityCard);
 
             // ---- Dauerhaft ignorierte Updates ----
             var ignoredUpdatesCard = MakeSettingsCard(
@@ -750,11 +753,68 @@ namespace WinVora
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(0, 0, 14, 0),
+                Padding = new Thickness(0, 0, 22, 0),
                 Content = panel
             };
+            scrollViewer.Resources["ScrollBarSize"] = 20d;
+            scrollViewer.Resources["ScrollBarVerticalThumbMinWidth"] = 12d;
 
-            var contentHost = new Grid { Padding = new Thickness(28, 18, 18, 28) };
+            var categoryNavigation = new StackPanel
+            {
+                Spacing = 6,
+                Width = 156,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 2, 18, 0)
+            };
+            foreach (var category in new[]
+            {
+                (Label: en ? "Appearance" : "Darstellung", Target: card, Glyph: "\uE790"),
+                (Label: en ? "Behavior" : "Verhalten", Target: behaviorCard, Glyph: "\uE713"),
+                (Label: en ? "Updates" : "Updates", Target: updateCard, Glyph: "\uE895"),
+                (Label: en ? "Security" : "Sicherheit", Target: securityCard, Glyph: "\uEA18"),
+                (Label: en ? "Maintenance" : "Wartung", Target: maintenanceCard, Glyph: "\uE74D")
+            })
+            {
+                var navigationButton = new Button
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(10, 9, 10, 9),
+                    MinHeight = 40,
+                    Content = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 9,
+                        Children =
+                        {
+                            new FontIcon { Glyph = category.Glyph, FontSize = 14 },
+                            new TextBlock { Text = category.Label, FontSize = 13 }
+                        }
+                    }
+                };
+                navigationButton.Click += (_, __) => category.Target.StartBringIntoView(new BringIntoViewOptions
+                {
+                    AnimationDesired = _settings.AnimationMode == "Full",
+                    VerticalAlignmentRatio = 0
+                });
+                categoryNavigation.Children.Add(navigationButton);
+            }
+
+            var navigationCard = new Border
+            {
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(8),
+                Margin = new Thickness(0, 0, 18, 0),
+                Background = (SolidColorBrush)RootGrid.Resources["AppOverlay10"],
+                Child = categoryNavigation
+            };
+            categoryNavigation.Margin = new Thickness(0);
+
+            var contentHost = new Grid { Padding = new Thickness(22, 18, 18, 28), ColumnSpacing = 0 };
+            contentHost.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            contentHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            contentHost.Children.Add(navigationCard);
+            Grid.SetColumn(scrollViewer, 1);
             contentHost.Children.Add(scrollViewer);
             Grid.SetRow(contentHost, 1);
 
@@ -769,8 +829,8 @@ namespace WinVora
             root.Children.Add(titleLabel);
 
             settingsWindow.Content = root;
-            int settingsWidth = Math.Max(_settings.SettingsWindowWidth, 560);
-            int settingsHeight = Math.Max(_settings.SettingsWindowHeight, 680);
+            int settingsWidth = Math.Max(_settings.SettingsWindowWidth, 760);
+            int settingsHeight = Math.Max(_settings.SettingsWindowHeight, 720);
             StyleDarkWindow(settingsWindow, settingsWidth, settingsHeight);
             WindowActivationService.PlaceWindow(this, settingsWindow,
                 _settings.SettingsWindowX, _settings.SettingsWindowY,

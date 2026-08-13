@@ -108,7 +108,7 @@ namespace WinVora
                 {
                     StorageGrowthPanel.Children.Add(PcChangesUiBuilder.CreateStorageWarning(
                         growth, en,
-                        (Brush)RootGrid.Resources["AppOverlay10"],
+                        (Brush)RootGrid.Resources["AppCardSurfaceBrush"],
                         (Brush)RootGrid.Resources["AppMutedForegroundBrush"],
                         path =>
                     {
@@ -129,7 +129,7 @@ namespace WinVora
             var card = PcChangesUiBuilder.CreateMetric(title, value, glyph, color,
                 (Brush)RootGrid.Resources["AppForegroundBrush"],
                 (Brush)RootGrid.Resources["AppMutedForegroundBrush"],
-                (Brush)RootGrid.Resources["AppOverlay10"],
+                (Brush)RootGrid.Resources["AppCardSurfaceBrush"],
                 (Brush)RootGrid.Resources["AppOverlay22"]);
             Grid.SetRow(card, row); Grid.SetColumn(card, column);
             ChangesSummaryPanel.Children.Add(card);

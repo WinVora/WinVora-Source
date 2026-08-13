@@ -6,7 +6,7 @@
     Title="WinVora">
 
     <!-- LIQUID GLASS BACKDROP -->
-    <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden" UseSystemFocusVisuals="True">
+    <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden" UseSystemFocusVisuals="True" UseLayoutRounding="True">
 
         <!-- THEME-BRUSHES: gemeinsam genutzte Instanzen, deren Color-Wert beim
              Umschalten zwischen Dunkel/Hell im Code-Behind (ApplyTheme) live
@@ -45,6 +45,10 @@
             <SolidColorBrush x:Key="AppSuccessBrush" Color="#4CD973"/>
             <SolidColorBrush x:Key="AppWarningBrush" Color="#FFC14D"/>
             <SolidColorBrush x:Key="AppNeutralStatusBrush" Color="#A0A0A0"/>
+            <SolidColorBrush x:Key="AppErrorBrush" Color="#FF6B6B"/>
+            <SolidColorBrush x:Key="AppCardSurfaceBrush" Color="#1C1C1C"/>
+            <SolidColorBrush x:Key="AppDangerSurfaceBrush" Color="#3A2328"/>
+            <SolidColorBrush x:Key="AppSelectionEmptyBrush" Color="#454545"/>
         </Grid.Resources>
 
         <Grid.Background>
@@ -89,7 +93,7 @@
 
 
                 <!-- Einstellungen + Version / Changelog -->
-                <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="10" Margin="0,20,0,0">
+                <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="10" Margin="0,28,0,0">
 
                     <Border Height="1" Background="{StaticResource AppOverlay30}" Margin="2,0,2,4"/>
 
@@ -153,6 +157,7 @@
         HorizontalAlignment="Stretch"
         HorizontalContentAlignment="Stretch"
         CornerRadius="16"
+        MinHeight="44"
         Background="{StaticResource AppOverlay18}"
         BorderBrush="{StaticResource AppOverlay30}"
         BorderThickness="1"
@@ -239,17 +244,22 @@
                      Die Navigation bleibt davon ausgenommen und behält ihre
                      ruhige, nur bei der aktiven Seite betonte Darstellung. -->
                 <Style TargetType="Button" BasedOn="{StaticResource WinVoraButtonStyle}"/>
-                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#386C5CE7"/>
-                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#506C5CE7"/>
-                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#126C5CE7"/>
-                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#906C5CE7"/>
-                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#B06C5CE7"/>
+                <Style TargetType="controls:SettingsCard">
+                    <Setter Property="BorderThickness" Value="0"/>
+                </Style>
+                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#3B3562"/>
+                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#453D72"/>
+                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#242333"/>
+                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent"/>
+                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent"/>
 
                 <!-- WinUI greift beim Fokus sonst auf die blaue Windows-
                      Akzentfarbe zurück. Diese Ressourcen gelten auch für
                      dynamisch erzeugte Such- und Eingabefelder. -->
-                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#8B7CF6"/>
-                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#8B7CF6"/>
+                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="Transparent"/>
                 <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#6C5CE7"/>
                 <SolidColorBrush x:Key="TextControlSelectionHighlightColorWhenNotFocused" Color="#806C5CE7"/>
 
@@ -337,17 +347,23 @@
             Height="42"
             MinWidth="154"
             CornerRadius="8"
+            BorderThickness="0"
+            Background="{StaticResource AppOverlay18}"
             AutomationProperties.Name="Sichtbare Updates auswählen oder abwählen"
             TabIndex="2"
             Padding="14,8"
             Click="WingetSelectAll_Click">
                             <StackPanel Orientation="Horizontal" Spacing="9">
                                 <Border x:Name="WingetSelectAllIndicator"
-                                        Width="18" Height="18" CornerRadius="4"
+                                        Width="18" Height="18" CornerRadius="3"
                                         Background="{StaticResource AppAccentBrush}"
-                                        BorderBrush="{StaticResource AppAccentBrushLight}"
-                                        BorderThickness="1">
-                                    <FontIcon x:Name="WingetSelectAllIcon" Glyph="&#xE73E;" FontSize="10" Foreground="White"/>
+                                        BorderBrush="Transparent"
+                                        BorderThickness="0"
+                                        UseLayoutRounding="True">
+                                    <TextBlock x:Name="WingetSelectAllIcon" Text="✓" FontSize="12"
+                                               FontWeight="SemiBold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Margin="0,-1,0,0"/>
                                 </Border>
                                 <TextBlock x:Name="WingetSelectAllText" Text="Alle abwählen" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -430,9 +446,9 @@
             FontSize="15"
             FontWeight="SemiBold"
             Padding="16,10"
-            Background="#28FF6B6B"
-            BorderBrush="#66FF6B6B"
-            BorderThickness="1"
+            Background="{StaticResource AppDangerSurfaceBrush}"
+            BorderBrush="Transparent"
+            BorderThickness="0"
             Click="StorageDeleteSelected_Click"
             />
                     </StackPanel>
@@ -721,10 +737,14 @@
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
 
-                                    <Border Grid.Row="0" Grid.Column="0" x:Name="DashCardDisk" Tapped="DashDisk_Tapped" CornerRadius="16" Padding="18" Background="{StaticResource AppOverlay10}" BorderBrush="{StaticResource AppOverlay22}" BorderThickness="1" ToolTipService.ToolTip="Dateibereinigung öffnen">
-                                        <StackPanel Spacing="6">
-                                            <FontIcon Glyph="&#xEDA2;" FontSize="16" Foreground="{StaticResource AppAccentBrushLight}"/>
-                                            <TextBlock x:Name="LblDashDisk" Text="Speicherplatz" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                    <Border Grid.Row="0" Grid.Column="0" x:Name="DashCardDisk" Tapped="DashDisk_Tapped" CornerRadius="16" Padding="24"
+                                            MinHeight="150" Background="{StaticResource AppOverlay1A}" BorderBrush="{StaticResource AppOverlay28}"
+                                            BorderThickness="1" ToolTipService.ToolTip="Dateibereinigung öffnen">
+                                        <StackPanel Spacing="12">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xEDA2;" FontSize="18" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                                <TextBlock x:Name="LblDashDisk" Text="Speicherplatz" FontSize="15" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            </StackPanel>
                                             <TextBlock x:Name="DashDiskText" Text="--" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AppForegroundBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Border>
@@ -769,10 +789,13 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" x:Name="DashCardStatus" CornerRadius="16" Padding="18,14"
+                                    <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" x:Name="DashCardStatus" CornerRadius="16" Padding="18,12"
                                             Background="{StaticResource AppAccentOverlay10}"
                                             BorderBrush="{StaticResource AppAccentOverlay20}" BorderThickness="1">
-                                        <StackPanel Spacing="12">
+                                        <StackPanel>
+                                            <!-- Updates und Sicherheit besitzen direkt darunter eigene Karten.
+                                                 Die Detailzeile bleibt für die Statuslogik erhalten, wird hier
+                                                 aber nicht noch einmal sichtbar wiederholt. -->
                                             <Grid ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <Border Width="28" Height="28" CornerRadius="14" Background="{StaticResource AppAccentOverlay20}">
@@ -781,7 +804,7 @@
                                                 <TextBlock Grid.Column="1" x:Name="LblDashStatus" Text="Gesamtstatus" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="2" x:Name="DashOverallBadgeText" Text="Alles in Ordnung" FontSize="12" Foreground="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
                                             </Grid>
-                                            <Grid ColumnSpacing="10">
+                                            <Grid ColumnSpacing="10" Visibility="Collapsed">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                                                 <Border Grid.Column="0" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="DashUpdatesStatusDot" Width="8" Height="8" Fill="{StaticResource AppAccentBrushLight}"/><TextBlock x:Name="DashUpdatesStatusText" Text="Updates werden geprüft" TextWrapping="Wrap"/></StackPanel></Border>
                                                 <Border Grid.Column="1" CornerRadius="9" Padding="12,8" Background="{StaticResource AppOverlay10}"><StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="DashSecurityStatusDot" Width="8" Height="8" Fill="{StaticResource AppAccentBrushLight}"/><TextBlock x:Name="DashSecurityStatusText" Text="Sicherheit wird geprüft" TextWrapping="Wrap"/></StackPanel></Border>
@@ -1183,7 +1206,7 @@
              von Windows gezeichnete Icon+Titel-Feld ja ausgeblendet ist. -->
         <Border x:Name="TitleBarDragRegion"
                 Grid.ColumnSpan="2"
-                Height="40"
+                Height="32"
                 VerticalAlignment="Top"
                 Background="Transparent">
 
@@ -1191,18 +1214,18 @@
                         Spacing="8"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Center"
-                        Margin="16,0,0,0">
+                        Margin="14,0,0,0">
 
                 <!-- Dieselbe Quelldatei wie Fenster, EXE und Installer verwenden. -->
-                <Image Width="22"
-                       Height="22"
-                       Source="app-logo.png"
+                <Image Width="18"
+                       Height="18"
+                       Source="ms-appx:///app-logo.png"
                        Stretch="Uniform"
                        AutomationProperties.Name="WinVora-Logo"/>
 
                 <TextBlock Text="WinVora"
                            FontWeight="SemiBold"
-                           FontSize="14"
+                           FontSize="13"
                            Foreground="{StaticResource AppForegroundBrush}"
                            VerticalAlignment="Center"/>
             </StackPanel>

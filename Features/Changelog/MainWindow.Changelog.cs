@@ -31,7 +31,8 @@ namespace WinVora
 
             var root = new Grid
             {
-                Background = (SolidColorBrush)RootGrid.Resources["AppRootBackgroundBrush"]
+                Background = (SolidColorBrush)RootGrid.Resources["AppRootBackgroundBrush"],
+                UseLayoutRounding = true
             };
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -66,9 +67,57 @@ namespace WinVora
             panel.Children.Add(changelogHeader);
 
             panel.Children.Add(MakeChangelogCard(
-    "Version 0.8.2",
+    "Version 0.8.4",
     ReleaseNotes.CurrentGerman,
     ReleaseNotes.CurrentEnglish
+));
+
+            panel.Children.Add(MakeChangelogCard(
+    "Version 0.8.3",
+    "• Verbesserungen: Update-Details zeigen Quelle, Herausgeber und weitere Programminformationen übersichtlicher\n" +
+    "• Verbesserungen: Programme können dauerhaft von Updates ausgenommen und später wieder zugelassen werden\n" +
+    "• Verbesserungen: Fehlgeschlagene Updates lassen sich einzeln erneut versuchen\n" +
+    "• Verbesserungen: Der Verlauf bietet Suche, Datumsfilter und kopierbare Fehlerdetails\n" +
+    "• Verbesserungen: Programmlisten lassen sich als TXT oder CSV exportieren\n" +
+    "• Verbesserungen: Einstellungen können gesichert, importiert und aus einer Sicherung wiederhergestellt werden\n" +
+    "• Sicherheit: Downloads, Papierkorb und Browserdaten besitzen eigene Schutzoptionen\n" +
+    "• Sicherheit: Diagnoseberichte werden vor dem Speichern angezeigt und persönliche Angaben anonymisiert\n" +
+    "• Systeminfo: Akkuzustand, BIOS, TPM, Secure Boot und Windows-Aktivierung wurden ergänzt\n" +
+    "• Oberfläche: Ladephasen und Fortschritt beim Start werden verständlicher angezeigt\n" +
+    "• Oberfläche: Das Dashboard passt sich kleinen Fenstern besser an\n" +
+    "• Bugfixes: Sicherheitsstatus unterscheidet aktiv, nicht prüfbar und tatsächliche Probleme zuverlässiger\n" +
+    "• Bugfixes: Laufende Hintergrundabfragen werden beim Schließen sauber beendet\n" +
+    "• Bugfixes: TPM-Erkennung, Verlauf, Deinstallation und parallele Ladevorgänge wurden stabilisiert",
+    "• Improvements: Update details present source, publisher and additional program information more clearly\n" +
+    "• Improvements: Programs can be permanently excluded from updates and allowed again later\n" +
+    "• Improvements: Failed updates can be retried individually\n" +
+    "• Improvements: History includes search, date filters and copyable error details\n" +
+    "• Improvements: Program lists can be exported as TXT or CSV\n" +
+    "• Improvements: Settings can be exported, imported and restored from backups\n" +
+    "• Safety: Downloads, Recycle Bin and browser data have separate protection options\n" +
+    "• Safety: Diagnostic reports are previewed and personal details are anonymized\n" +
+    "• System info: Battery health, BIOS, TPM, Secure Boot and Windows activation were added\n" +
+    "• Interface: Startup phases and progress are explained more clearly\n" +
+    "• Interface: The dashboard adapts better to small windows\n" +
+    "• Bug fixes: Security status now distinguishes active, unverifiable and actual problems more reliably\n" +
+    "• Bug fixes: Running background checks are cancelled cleanly when closing\n" +
+    "• Bug fixes: TPM detection, history, uninstall and parallel loading were stabilized"
+));
+
+            panel.Children.Add(MakeChangelogCard(
+    "Version 0.8.2",
+    "• Verbesserungen: Programm-Updates zeigen Download-, Installations- und Abschlussphase verständlicher\n" +
+    "• Verbesserungen: Updateverlauf speichert Programm, Versionen, Zeitpunkt und Ergebnis\n" +
+    "• Verbesserungen: Abschlussberichte unterscheiden erfolgreich, fehlgeschlagen, abgebrochen und Neustart erforderlich\n" +
+    "• Sicherheit: Neustarts durch Installer werden nach Möglichkeit unterdrückt und klar angekündigt\n" +
+    "• Oberfläche: Dashboard, Navigation, Systeminfo, Dateien und Deinstallation wurden vereinheitlicht\n" +
+    "• Bugfixes: Ladebildschirm, Fenstergröße, Suchfelder und Deinstallationsstatus wurden stabilisiert",
+    "• Improvements: Program updates explain download, installation and completion phases more clearly\n" +
+    "• Improvements: Update history stores program, versions, time and result\n" +
+    "• Improvements: Completion reports distinguish success, failure, cancellation and restart required\n" +
+    "• Safety: Installer restarts are suppressed where possible and clearly announced\n" +
+    "• Interface: Dashboard, navigation, system info, files and uninstall were unified\n" +
+    "• Bug fixes: Loading screen, window sizing, search fields and uninstall status were stabilized"
 ));
 
             panel.Children.Add(MakeChangelogCard(
@@ -593,10 +642,12 @@ namespace WinVora
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Padding = new Thickness(0, 0, 14, 0),
+                Padding = new Thickness(0, 0, 22, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Content = panel
             };
+            scrollViewer.Resources["ScrollBarSize"] = 20d;
+            scrollViewer.Resources["ScrollBarVerticalThumbMinWidth"] = 12d;
 
             var contentHost = new Grid { Padding = new Thickness(28, 18, 18, 28) };
             contentHost.Children.Add(scrollViewer);
@@ -632,10 +683,8 @@ namespace WinVora
                 Background = title == $"Version {CurrentVersion}"
                     ? (SolidColorBrush)RootGrid.Resources["AppAccentOverlay10"]
                     : (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
-                BorderBrush = title == $"Version {CurrentVersion}"
-                    ? (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"]
-                    : (SolidColorBrush)RootGrid.Resources["AppOverlay28"],
-                BorderThickness = new Thickness(1)
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0)
             };
 
             var content = new StackPanel
@@ -739,4 +788,3 @@ namespace WinVora
 
     }
 }
-

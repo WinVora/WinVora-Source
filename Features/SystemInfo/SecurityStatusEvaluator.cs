@@ -17,7 +17,11 @@ namespace WinVora
             Contains(value, "Deaktiviert", "Disabled", "Inaktiv", "Inactive", "Teilweise", "Partial");
 
         private static bool IsUnknown(string value) => string.IsNullOrWhiteSpace(value) ||
-            Contains(value, "Unbekannt", "Unknown", "Nicht verfügbar", "Not available");
+            Contains(value,
+                "Unbekannt", "Unknown",
+                "Nicht verfügbar", "Not available",
+                "Nicht prüfbar", "Not verifiable",
+                "Konnte nicht geprüft werden", "Could not be checked");
 
         private static bool Contains(string value, params string[] terms)
             => Array.Exists(terms, term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
