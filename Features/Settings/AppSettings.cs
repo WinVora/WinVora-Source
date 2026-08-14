@@ -48,6 +48,10 @@ namespace WinVora
         // Einstellungsdateien als kompatibler Rückfallwert erhalten.
         public string ColorScheme { get; set; } = "System";
 
+        // Stable nutzt ausschließlich reguläre Releases. Beta darf zusätzlich
+        // ausdrücklich als Vorabversion markierte Releases anbieten.
+        public string UpdateChannel { get; set; } = "Stable";
+
         // Ob WinVora automatisch mit Windows starten soll.
         public bool AutoStartWithWindows { get; set; } = false;
 
@@ -138,6 +142,7 @@ namespace WinVora
             if (Language is not ("de" or "en")) Language = "de";
             if (ColorScheme is not ("System" or "Dark" or "Light"))
                 ColorScheme = DarkMode ? "Dark" : "Light";
+            if (UpdateChannel is not ("Stable" or "Beta")) UpdateChannel = "Stable";
             if (AnimationMode is not ("Full" or "Reduced" or "Off"))
                 AnimationMode = ReducedMotion ? "Reduced" : "Full";
             ReducedMotion = AnimationMode != "Full";

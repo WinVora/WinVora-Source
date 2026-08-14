@@ -4,7 +4,7 @@ WinVora combines program updates, system information, file cleanup, startup mana
 
 > Looking for the installer? Visit [**WinVora Releases**](https://github.com/WinVora/WinVora-Releases/releases/latest).
 
-## Version 0.8.4.1
+## Version 0.8.4.2
 
 ### Main Features
 
@@ -19,7 +19,7 @@ WinVora combines program updates, system information, file cleanup, startup mana
 ### Installation
 
 1. Open the [latest WinVora release](https://github.com/WinVora/WinVora-Releases/releases/latest).
-2. Download `WinVora-Setup-0.8.4.1.exe`.
+2. Download `WinVora-Setup-0.8.4.2.exe`.
 3. Run the installer and follow the displayed steps.
 
 ### System Requirements

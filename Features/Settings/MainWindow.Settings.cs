@@ -190,6 +190,39 @@ namespace WinVora
             var updateCard = MakeSettingsCard(Localization.T("Settings.UpdateSection"), out var updateContent);
             bool updateUiEnglish = Localization.CurrentLanguage == "en";
 
+            var updateChannelCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            updateChannelCombo.Items.Add(new ComboBoxItem
+            {
+                Content = updateUiEnglish ? "Stable releases" : "Stabile Versionen",
+                Tag = "Stable"
+            });
+            updateChannelCombo.Items.Add(new ComboBoxItem
+            {
+                Content = updateUiEnglish ? "Beta releases" : "Beta-Versionen",
+                Tag = "Beta"
+            });
+            updateChannelCombo.SelectedIndex = _settings.UpdateChannel == "Beta" ? 1 : 0;
+            PreventClosedComboBoxWheelChange(updateChannelCombo);
+            updateChannelCombo.SelectionChanged += (_, __) =>
+            {
+                if (updateChannelCombo.SelectedItem is not ComboBoxItem item) return;
+                _settings.UpdateChannel = item.Tag?.ToString() == "Beta" ? "Beta" : "Stable";
+                _settings.Save();
+                _pendingUpdateInfo = null;
+            };
+            updateContent.Children.Add(MakeLabeledControl(
+                updateUiEnglish ? "Update channel" : "Updatekanal",
+                updateChannelCombo));
+            updateContent.Children.Add(new TextBlock
+            {
+                Text = updateUiEnglish
+                    ? "Beta releases may contain unfinished features. You can switch back to stable at any time."
+                    : "Beta-Versionen können unfertige Funktionen enthalten. Du kannst jederzeit wieder auf Stabil wechseln.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
+
             var updateStatusText = new TextBlock
             {
                 Text = _pendingUpdateInfo != null
@@ -233,7 +266,9 @@ namespace WinVora
                     updateStatusText.Text = updateUiEnglish ? "Checking for updates..." : "Suche nach Updates...";
                     try
                     {
-                        update = await UpdateService.CheckForUpdateAsync(CurrentVersion);
+                        update = await UpdateService.CheckForUpdateAsync(
+                            CurrentVersion,
+                            _settings.UpdateChannel == "Beta");
                     }
                     catch (Exception ex)
                     {

@@ -1033,7 +1033,9 @@ namespace WinVora
         {
             try
             {
-                var update = await UpdateService.CheckForUpdateAsync(CurrentVersion);
+                var update = await UpdateService.CheckForUpdateAsync(
+                    CurrentVersion,
+                    _settings.UpdateChannel == "Beta");
                 if (update != null)
                 {
                     _pendingUpdateInfo = update;

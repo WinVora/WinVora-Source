@@ -67,7 +67,7 @@ namespace WinVora
             panel.Children.Add(changelogHeader);
 
             panel.Children.Add(MakeChangelogCard(
-    "Version 0.8.4.1",
+    "Version 0.8.4.2",
     ReleaseNotes.CurrentGerman,
     ReleaseNotes.CurrentEnglish
 ));
