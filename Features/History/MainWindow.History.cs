@@ -99,6 +99,9 @@ namespace WinVora
                     !string.IsNullOrWhiteSpace(entry.OldVersion) ? $"{entry.OldVersion} → {entry.NewVersion}" : null,
                     entry.ExitCode is int exitCode && exitCode != 0 ? $"0x{unchecked((uint)exitCode):X8}" : null
                 }.Where(value => !string.IsNullOrWhiteSpace(value)));
+                string? savedReport = Localization.CurrentLanguage == "en" ? entry.DetailsEn : entry.DetailsDe;
+                if (!string.IsNullOrWhiteSpace(savedReport))
+                    details = savedReport.Split('\n')[0];
                 string normalizedResult = string.IsNullOrWhiteSpace(entry.Result) ? "Successful" : entry.Result;
                 Windows.UI.Color color = normalizedResult switch
                 {
@@ -168,6 +171,30 @@ namespace WinVora
                 }
                 if (card.Child is StackPanel entryPanel)
                 {
+                    if (!string.IsNullOrWhiteSpace(savedReport))
+                    {
+                        var showReport = new Button
+                        {
+                            Content = Localization.CurrentLanguage == "en" ? "Open summary" : "Abschlussbericht öffnen",
+                            HorizontalAlignment = HorizontalAlignment.Left,
+                            Padding = new Thickness(10, 5, 10, 5)
+                        };
+                        showReport.Click += async (_, __) =>
+                        {
+                            var reportDialog = CommonUiBuilder.CreateConfirmation(
+                                RootGrid.XamlRoot,
+                                Localization.CurrentLanguage == "en" ? "Update session" : "Update-Sitzung",
+                                new ScrollViewer
+                                {
+                                    MaxHeight = 430,
+                                    Content = new TextBlock { Text = savedReport, TextWrapping = TextWrapping.Wrap }
+                                },
+                                null,
+                                Localization.CurrentLanguage == "en" ? "Close" : "Schließen");
+                            await reportDialog.ShowAsync();
+                        };
+                        entryPanel.Children.Add(showReport);
+                    }
                     var deleteEntry = new Button
                     {
                         Content = Localization.CurrentLanguage == "en" ? "Delete entry" : "Eintrag löschen",
@@ -181,11 +208,59 @@ namespace WinVora
                             text,
                             Localization.CurrentLanguage == "en" ? "Delete" : "Löschen",
                             respectDeleteConfirmationSetting: false)) return;
+                        int previousIndex = _settings.ActivityLog.IndexOf(entry);
                         _settings.ActivityLog.Remove(entry);
                         _settings.Save();
                         RenderHistoryPage();
+                        ShowUndoInfo(Localization.CurrentLanguage == "en" ? "History entry deleted." : "Verlaufseintrag gelöscht.", () =>
+                        {
+                            _settings.ActivityLog.Insert(Math.Clamp(previousIndex, 0, _settings.ActivityLog.Count), entry);
+                            _settings.Save();
+                            RenderHistoryPage();
+                        });
                     };
                     entryPanel.Children.Add(deleteEntry);
+
+                    // Sekundäre Aktionen bleiben eingeklappt, damit viele
+                    // Verlaufseinträge als kompakte Übersicht sichtbar sind.
+                    int fixedChildren = string.IsNullOrWhiteSpace(details) ? 1 : 2;
+                    if (entryPanel.Children.Count > fixedChildren)
+                    {
+                        var detailActions = new StackPanel
+                        {
+                            Spacing = 8,
+                            Visibility = Visibility.Collapsed
+                        };
+                        while (entryPanel.Children.Count > fixedChildren)
+                        {
+                            var child = entryPanel.Children[fixedChildren];
+                            entryPanel.Children.RemoveAt(fixedChildren);
+                            detailActions.Children.Add(child);
+                        }
+                        string expansionKey = $"{entry.TimestampUtc.Ticks}:{entry.TextDe}:{entry.PackageId}";
+                        bool initiallyExpanded = _expandedHistoryEntries.Contains(expansionKey);
+                        detailActions.Visibility = initiallyExpanded ? Visibility.Visible : Visibility.Collapsed;
+                        var toggleDetails = new Button
+                        {
+                            Content = initiallyExpanded
+                                ? (Localization.CurrentLanguage == "en" ? "Hide details" : "Details ausblenden")
+                                : (Localization.CurrentLanguage == "en" ? "Show details" : "Details anzeigen"),
+                            HorizontalAlignment = HorizontalAlignment.Left,
+                            Padding = new Thickness(10, 5, 10, 5)
+                        };
+                        toggleDetails.Click += (_, __) =>
+                        {
+                            bool show = detailActions.Visibility != Visibility.Visible;
+                            detailActions.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                            if (show) _expandedHistoryEntries.Add(expansionKey);
+                            else _expandedHistoryEntries.Remove(expansionKey);
+                            toggleDetails.Content = show
+                                ? (Localization.CurrentLanguage == "en" ? "Hide details" : "Details ausblenden")
+                                : (Localization.CurrentLanguage == "en" ? "Show details" : "Details anzeigen");
+                        };
+                        entryPanel.Children.Add(toggleDetails);
+                        entryPanel.Children.Add(detailActions);
+                    }
                 }
                 HistoryListPanel.Children.Add(card);
             }

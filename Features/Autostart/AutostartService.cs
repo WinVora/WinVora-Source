@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
+using System.Security.Cryptography.X509Certificates;
 
 namespace WinVora
 {
@@ -43,13 +45,30 @@ namespace WinVora
         }
 
         public static bool CommandTargetExists(string command)
+            => TryGetCommandTargetPath(command, out string path) && File.Exists(path);
+
+        public static bool TryGetCommandTargetPath(string command, out string path)
         {
+            path = string.Empty;
             if (string.IsNullOrWhiteSpace(command)) return false;
             string expanded = Environment.ExpandEnvironmentVariables(command.Trim());
-            string path = expanded.StartsWith('"')
+            path = expanded.StartsWith('"')
                 ? expanded[1..].Split('"')[0]
                 : Regex.Match(expanded, @"^.*?\.(exe|cmd|bat|com)(?=\s|$)", RegexOptions.IgnoreCase).Value;
-            return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+            return !string.IsNullOrWhiteSpace(path);
+        }
+
+        public static (string Publisher, bool Signed) GetFileIdentity(string command)
+        {
+            if (!TryGetCommandTargetPath(command, out string path) || !File.Exists(path))
+                return ("-", false);
+            string publisher = FileVersionInfo.GetVersionInfo(path).CompanyName ?? "-";
+            try
+            {
+                using var certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+                return (string.IsNullOrWhiteSpace(publisher) ? certificate.GetNameInfo(X509NameType.SimpleName, false) : publisher, true);
+            }
+            catch { return (publisher, false); }
         }
 
         private static void ReadKey(string path, bool enabled, List<AutostartEntry> result)

@@ -22,6 +22,7 @@ namespace WinVora
     internal sealed class PcChangeSummary
     {
         public DateTime? PreviousUtc { get; init; }
+        public DateTime CurrentUtc { get; init; }
         public int InstalledPrograms { get; init; }
         public int RemovedPrograms { get; init; }
         public int UpdatedPrograms { get; init; }
@@ -54,7 +55,7 @@ namespace WinVora
 
         internal static PcChangeSummary Compare(PcStateSnapshot? previous, PcStateSnapshot current)
         {
-            if (previous == null) return new PcChangeSummary();
+            if (previous == null) return new PcChangeSummary { CurrentUtc = current.CapturedUtc };
 
             var installed = current.Programs.Keys.Except(previous.Programs.Keys, StringComparer.OrdinalIgnoreCase).Count();
             var removed = previous.Programs.Keys.Except(current.Programs.Keys, StringComparer.OrdinalIgnoreCase).Count();
@@ -70,6 +71,7 @@ namespace WinVora
             long previousFree = previous.DriveFreeBytes.Values.Sum();
             return new PcChangeSummary
             {
+                CurrentUtc = current.CapturedUtc,
                 PreviousUtc = previous.CapturedUtc,
                 InstalledPrograms = installed,
                 RemovedPrograms = removed,
@@ -127,7 +129,12 @@ namespace WinVora
                     }
                     foreach (string child in Directory.EnumerateDirectories(directory)) pending.Push(child);
                 }
-                catch (Exception ex) { Logger.LogErrorOnce("Ordnergröße für PC-Veränderungen lesen", ex); }
+                catch (UnauthorizedAccessException)
+                {
+                    // Geschützte Verknüpfungen wie "Eigene Videos" werden
+                    // übersprungen und sollen das normale Startprotokoll nicht füllen.
+                }
+                catch (IOException ex) { Logger.LogErrorOnce("Ordnergröße für PC-Veränderungen lesen", ex); }
             }
             return total;
         }

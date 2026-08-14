@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 using ToolkitControls = CommunityToolkit.WinUI.Controls;
 
 namespace WinVora
@@ -77,12 +78,7 @@ namespace WinVora
             _isLoadingStorage = true;
             SetGlobalStatus(Localization.CurrentLanguage == "en" ? "Analyzing storage..." : "Speicher wird analysiert...");
             StoragePanel.Children.Clear();
-            StoragePanel.Children.Add(new TextBlock
-            {
-                Text = Localization.CurrentLanguage == "en" ? "Calculating reclaimable storage..." : "Möglicher Speichergewinn wird berechnet...",
-                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"],
-                Margin = new Thickness(4, 16, 0, 8)
-            });
+            StoragePanel.Children.Add(LoadingStateUiBuilder.Create(RootGrid.Resources, 4, !_settings.ReducedMotion));
             _storageRows.Clear();
 
             StorageRefreshButton.IsEnabled = false;
@@ -103,7 +99,7 @@ namespace WinVora
                 StoragePanel.Children.Add(new TextBlock
                 {
                     Text = $"Fehler beim Ermitteln der Speicherbelegung: {ex.Message}",
-                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.OrangeRed)
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppErrorBrush"]
                 });
                 return;
             }
@@ -150,6 +146,201 @@ namespace WinVora
                         }
                     }
                 }
+            });
+
+            var largeFolderResults = new StackPanel { Spacing = 6 };
+            IReadOnlyList<LargeFolderResult> analyzedFolders = _cachedLargeFolders;
+            CancellationTokenSource? analysisCancellation = null;
+            var analysisProgress = new ProgressBar { Height = 4, Visibility = Visibility.Collapsed, IsIndeterminate = true };
+            var analysisStatus = new TextBlock
+            {
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"],
+                FontSize = 12
+            };
+            var sortBox = new ComboBox { MinWidth = 150 };
+            sortBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? "Largest first" : "Größte zuerst", Tag = "size" });
+            sortBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? "Name A–Z" : "Name A–Z", Tag = "name" });
+            sortBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? "Risk first" : "Risiko zuerst", Tag = "risk" });
+            sortBox.SelectedIndex = 0;
+            var thresholdBox = new ComboBox { MinWidth = 150 };
+            foreach (var threshold in new[] { ("0", "All folders", "Alle Ordner"), ("104857600", "Over 100 MB", "Über 100 MB"), ("1073741824", "Over 1 GB", "Über 1 GB") })
+                thresholdBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? threshold.Item2 : threshold.Item3, Tag = threshold.Item1 });
+            thresholdBox.SelectedIndex = 0;
+
+            void RenderAnalyzedFolders()
+            {
+                largeFolderResults.Children.Clear();
+                long threshold = long.Parse(((ComboBoxItem)thresholdBox.SelectedItem).Tag.ToString()!);
+                string sort = ((ComboBoxItem)sortBox.SelectedItem).Tag?.ToString() ?? "size";
+                var visibleFolders = analyzedFolders.Where(folder => folder.SizeBytes >= threshold);
+                visibleFolders = sort switch
+                {
+                    "name" => visibleFolders.OrderBy(folder => folder.Path, StringComparer.OrdinalIgnoreCase),
+                    "risk" => visibleFolders.OrderByDescending(folder => GetFolderRisk(folder.Path)).ThenByDescending(folder => folder.SizeBytes),
+                    _ => visibleFolders.OrderByDescending(folder => folder.SizeBytes)
+                };
+                foreach (var folder in visibleFolders)
+                {
+                    var row = new Grid { ColumnSpacing = 8 };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    var pathText = new TextBlock { Text = folder.Path, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                    ToolTipService.SetToolTip(pathText, folder.Path);
+                    var sizeText = new TextBlock { Text = StorageService.FormatBytes(folder.SizeBytes), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+                    int risk = GetFolderRisk(folder.Path);
+                    var riskText = new TextBlock
+                    {
+                        Text = risk switch
+                        {
+                            3 => Localization.CurrentLanguage == "en" ? "System" : "System",
+                            2 => Localization.CurrentLanguage == "en" ? "Caution" : "Prüfen",
+                            _ => Localization.CurrentLanguage == "en" ? "Normal" : "Normal"
+                        },
+                        Foreground = risk >= 2
+                            ? (SolidColorBrush)RootGrid.Resources["AppWarningBrush"]
+                            : (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"],
+                        VerticalAlignment = VerticalAlignment.Center,
+                        FontSize = 12
+                    };
+                    Grid.SetColumn(riskText, 1);
+                    Grid.SetColumn(sizeText, 2);
+                    var openButton = new Button { Content = new FontIcon { Glyph = "\uE838", FontSize = 13 }, Width = 34, Height = 30, Padding = new Thickness(0) };
+                    ToolTipService.SetToolTip(openButton, Localization.CurrentLanguage == "en" ? "Open in Explorer" : "Im Explorer öffnen");
+                    openButton.Click += (_, __) =>
+                    {
+                        var result = ExplorerService.OpenFolder(folder.Path);
+                        if (result == ExplorerOpenResult.Missing)
+                            ShowInfo(Localization.CurrentLanguage == "en" ? "The folder no longer exists." : "Der Ordner ist nicht mehr vorhanden.", InfoBarSeverity.Warning);
+                    };
+                    Grid.SetColumn(openButton, 3);
+                    var copyButton = new Button { Content = new FontIcon { Glyph = "\uE8C8", FontSize = 13 }, Width = 34, Height = 30, Padding = new Thickness(0) };
+                    ToolTipService.SetToolTip(copyButton, Localization.CurrentLanguage == "en" ? "Copy folder path" : "Ordnerpfad kopieren");
+                    copyButton.Click += (_, __) =>
+                    {
+                        var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                        data.SetText(folder.Path);
+                        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+                        ShowInfo(Localization.CurrentLanguage == "en" ? "Folder path copied." : "Ordnerpfad kopiert.", InfoBarSeverity.Success);
+                    };
+                    Grid.SetColumn(copyButton, 4);
+                    row.Children.Add(pathText); row.Children.Add(riskText); row.Children.Add(sizeText); row.Children.Add(openButton); row.Children.Add(copyButton);
+                    largeFolderResults.Children.Add(row);
+                }
+            }
+
+            static int GetFolderRisk(string path)
+            {
+                if (path.Contains("\\Windows", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("\\Program Files", StringComparison.OrdinalIgnoreCase)) return 3;
+                if (path.Contains("\\AppData", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("\\ProgramData", StringComparison.OrdinalIgnoreCase)) return 2;
+                return 1;
+            }
+            sortBox.SelectionChanged += (_, __) => { if (sortBox.SelectedItem != null && thresholdBox.SelectedItem != null) RenderAnalyzedFolders(); };
+            thresholdBox.SelectionChanged += (_, __) => { if (sortBox.SelectedItem != null && thresholdBox.SelectedItem != null) RenderAnalyzedFolders(); };
+            var analyzeLargeFoldersButton = new Button
+            {
+                Content = Localization.CurrentLanguage == "en" ? "Find large folders" : "Große Ordner finden",
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            var cancelAnalysisButton = new Button
+            {
+                Content = Localization.CurrentLanguage == "en" ? "Cancel" : "Abbrechen",
+                Visibility = Visibility.Collapsed
+            };
+            cancelAnalysisButton.Click += (_, __) => analysisCancellation?.Cancel();
+            analyzeLargeFoldersButton.Click += async (_, __) =>
+            {
+                analyzeLargeFoldersButton.IsEnabled = false;
+                analyzeLargeFoldersButton.Content = Localization.CurrentLanguage == "en" ? "Analyzing..." : "Wird analysiert...";
+                largeFolderResults.Children.Clear();
+                analysisCancellation?.Dispose();
+                analysisCancellation = new CancellationTokenSource();
+                analysisProgress.Visibility = Visibility.Visible;
+                cancelAnalysisButton.Visibility = Visibility.Visible;
+                try
+                {
+                    var watch = Stopwatch.StartNew();
+                    var progress = new Progress<int>(count =>
+                        analysisStatus.Text = Localization.CurrentLanguage == "en"
+                            ? count + " folders checked"
+                            : count + " Ordner geprüft");
+                    analyzedFolders = await LargeFolderAnalyzer.AnalyzeAsync(analysisCancellation.Token, progress);
+                    _cachedLargeFolders = analyzedFolders;
+                    _largeFolderAnalysisUtc = DateTime.UtcNow;
+                    watch.Stop();
+                    analysisStatus.Text = Localization.CurrentLanguage == "en"
+                        ? analyzedFolders.Count + " results · " + watch.Elapsed.TotalSeconds.ToString("0.0") + " seconds"
+                        : analyzedFolders.Count + " Ergebnisse · " + watch.Elapsed.TotalSeconds.ToString("0.0") + " Sekunden";
+                    RenderAnalyzedFolders();
+                }
+                catch (OperationCanceledException)
+                {
+                    largeFolderResults.Children.Add(new TextBlock { Text = Localization.CurrentLanguage == "en" ? "Analysis cancelled." : "Analyse abgebrochen." });
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Große Ordner analysieren", ex);
+                    largeFolderResults.Children.Add(new TextBlock
+                    {
+                        Text = Localization.CurrentLanguage == "en" ? "The analysis could not be completed." : "Die Analyse konnte nicht abgeschlossen werden."
+                    });
+                }
+                finally
+                {
+                    analyzeLargeFoldersButton.IsEnabled = true;
+                    analyzeLargeFoldersButton.Content = Localization.CurrentLanguage == "en" ? "Analyze again" : "Erneut analysieren";
+                    analysisProgress.Visibility = Visibility.Collapsed;
+                    cancelAnalysisButton.Visibility = Visibility.Collapsed;
+                }
+            };
+            var analyzerContent = new StackPanel { Spacing = 10 };
+            analyzerContent.Children.Add(new TextBlock
+            {
+                Text = Localization.CurrentLanguage == "en"
+                    ? "Scans your personal folders on demand. Nothing is deleted."
+                    : "Durchsucht persönliche Ordner nur auf Knopfdruck. Es wird nichts gelöscht.",
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
+            var riskLegend = new TextBlock
+            {
+                Text = Localization.CurrentLanguage == "en"
+                    ? "Risk: Normal = personal folder · Caution = application data · System = Windows or program files"
+                    : "Risiko: Normal = persönlicher Ordner · Prüfen = Anwendungsdaten · System = Windows- oder Programmdateien",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            };
+            ToolTipService.SetToolTip(riskLegend, Localization.CurrentLanguage == "en"
+                ? "Risk is informational only. WinVora does not delete these folders automatically."
+                : "Die Risikoeinstufung ist nur ein Hinweis. WinVora löscht diese Ordner niemals automatisch.");
+            analyzerContent.Children.Add(riskLegend);
+            var analyzerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            analyzerActions.Children.Add(analyzeLargeFoldersButton);
+            analyzerActions.Children.Add(cancelAnalysisButton);
+            analyzerActions.Children.Add(sortBox);
+            analyzerActions.Children.Add(thresholdBox);
+            analyzerContent.Children.Add(analyzerActions);
+            analyzerContent.Children.Add(analysisProgress);
+            analyzerContent.Children.Add(analysisStatus);
+            analyzerContent.Children.Add(largeFolderResults);
+            if (analyzedFolders.Count > 0)
+            {
+                analysisStatus.Text = Localization.CurrentLanguage == "en"
+                    ? "Cached result from " + _largeFolderAnalysisUtc?.ToLocalTime().ToString("g")
+                    : "Zwischengespeichert vom " + _largeFolderAnalysisUtc?.ToLocalTime().ToString("g");
+                RenderAnalyzedFolders();
+            }
+            StoragePanel.Children.Add(new Expander
+            {
+                Header = Localization.CurrentLanguage == "en" ? "Storage analysis" : "Speicheranalyse",
+                Content = analyzerContent,
+                Padding = new Thickness(4),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch
             });
 
             var byKey = categories.ToDictionary(c => c.Key);

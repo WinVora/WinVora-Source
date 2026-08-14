@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace WinVora
 {
@@ -29,6 +30,24 @@ namespace WinVora
             }
 
             bool en = Localization.CurrentLanguage == "en";
+            var battery = await Task.Run(UpdatePowerGuard.ReadBatteryState);
+            if (battery.HasBattery && battery.ChargePercent <= 20 && !battery.Charging)
+            {
+                var batteryWarning = CommonUiBuilder.CreateConfirmation(
+                    RootGrid.XamlRoot,
+                    en ? "Low battery" : "Niedriger Akkustand",
+                    en
+                        ? $"The battery is at {battery.ChargePercent}%. Connect the PC to power before installing updates."
+                        : $"Der Akkustand liegt bei {battery.ChargePercent} %. Schließe den PC vor der Updateinstallation an das Stromnetz an.",
+                    en ? "Continue anyway" : "Trotzdem fortfahren",
+                    en ? "Cancel" : "Abbrechen");
+                if (await batteryWarning.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    _isUpdatingWinget = false;
+                    UpdateWingetSelectionButton();
+                    return;
+                }
+            }
             bool containsEaApp = selected.Any(package =>
                 package.Id.Equals("ElectronicArts.EADesktop", StringComparison.OrdinalIgnoreCase));
             var confirmation = CommonUiBuilder.CreateConfirmation(
@@ -44,12 +63,18 @@ namespace WinVora
                 en ? "Install" : "Installieren",
                 en ? "Cancel" : "Abbrechen");
 
-            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            var confirmationFocus = FocusManager.GetFocusedElement(RootGrid.XamlRoot) as Control;
+            var confirmationResult = await confirmation.ShowAsync();
+            confirmationFocus?.Focus(FocusState.Programmatic);
+            if (confirmationResult != ContentDialogResult.Primary)
             {
                 _isUpdatingWinget = false;
                 UpdateWingetSelectionButton();
                 return;
             }
+
+            using var updatePowerGuard = new UpdatePowerGuard();
+            updatePowerGuard.Start();
 
             RefreshButton.IsEnabled = false;
             StartUpdateButton.IsEnabled = false;
@@ -60,8 +85,11 @@ namespace WinVora
             UpdateProgressPanel.Visibility = Visibility.Visible;
             UpdateProgressBar.Maximum = selected.Count;
             UpdateProgressBar.Value = 0;
+            if (RootGrid.Resources["AppAccentBrush"] is SolidColorBrush progressAccent)
+                UpdateProgressBar.Foreground = progressAccent;
 
             var results = new List<(WingetPackage Package, WingetUpdateResult Result)>();
+            string? activePackageId = null;
 
             var progress = new Progress<WingetUpdateProgress>(p =>
             {
@@ -77,6 +105,9 @@ namespace WinVora
                       (string.IsNullOrWhiteSpace(p.Speed) ? "" : $" · {p.Speed}") +
                       (string.IsNullOrWhiteSpace(p.Eta) ? "" : $" · {(en ? "Remaining" : "Restzeit")} {p.Eta}");
 
+                if (activePackageId != null)
+                    SetWingetCardStatus(activePackageId, phaseText, "AppWarningBrush");
+
                 if (p.Percent.HasValue)
                 {
                     CurrentPackageProgressBar.IsIndeterminate = false;
@@ -86,16 +117,23 @@ namespace WinVora
                 {
                     CurrentPackageProgressBar.IsIndeterminate = true;
                 }
+                if (activePackageId != null)
+                    SetWingetCardProgress(activePackageId, p.Percent, visible: true);
             });
 
             for (int i = 0; i < selected.Count; i++)
             {
                 var pkg = selected[i];
+                activePackageId = pkg.Id;
                 SetWingetCardStatus(pkg.Id, en ? "Installing" : "Wird installiert", "AppWarningBrush");
+                SetWingetCardProgress(pkg.Id, null, visible: true);
+                SetWingetCardProgressColor(pkg.Id, "AppAccentBrush");
                 SetGlobalStatus(Localization.CurrentLanguage == "en"
                     ? $"Updating {pkg.Name}..."
                     : $"{pkg.Name} wird aktualisiert...");
-                UpdateProgressText.Text = $"Installiere {pkg.Name} ({i + 1}/{selected.Count})...";
+                UpdateProgressText.Text = en
+                    ? $"Installing {pkg.Name} ({i + 1}/{selected.Count})..."
+                    : $"Installiere {pkg.Name} ({i + 1}/{selected.Count})...";
                 CurrentPackageStatusText.Text = "";
                 CurrentPackageProgressBar.IsIndeterminate = true;
                 CurrentPackageProgressBar.Value = 0;
@@ -105,7 +143,12 @@ namespace WinVora
 
                 Logger.Log($"Programm-Update gestartet: {pkg.Name} [{pkg.Id}] {pkg.Version} -> {pkg.Available}");
                 bool pendingRestartBefore = RestartDetectionService.IsRestartPending();
-                var result = await _wingetUpdateService.UpgradeAsync(pkg.Id, progress, _wingetUpdateCancellation.Token);
+                var result = await UpgradeWithElevationAsync(
+                    pkg.Id,
+                    pkg.Name,
+                    progress,
+                    _wingetUpdateCancellation.Token,
+                    en);
                 bool pendingRestartAfter = RestartDetectionService.IsRestartPending();
                 if (!pendingRestartBefore && pendingRestartAfter && result.Status == WingetUpdateStatus.Successful)
                     result = result with
@@ -119,9 +162,10 @@ namespace WinVora
                 SetWingetCardStatus(pkg.Id,
                     result.Status switch
                     {
-                        WingetUpdateStatus.Successful => en ? "Installed" : "Installiert",
+                        WingetUpdateStatus.Successful => en ? "✓ Installed" : "✓ Installiert",
                         WingetUpdateStatus.RestartRequired => en ? "Restart required" : "Neustart erforderlich",
                         WingetUpdateStatus.Cancelled => en ? "Cancelled" : "Abgebrochen",
+                        WingetUpdateStatus.Unverified => en ? "Not confirmed" : "Nicht bestätigt",
                         _ => en ? "Failed" : "Fehlgeschlagen"
                     },
                     result.Status switch
@@ -129,6 +173,7 @@ namespace WinVora
                         WingetUpdateStatus.Successful => "AppSuccessBrush",
                         WingetUpdateStatus.RestartRequired => "AppWarningBrush",
                         WingetUpdateStatus.Cancelled => "AppNeutralStatusBrush",
+                        WingetUpdateStatus.Unverified => "AppWarningBrush",
                         _ => "AppErrorBrush"
                     });
                 Logger.Log($"Programm-Update beendet: {pkg.Name} [{pkg.Id}], Status={result.Status}, " +
@@ -136,8 +181,17 @@ namespace WinVora
 
                 CurrentPackageProgressBar.IsIndeterminate = false;
                 CurrentPackageProgressBar.Value = 100;
+                SetWingetCardProgress(pkg.Id, 100, visible: true);
+                SetWingetCardProgressColor(pkg.Id, result.Status switch
+                {
+                    WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired => "AppSuccessBrush",
+                    WingetUpdateStatus.Failed => "AppErrorBrush",
+                    WingetUpdateStatus.Cancelled => "AppNeutralStatusBrush",
+                    _ => "AppWarningBrush"
+                });
                 UpdateProgressBar.Value = i + 1;
             }
+            activePackageId = null;
 
             bool cancelled = _wingetUpdateCancellation.IsCancellationRequested;
             if (!cancelled)
@@ -145,6 +199,13 @@ namespace WinVora
                 CurrentPackageStatusText.Text = en
                     ? "Verifying installed versions..."
                     : "Installierte Versionen werden überprüft...";
+                foreach (var item in results.Where(item =>
+                             item.Result.Status is WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired))
+                {
+                    SetWingetCardStatus(item.Package.Id, en ? "Verifying" : "Wird geprüft", "AppWarningBrush");
+                    SetWingetCardProgress(item.Package.Id, null, visible: true);
+                    SetWingetCardProgressColor(item.Package.Id, "AppAccentBrush");
+                }
                 results = await VerifyUpdateResultsAsync(results, en, _wingetUpdateCancellation.Token);
             }
 
@@ -156,12 +217,23 @@ namespace WinVora
             int cancelledCount = results.Count(item => item.Result.Status == WingetUpdateStatus.Cancelled) +
                                  Math.Max(0, selected.Count - results.Count);
             int restartCount = results.Count(item => item.Result.RestartRequired);
+            int unverifiedCount = results.Count(item => item.Result.Status == WingetUpdateStatus.Unverified);
+            LogUpdateSession(results, selected.Count - results.Count, en);
             UpdateProgressText.Text = cancelled
                 ? (en ? "Update process cancelled." : "Updatevorgang abgebrochen.")
                 : failedCount == 0
                     ? (en ? "All selected updates were installed." : "Alle ausgewählten Updates wurden installiert.")
                     : (en ? $"Finished with {failedCount} error(s)." : $"Mit {failedCount} Fehler(n) beendet.");
             CurrentPackageStatusText.Text = "";
+            string overallProgressBrush = cancelled
+                ? "AppNeutralStatusBrush"
+                : failedCount > 0
+                    ? "AppErrorBrush"
+                    : unverifiedCount > 0 || restartCount > 0
+                        ? "AppWarningBrush"
+                        : "AppSuccessBrush";
+            if (RootGrid.Resources[overallProgressBrush] is SolidColorBrush overallBrush)
+                UpdateProgressBar.Foreground = overallBrush;
 
             if (successCount > 0)
             {
@@ -174,7 +246,8 @@ namespace WinVora
             {
                 NotificationService.ShowUpdateSummary(
                     successCount, failedCount, cancelledCount,
-                    _settings.NotifyRestartRequired ? restartCount : 0);
+                    _settings.NotifyRestartRequired ? restartCount : 0,
+                    unverifiedCount);
             }
 
             // Die Seite bereits vor dem Bericht mit dem geprüften Stand
@@ -182,7 +255,7 @@ namespace WinVora
             // Auswahl und ein Exitcode 0 wird nicht blind als Erfolg gewertet.
             if (_cachedPackages != null)
             {
-                RenderWingetPackages(_cachedPackages);
+                RenderWingetPackagesPreservingState(_cachedPackages);
                 RestoreVerifiedCardStatuses(results, en);
             }
 
@@ -227,6 +300,9 @@ namespace WinVora
                     case WingetUpdateStatus.Cancelled:
                         SetWingetCardStatus(item.Package.Id, english ? "Cancelled" : "Abgebrochen", "AppNeutralStatusBrush");
                         break;
+                    case WingetUpdateStatus.Unverified:
+                        SetWingetCardStatus(item.Package.Id, english ? "Not confirmed" : "Nicht bestätigt", "AppWarningBrush");
+                        break;
                 }
             }
         }
@@ -242,8 +318,29 @@ namespace WinVora
                 // nur gestartet wurden oder die installierte Version nicht
                 // geändert haben. Eine frische WinGet-Abfrage ist deshalb die
                 // verlässliche Abschlusskontrolle.
-                await Task.Delay(1200, cancellationToken);
-                var discovery = await WingetDiscoveryService.GetUpgradesAsync(cancellationToken);
+                // Hersteller-Installer und die WinGet-Quelle benötigen nach dem
+                // Prozessende gelegentlich einige Sekunden, bis die neue Version
+                // sichtbar ist. Mehrere kurze Prüfungen verhindern falsche
+                // Fehlermeldungen und veraltete Karten.
+                WingetDiscoveryResult? discovery = null;
+                int[] verificationDelaysMs = { 1200, 2200, 3500 };
+                foreach (int delayMs in verificationDelaysMs)
+                {
+                    await Task.Delay(delayMs, cancellationToken);
+                    discovery = await WingetDiscoveryService.GetUpgradesAsync(cancellationToken);
+
+                    bool unchangedSuccessfulPackageRemains = results.Any(item =>
+                        item.Result.Status is WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired &&
+                        WingetUpdateVerifier.IsStillUnchanged(item.Package, discovery.Packages));
+                    if (!unchangedSuccessfulPackageRemains)
+                        break;
+
+                    Logger.Log($"Update-Nachprüfung wartet weiter: Versuch mit {delayMs} ms abgeschlossen.");
+                }
+
+                if (discovery == null)
+                    return results;
+
                 _cachedPackages = discovery.Packages;
                 _wingetColumns = discovery.Columns;
 
@@ -253,19 +350,18 @@ namespace WinVora
                     if (item.Result.Status is not (WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired))
                         continue;
 
-                    var stillAvailable = discovery.Packages.FirstOrDefault(package =>
-                        package.Id.Equals(item.Package.Id, StringComparison.OrdinalIgnoreCase));
-                    if (stillAvailable == null) continue;
+                    if (!WingetUpdateVerifier.IsStillUnchanged(item.Package, discovery.Packages))
+                        continue;
 
                     results[index] = (item.Package, item.Result with
                     {
-                        Status = WingetUpdateStatus.Failed,
+                        Status = WingetUpdateStatus.Unverified,
                         RestartRequired = false,
                         Message = english
-                            ? "The installer reported success, but WinGet still offers this update. The installed version was not changed."
-                            : "Der Installer meldete Erfolg, aber WinGet bietet dieses Update weiterhin an. Die installierte Version wurde nicht geändert."
+                            ? "The installer completed successfully, but WinGet still compares different version values. The result could not be confirmed; repeated installation is not recommended."
+                            : "Der Installer wurde erfolgreich beendet, aber WinGet vergleicht weiterhin unterschiedliche Versionswerte. Das Ergebnis konnte nicht bestätigt werden; eine wiederholte Installation wird nicht empfohlen."
                     });
-                    Logger.Log($"Update-Nachprüfung fehlgeschlagen: {item.Package.Name} [{item.Package.Id}] wird weiterhin angeboten.");
+                    Logger.Log($"Update-Nachprüfung nicht eindeutig: {item.Package.Name} [{item.Package.Id}] wird weiterhin mit unveränderter installierter Version angeboten.");
                 }
             }
             catch (OperationCanceledException)
@@ -300,6 +396,7 @@ namespace WinVora
                 WingetUpdateStatus.Successful => "Erfolgreich",
                 WingetUpdateStatus.RestartRequired => "Neustart erforderlich",
                 WingetUpdateStatus.Cancelled => "Abgebrochen",
+                WingetUpdateStatus.Unverified => "Nicht bestätigt",
                 _ => "Fehlgeschlagen"
             };
             string resultEn = result.Status switch
@@ -307,6 +404,7 @@ namespace WinVora
                 WingetUpdateStatus.Successful => "Successful",
                 WingetUpdateStatus.RestartRequired => "Restart required",
                 WingetUpdateStatus.Cancelled => "Cancelled",
+                WingetUpdateStatus.Unverified => "Not confirmed",
                 _ => "Failed"
             };
 
@@ -330,16 +428,51 @@ namespace WinVora
             _settings.Save();
         }
 
+        private void LogUpdateSession(
+            IReadOnlyCollection<(WingetPackage Package, WingetUpdateResult Result)> results,
+            int notStartedCount,
+            bool english)
+        {
+            if (results.Count == 0 && notStartedCount == 0) return;
+            string sessionId = Guid.NewGuid().ToString("N");
+            int successful = results.Count(item => item.Result.Status == WingetUpdateStatus.Successful);
+            int failed = results.Count(item => item.Result.Status == WingetUpdateStatus.Failed);
+            int cancelled = results.Count(item => item.Result.Status == WingetUpdateStatus.Cancelled) + notStartedCount;
+            int restart = results.Count(item => item.Result.Status == WingetUpdateStatus.RestartRequired);
+            int unverified = results.Count(item => item.Result.Status == WingetUpdateStatus.Unverified);
+            string detailLines = string.Join("\n", results.Select(item =>
+                $"{item.Package.Name}: {item.Package.Version} → {item.Package.Available} · {item.Result.Status} · {item.Result.Message}"));
+            string summaryDe = $"{successful} erfolgreich · {failed} fehlgeschlagen · {unverified} nicht bestätigt · {cancelled} abgebrochen · {restart} Neustart";
+            string summaryEn = $"{successful} successful · {failed} failed · {unverified} not confirmed · {cancelled} cancelled · {restart} restart";
+
+            _settings.ActivityLog.Insert(0, new ActivityLogEntry
+            {
+                TimestampUtc = DateTime.UtcNow,
+                IconGlyph = "\uE895",
+                TextDe = "Update-Sitzung abgeschlossen",
+                TextEn = "Update session completed",
+                Result = failed > 0 ? "Failed" : cancelled > 0 ? "Cancelled" : restart > 0 ? "RestartRequired" : "Successful",
+                SessionId = sessionId,
+                DetailsDe = summaryDe + "\n" + detailLines,
+                DetailsEn = summaryEn + "\n" + detailLines
+            });
+            while (_settings.ActivityLog.Count > 100)
+                _settings.ActivityLog.RemoveAt(_settings.ActivityLog.Count - 1);
+            _settings.Save();
+        }
+
         private async Task ShowUpdateSummaryAsync(
             List<(WingetPackage Package, WingetUpdateResult Result)> results,
             int notStartedCount)
         {
             bool en = Localization.CurrentLanguage == "en";
             var panel = new StackPanel { Spacing = 10, MaxWidth = 560 };
+            ContentDialog? dialog = null;
             int successful = results.Count(item => item.Result.Status == WingetUpdateStatus.Successful);
             int failed = results.Count(item => item.Result.Status == WingetUpdateStatus.Failed);
             int cancelled = results.Count(item => item.Result.Status == WingetUpdateStatus.Cancelled) + notStartedCount;
             int restartRequired = results.Count(item => item.Result.Status == WingetUpdateStatus.RestartRequired);
+            int unverified = results.Count(item => item.Result.Status == WingetUpdateStatus.Unverified);
 
             var summaryLine = new StackPanel
             {
@@ -360,6 +493,7 @@ namespace WinVora
             AddSummary(en ? $"{successful} successful" : $"{successful} erfolgreich", "AppSuccessBrush");
             if (failed > 0) AddSummary(en ? $"{failed} failed" : $"{failed} fehlgeschlagen", "AppErrorBrush");
             if (restartRequired > 0) AddSummary(en ? $"{restartRequired} restart" : $"{restartRequired} Neustart", "AppWarningBrush");
+            if (unverified > 0) AddSummary(en ? $"{unverified} not confirmed" : $"{unverified} nicht bestätigt", "AppWarningBrush");
             if (cancelled > 0) AddSummary(en ? $"{cancelled} cancelled" : $"{cancelled} abgebrochen", "AppNeutralStatusBrush");
             panel.Children.Add(new Border
             {
@@ -368,6 +502,31 @@ namespace WinVora
                 Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
                 Child = summaryLine
             });
+            if (unverified > 0)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = en
+                        ? "Not confirmed means the installer finished, but WinGet still reports the previous version. WinVora does not repeat the installation automatically."
+                        : "Nicht bestätigt bedeutet: Der Installer wurde beendet, WinGet meldet aber weiterhin die vorherige Version. WinVora wiederholt die Installation nicht automatisch.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 12,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
+                });
+            }
+            var restartNames = results
+                .Where(item => item.Result.Status == WingetUpdateStatus.RestartRequired)
+                .Select(item => item.Package.Name)
+                .ToList();
+            if (restartNames.Count > 0)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = (en ? "Restart required: " : "Neustart erforderlich: ") + string.Join(", ", restartNames),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppWarningBrush"]
+                });
+            }
 
             foreach (var item in results)
             {
@@ -376,6 +535,7 @@ namespace WinVora
                     WingetUpdateStatus.Successful => "✓",
                     WingetUpdateStatus.RestartRequired => "↻",
                     WingetUpdateStatus.Cancelled => "■",
+                    WingetUpdateStatus.Unverified => "?",
                     _ => "!"
                 };
                 Windows.UI.Color statusColor = item.Result.Status switch
@@ -383,8 +543,75 @@ namespace WinVora
                     WingetUpdateStatus.Successful => Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73),
                     WingetUpdateStatus.RestartRequired => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D),
                     WingetUpdateStatus.Cancelled => Windows.UI.Color.FromArgb(0xFF, 0xB0, 0xB0, 0xB0),
+                    WingetUpdateStatus.Unverified => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xC1, 0x4D),
                     _ => Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B)
                 };
+                var resultContent = new StackPanel { Spacing = 8 };
+                resultContent.Children.Add(new TextBlock
+                {
+                    Text = $"{symbol}  {item.Package.Name}  ·  {item.Package.Version} → {item.Package.Available}\n{item.Result.Message}",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
+                });
+                if (item.Result.Status == WingetUpdateStatus.Failed)
+                {
+                    string recommendation = GetUpdateRecommendation(item.Result, en);
+                    resultContent.Children.Add(new TextBlock
+                    {
+                        Text = (en ? "Recommended: " : "Empfehlung: ") + recommendation,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppWarningBrush"]
+                    });
+                }
+                if (item.Result.Status == WingetUpdateStatus.Failed)
+                {
+                    var retryButton = new Button
+                    {
+                        Content = en ? "Retry this update" : "Dieses Update erneut versuchen",
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+                    retryButton.Click += async (_, __) =>
+                    {
+                        retryButton.IsEnabled = false;
+                        dialog?.Hide();
+                        var retryResults = await RetryUpdatesAsync(new[] { item }, en, CancellationToken.None);
+                        await ShowUpdateSummaryAsync(retryResults, 0);
+                    };
+                    resultContent.Children.Add(retryButton);
+                }
+                else if (item.Result.Status == WingetUpdateStatus.Unverified)
+                {
+                    var verifyButton = new Button
+                    {
+                        Content = en ? "Check version again" : "Version erneut prüfen",
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+                    verifyButton.Click += async (_, __) =>
+                    {
+                        verifyButton.IsEnabled = false;
+                        verifyButton.Content = en ? "Checking..." : "Wird geprüft...";
+                        try
+                        {
+                            var discovery = await WingetDiscoveryService.GetUpgradesAsync(CancellationToken.None);
+                            bool unchanged = WingetUpdateVerifier.IsStillUnchanged(item.Package, discovery.Packages);
+                            _cachedPackages = discovery.Packages;
+                            _wingetColumns = discovery.Columns;
+                            verifyButton.Content = unchanged
+                                ? (en ? "Still not confirmed" : "Weiterhin nicht bestätigt")
+                                : (en ? "✓ Version confirmed" : "✓ Version bestätigt");
+                            if (!unchanged)
+                                SetWingetCardStatus(item.Package.Id, en ? "✓ Installed" : "✓ Installiert", "AppSuccessBrush");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError("Installierte Version erneut prüfen", ex);
+                            verifyButton.Content = en ? "Check failed" : "Prüfung fehlgeschlagen";
+                        }
+                    };
+                    resultContent.Children.Add(verifyButton);
+                }
+
                 panel.Children.Add(new Border
                 {
                     CornerRadius = new CornerRadius(10),
@@ -392,12 +619,7 @@ namespace WinVora
                     BorderBrush = new SolidColorBrush(statusColor),
                     Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
                     Padding = new Thickness(12, 10, 12, 10),
-                    Child = new TextBlock
-                    {
-                        Text = $"{symbol}  {item.Package.Name}  ·  {item.Package.Version} → {item.Package.Available}\n{item.Result.Message}",
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
-                    }
+                    Child = resultContent
                 });
             }
 
@@ -412,27 +634,50 @@ namespace WinVora
             }
 
             var technicalDetails = results
-                .Where(item => item.Result.ExitCode != 0)
-                .Select(item => $"{item.Package.Name}: 0x{unchecked((uint)item.Result.ExitCode):X8}")
+                .Where(item => item.Result.ExitCode != 0 ||
+                               !string.IsNullOrWhiteSpace(item.Result.DiagnosticDetails))
+                .Select(item =>
+                    $"{item.Package.Name} [{item.Package.Id}]\n" +
+                    $"Code: 0x{unchecked((uint)item.Result.ExitCode):X8}\n" +
+                    $"{item.Result.Message}" +
+                    (string.IsNullOrWhiteSpace(item.Result.DiagnosticDetails)
+                        ? string.Empty
+                        : $"\n{item.Result.DiagnosticDetails}"))
                 .ToList();
             if (technicalDetails.Count > 0)
             {
+                string technicalText = string.Join("\n", technicalDetails);
+                var technicalPanel = new StackPanel { Spacing = 8 };
+                technicalPanel.Children.Add(new TextBlock
+                {
+                    Text = technicalText,
+                    FontFamily = new FontFamily("Consolas"),
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
+                });
+                var copyButton = new Button
+                {
+                    Content = en ? "Copy error codes" : "Fehlercodes kopieren",
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                copyButton.Click += (_, __) =>
+                {
+                    var dataPackage = new DataPackage();
+                    dataPackage.SetText(technicalText);
+                    Clipboard.SetContent(dataPackage);
+                    copyButton.Content = en ? "Copied" : "Kopiert";
+                };
+                technicalPanel.Children.Add(copyButton);
                 panel.Children.Add(new Expander
                 {
                     Header = en ? "Technical details" : "Technische Details",
                     IsExpanded = false,
-                    Content = new TextBlock
-                    {
-                        Text = string.Join("\n", technicalDetails),
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 12,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
-                    }
+                    Content = technicalPanel
                 });
             }
 
-            var dialog = CommonUiBuilder.CreateConfirmation(
+            dialog = CommonUiBuilder.CreateConfirmation(
                 RootGrid.XamlRoot,
                 en ? "Update summary" : "Update-Abschlussbericht",
                 new ScrollViewer { Content = panel, MaxHeight = 430 },
@@ -440,30 +685,267 @@ namespace WinVora
                     ? (en ? "Retry failed" : "Fehlgeschlagene erneut versuchen")
                     : null,
                 en ? "Close" : "Schließen");
+            var previousFocus = FocusManager.GetFocusedElement(RootGrid.XamlRoot) as Control;
             var choice = await dialog.ShowAsync();
+            previousFocus?.Focus(FocusState.Programmatic);
             if (choice == ContentDialogResult.Primary)
             {
-                var retryResults = new List<(WingetPackage Package, WingetUpdateResult Result)>();
-                foreach (var failedItem in results.Where(item => item.Result.Status == WingetUpdateStatus.Failed))
-                {
-                    SetGlobalStatus(en ? $"Retrying {failedItem.Package.Name}..." : $"{failedItem.Package.Name} wird erneut versucht...");
-                    var retry = await _wingetUpdateService.UpgradeAsync(
-                        failedItem.Package.Id,
-                        new Progress<WingetUpdateProgress>(_ => { }),
-                        CancellationToken.None);
-                    retryResults.Add((failedItem.Package, retry));
-                }
-                retryResults = await VerifyUpdateResultsAsync(retryResults, en, CancellationToken.None);
-                foreach (var retryItem in retryResults)
-                    LogWingetUpdateActivity(retryItem.Package, retryItem.Result);
-                if (_cachedPackages != null)
-                {
-                    RenderWingetPackages(_cachedPackages);
-                    RestoreVerifiedCardStatuses(retryResults, en);
-                }
-                SetGlobalStatus(null);
+                var retryResults = await RetryUpdatesAsync(
+                    results.Where(item => item.Result.Status == WingetUpdateStatus.Failed),
+                    en,
+                    CancellationToken.None);
                 await ShowUpdateSummaryAsync(retryResults, 0);
             }
+        }
+
+        private void SetWingetCardProgress(string packageId, double? percent, bool visible)
+        {
+            if (!_wingetCardProgressBars.TryGetValue(packageId, out var progressBar)) return;
+            progressBar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            progressBar.IsIndeterminate = visible && !percent.HasValue;
+            if (percent.HasValue)
+                progressBar.Value = Math.Clamp(percent.Value, 0, 100);
+        }
+
+        private static string GetUpdateRecommendation(WingetUpdateResult result, bool english)
+        {
+            if (result.RequiresApplicationShutdown || result.Message.Contains("geschlossen", StringComparison.OrdinalIgnoreCase) ||
+                result.Message.Contains("closed", StringComparison.OrdinalIgnoreCase))
+                return english ? "Close the affected app and retry the update." : "Schließe das betroffene Programm und versuche das Update erneut.";
+            if (result.RequiresElevation)
+                return english ? "Retry and approve the Windows administrator prompt." : "Versuche es erneut und bestätige die Windows-Administratorabfrage.";
+            if (result.Message.Contains("Internet", StringComparison.OrdinalIgnoreCase) ||
+                result.Message.Contains("network", StringComparison.OrdinalIgnoreCase) ||
+                result.Message.Contains("Netzwerk", StringComparison.OrdinalIgnoreCase))
+                return english ? "Check the internet connection and retry." : "Prüfe die Internetverbindung und versuche es erneut.";
+            return english ? "Open technical details, then retry this update individually." : "Öffne die technischen Details und versuche dieses Update anschließend einzeln erneut.";
+        }
+
+        private void SetWingetCardProgressColor(string packageId, string brushKey)
+        {
+            if (_wingetCardProgressBars.TryGetValue(packageId, out var progressBar) &&
+                RootGrid.Resources[brushKey] is SolidColorBrush brush)
+                progressBar.Foreground = brush;
+        }
+
+        private async Task<List<(WingetPackage Package, WingetUpdateResult Result)>> RetryUpdatesAsync(
+            IEnumerable<(WingetPackage Package, WingetUpdateResult Result)> failedItems,
+            bool english,
+            CancellationToken cancellationToken)
+        {
+            var retryResults = new List<(WingetPackage Package, WingetUpdateResult Result)>();
+            foreach (var failedItem in failedItems)
+            {
+                SetGlobalStatus(english
+                    ? $"Retrying {failedItem.Package.Name}..."
+                    : $"{failedItem.Package.Name} wird erneut versucht...");
+                SetWingetCardStatus(failedItem.Package.Id,
+                    english ? "Installing" : "Wird installiert",
+                    "AppWarningBrush");
+                SetWingetCardProgress(failedItem.Package.Id, null, visible: true);
+                SetWingetCardProgressColor(failedItem.Package.Id, "AppAccentBrush");
+
+                bool pendingRestartBefore = RestartDetectionService.IsRestartPending();
+                var retry = await UpgradeWithElevationAsync(
+                    failedItem.Package.Id,
+                    failedItem.Package.Name,
+                    new Progress<WingetUpdateProgress>(progress =>
+                    {
+                        CurrentPackageStatusText.Text = progress.Text;
+                        CurrentPackageProgressBar.IsIndeterminate = !progress.Percent.HasValue;
+                        if (progress.Percent.HasValue)
+                            CurrentPackageProgressBar.Value = progress.Percent.Value;
+                        SetWingetCardProgress(
+                            failedItem.Package.Id,
+                            progress.Percent,
+                            visible: true);
+                    }),
+                    cancellationToken,
+                    english);
+                bool pendingRestartAfter = RestartDetectionService.IsRestartPending();
+                if (!pendingRestartBefore && pendingRestartAfter && retry.Status == WingetUpdateStatus.Successful)
+                    retry = retry with
+                    {
+                        Status = WingetUpdateStatus.RestartRequired,
+                        RestartRequired = true,
+                        Message = english
+                            ? "Installed; Windows reports that a restart is required."
+                            : "Installiert; Windows meldet einen erforderlichen Neustart."
+                    };
+                retryResults.Add((failedItem.Package, retry));
+                SetWingetCardProgress(failedItem.Package.Id, 100, visible: true);
+                SetWingetCardProgressColor(failedItem.Package.Id, retry.Status switch
+                {
+                    WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired => "AppSuccessBrush",
+                    WingetUpdateStatus.Failed => "AppErrorBrush",
+                    WingetUpdateStatus.Cancelled => "AppNeutralStatusBrush",
+                    _ => "AppWarningBrush"
+                });
+            }
+
+            retryResults = await VerifyUpdateResultsAsync(retryResults, english, cancellationToken);
+            foreach (var retryItem in retryResults)
+                LogWingetUpdateActivity(retryItem.Package, retryItem.Result);
+            if (_cachedPackages != null)
+            {
+                RenderWingetPackagesPreservingState(_cachedPackages);
+                RestoreVerifiedCardStatuses(retryResults, english);
+            }
+            CurrentPackageStatusText.Text = "";
+            SetGlobalStatus(null);
+            return retryResults;
+        }
+
+        private void RenderWingetPackagesPreservingState(List<WingetPackage> packages)
+        {
+            double scrollOffset = MainContentScrollViewer.VerticalOffset;
+            var selections = _wingetRows.ToDictionary(
+                row => row.Package.Id,
+                row => row.Toggle.IsChecked == true,
+                StringComparer.OrdinalIgnoreCase);
+            RenderWingetPackages(packages);
+            foreach (var row in _wingetRows)
+                if (selections.TryGetValue(row.Package.Id, out bool selected))
+                    row.Toggle.IsChecked = selected;
+            UpdateWingetSelectionButton();
+            MainContentScrollViewer.ChangeView(null, scrollOffset, null, disableAnimation: true);
+        }
+
+        private async Task<WingetUpdateResult> UpgradeWithElevationAsync(
+            string packageId,
+            string packageName,
+            IProgress<WingetUpdateProgress> progress,
+            CancellationToken cancellationToken,
+            bool english)
+        {
+            bool knownElevation = WingetElevationPolicy.RequiresElevationBeforeInstall(packageId) ||
+                                  _settings.ElevatedUpdateIds.Contains(packageId, StringComparer.OrdinalIgnoreCase);
+            bool knownShutdown = WingetElevationPolicy.RequiresApplicationShutdown(packageId) ||
+                                 _settings.ShutdownUpdateIds.Contains(packageId, StringComparer.OrdinalIgnoreCase);
+            if (knownElevation || knownShutdown)
+            {
+                bool approved = await ConfirmUpdateRequirementsAsync(
+                    packageName, english, knownElevation, knownShutdown);
+                if (!approved)
+                {
+                    return new WingetUpdateResult(
+                        WingetUpdateStatus.Cancelled,
+                        1223,
+                        english
+                            ? "Installation as administrator was not started."
+                            : "Die Installation als Administrator wurde nicht gestartet.",
+                        false);
+                }
+
+                if (knownShutdown &&
+                    !UpdateApplicationShutdownService.TryCloseForUpdate(packageId, packageName))
+                {
+                    return new WingetUpdateResult(
+                        WingetUpdateStatus.Failed,
+                        unchecked((int)0x80073D02),
+                        english
+                            ? $"{packageName} could not be closed. Close the app manually and try again."
+                            : $"{packageName} konnte nicht geschlossen werden. Schließe die App manuell und versuche es erneut.",
+                        false);
+                }
+
+                return knownElevation
+                    ? await RunElevatedUpdateAsync(packageId, packageName, progress, cancellationToken, english, knownShutdown)
+                    : await _wingetUpdateService.UpgradeAsync(packageId, progress, cancellationToken);
+            }
+
+            var result = await _wingetUpdateService.UpgradeAsync(packageId, progress, cancellationToken);
+            if (cancellationToken.IsCancellationRequested ||
+                (!result.RequiresElevation && !result.RequiresApplicationShutdown))
+                return result;
+
+            if (result.RequiresElevation && !_settings.ElevatedUpdateIds.Contains(packageId, StringComparer.OrdinalIgnoreCase))
+                _settings.ElevatedUpdateIds.Add(packageId);
+            if (result.RequiresApplicationShutdown && !_settings.ShutdownUpdateIds.Contains(packageId, StringComparer.OrdinalIgnoreCase))
+                _settings.ShutdownUpdateIds.Add(packageId);
+            _settings.Save();
+
+            bool retryApproved = await ConfirmUpdateRequirementsAsync(
+                packageName, english, result.RequiresElevation, result.RequiresApplicationShutdown);
+            if (!retryApproved)
+            {
+                return result with
+                {
+                    Status = WingetUpdateStatus.Cancelled,
+                    Message = english
+                        ? "Installation as administrator was not started."
+                        : "Die Installation als Administrator wurde nicht gestartet."
+                };
+            }
+
+            if (result.RequiresApplicationShutdown &&
+                !UpdateApplicationShutdownService.TryCloseForUpdate(packageId, packageName))
+                return result with
+                {
+                    Message = english
+                        ? $"{packageName} could not be closed. Close the app manually and try again."
+                        : $"{packageName} konnte nicht geschlossen werden. Schließe die App manuell und versuche es erneut."
+                };
+
+            return result.RequiresElevation
+                ? await RunElevatedUpdateAsync(packageId, packageName, progress, cancellationToken, english, result.RequiresApplicationShutdown)
+                : await _wingetUpdateService.UpgradeAsync(packageId, progress, cancellationToken);
+        }
+
+        private async Task<bool> ConfirmUpdateRequirementsAsync(
+            string packageName,
+            bool english,
+            bool needsElevation,
+            bool closesApplication)
+        {
+            var confirmation = CommonUiBuilder.CreateConfirmation(
+                RootGrid.XamlRoot,
+                needsElevation
+                    ? (english ? "Administrator permission required" : "Administratorrechte erforderlich")
+                    : (english ? "App must be closed" : "App muss geschlossen werden"),
+                english
+                    ? closesApplication
+                        ? needsElevation
+                            ? $"WinVora will close {packageName} for this update. Administrator permission is also required. Unsaved input in {packageName} may be lost. Windows will ask for confirmation after you continue."
+                            : $"WinVora will close {packageName} for this update. Unsaved input may be lost."
+                        : $"{packageName} can only be updated with administrator permission. Windows will ask for confirmation after you continue."
+                    : closesApplication
+                        ? needsElevation
+                            ? $"WinVora schließt {packageName} für dieses Update. Zusätzlich sind Administratorrechte erforderlich. Nicht gespeicherte Eingaben in {packageName} können verloren gehen. Anschließend bittet Windows um eine Bestätigung."
+                            : $"WinVora schließt {packageName} für dieses Update. Nicht gespeicherte Eingaben können verloren gehen."
+                        : $"{packageName} kann nur mit Administratorrechten aktualisiert werden. Nach dem Fortfahren bittet Windows um eine Bestätigung.",
+                needsElevation
+                    ? (english ? "Install as administrator" : "Als Administrator installieren")
+                    : (english ? "Close and install" : "Schließen und installieren"),
+                english ? "Cancel" : "Abbrechen");
+            var previousFocus = FocusManager.GetFocusedElement(RootGrid.XamlRoot) as Control;
+            var result = await confirmation.ShowAsync();
+            previousFocus?.Focus(FocusState.Programmatic);
+            return result == ContentDialogResult.Primary;
+        }
+
+        private async Task<WingetUpdateResult> RunElevatedUpdateAsync(
+            string packageId,
+            string packageName,
+            IProgress<WingetUpdateProgress> progress,
+            CancellationToken cancellationToken,
+            bool english,
+            bool forceApplicationShutdown)
+        {
+            Logger.Log($"Administratorrechte für Programm-Update erforderlich: {packageName} [{packageId}].");
+            SetWingetCardStatus(
+                packageId,
+                english ? "Administrator approval" : "Administratorbestätigung",
+                "AppWarningBrush");
+            SetGlobalStatus(english
+                ? $"{packageName} needs administrator approval..."
+                : $"{packageName} benötigt eine Administratorbestätigung...");
+
+            return await _wingetUpdateService.UpgradeElevatedAsync(
+                packageId,
+                progress,
+                cancellationToken,
+                forceApplicationShutdown);
         }
 
         // Ermittelt die Spaltenstart-Positionen sprachunabhängig:

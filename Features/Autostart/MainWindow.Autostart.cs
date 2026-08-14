@@ -3,22 +3,29 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
 using ToolkitControls = CommunityToolkit.WinUI.Controls;
 
 namespace WinVora
 {
     public sealed partial class MainWindow
     {
-        private void Autostart_Click(object sender, RoutedEventArgs e)
+        private async void Autostart_Click(object sender, RoutedEventArgs e)
         {
             SetPage("Autostart");
-            RenderAutostartPage();
+            await RenderAutostartPageAsync();
         }
 
-        private void RenderAutostartPage()
+        private async Task RenderAutostartPageAsync()
         {
             AutostartListPanel.Children.Clear();
-            var entries = AutostartService.GetEntries();
+            AutostartListPanel.Children.Add(new ProgressRing { IsActive = true, Width = 28, Height = 28, HorizontalAlignment = HorizontalAlignment.Center });
+            SetGlobalStatus(Localization.CurrentLanguage == "en" ? "Loading startup programs..." : "Autostart-Programme werden geladen...");
+            var entries = await Task.Run(AutostartService.GetEntries);
+            AutostartListPanel.Children.Clear();
+            SetGlobalStatus(null);
             PageSubtitle.Text = $"{entries.Count} Autostart-Programme";
             foreach (var entry in entries)
             {
@@ -70,23 +77,54 @@ namespace WinVora
                     }
                 });
                 statusPanel.Children.Add(toggle);
+                if (AutostartService.TryGetCommandTargetPath(entry.Command, out string startupPath) && File.Exists(startupPath))
+                {
+                    var openLocation = new Button
+                    {
+                        Content = Localization.CurrentLanguage == "en" ? "Open location" : "Speicherort öffnen",
+                        Padding = new Thickness(10, 5, 10, 5)
+                    };
+                    openLocation.Click += (_, __) =>
+                    {
+                        var result = ExplorerService.SelectFile(startupPath);
+                        if (result == ExplorerOpenResult.Missing)
+                            ShowInfo(Localization.CurrentLanguage == "en" ? "The file no longer exists." : "Die Datei ist nicht mehr vorhanden.", InfoBarSeverity.Warning);
+                    };
+                    statusPanel.Children.Add(openLocation);
+                }
                 string pathLabel = Localization.CurrentLanguage == "en" ? "Path: " : "Pfad: ";
                 string shortCommand = entry.Command.Length > 92 ? entry.Command[..89] + "..." : entry.Command;
+                string baseDescription = pathLabel + shortCommand;
                 var startupCard = new ToolkitControls.SettingsCard
                 {
                     Header = entry.Name,
-                    Description = pathLabel + shortCommand,
+                    Description = baseDescription + " · " +
+                                  (Localization.CurrentLanguage == "en" ? "Signature is being checked..." : "Signatur wird geprüft..."),
                     Content = statusPanel,
                     CornerRadius = new CornerRadius(16)
                 };
                 ToolTipService.SetToolTip(startupCard, entry.Command);
                 AutostartListPanel.Children.Add(startupCard);
+                _ = LoadAutostartIdentityAsync(startupCard, entry, baseDescription);
             }
             if (entries.Count == 0)
                 AutostartListPanel.Children.Add(MakeEmptyState(
                     "\uE768",
                     Localization.CurrentLanguage == "en" ? "No startup programs" : "Keine Autostart-Programme",
                     Localization.CurrentLanguage == "en" ? "No programs start automatically for this user." : "Für diesen Benutzer starten keine Programme automatisch."));
+        }
+
+        private async Task LoadAutostartIdentityAsync(
+            ToolkitControls.SettingsCard card,
+            AutostartEntry entry,
+            string baseDescription)
+        {
+            var identity = await Task.Run(() => AutostartService.GetFileIdentity(entry.Command));
+            if (_currentPageKey != "Autostart") return;
+            bool en = Localization.CurrentLanguage == "en";
+            card.Description = baseDescription + " · " +
+                               (en ? "Publisher: " : "Herausgeber: ") + identity.Publisher + " · " +
+                               (identity.Signed ? (en ? "Signed" : "Signiert") : (en ? "Signature unknown" : "Signatur unbekannt"));
         }
 
         private void SaveSecondaryWindowPlacement(Window window, bool settingsWindow)

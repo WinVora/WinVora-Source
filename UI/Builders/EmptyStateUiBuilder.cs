@@ -13,7 +13,8 @@ namespace WinVora
         {
             var panel = new StackPanel
             {
-                Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(20)
+                Spacing = UiMetrics.SpaceMd, HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(UiMetrics.CardPadding)
             };
             panel.Children.Add(new FontIcon
             {
@@ -22,7 +23,8 @@ namespace WinVora
             });
             panel.Children.Add(new TextBlock
             {
-                Text = title, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Text = title,
+                Style = (Style)Application.Current.Resources["WinVoraSectionTitleStyle"],
                 HorizontalAlignment = HorizontalAlignment.Center
             });
             panel.Children.Add(new TextBlock
@@ -38,10 +40,12 @@ namespace WinVora
             }
             return new Border
             {
-                MinHeight = 180, CornerRadius = new CornerRadius(16), Padding = new Thickness(20),
-                Background = (SolidColorBrush)resources["AppOverlay10"],
-                BorderBrush = (SolidColorBrush)resources["AppOverlay22"],
-                BorderThickness = new Thickness(1), Child = panel
+                MinHeight = 180,
+                CornerRadius = new CornerRadius(UiMetrics.CardRadius),
+                Padding = new Thickness(UiMetrics.CardPadding),
+                Background = (SolidColorBrush)resources["AppCardSurfaceBrush"],
+                BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0), Child = panel
             };
         }
     }

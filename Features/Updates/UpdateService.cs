@@ -16,23 +16,41 @@ namespace WinVora
         public string AssetName { get; set; } = "";
         public string Sha256 { get; set; } = "";
         public string ReleaseNotes { get; set; } = "";
+        public bool IsPrerelease { get; set; }
     }
 
     public static class UpdateService
     {
         // Öffentliches Downloads-Repo, nicht das private Quellcode-Repo.
         private const string ReleasesApiUrl = "https://api.github.com/repos/WinVora/WinVora-Releases/releases/latest";
+        private const string AllReleasesApiUrl = "https://api.github.com/repos/WinVora/WinVora-Releases/releases?per_page=20";
 
-        public static async Task<UpdateInfo?> CheckForUpdateAsync(string currentVersion)
+        public static async Task<UpdateInfo?> CheckForUpdateAsync(string currentVersion, bool includePrerelease = false)
         {
             using var client = new HttpClient();
             // GitHub verlangt zwingend einen User-Agent-Header, sonst kommt 403.
             client.DefaultRequestHeaders.UserAgent.ParseAdd("WinVora-UpdateChecker");
             client.Timeout = TimeSpan.FromSeconds(15);
 
-            var json = await client.GetStringAsync(ReleasesApiUrl);
+            var json = await client.GetStringAsync(includePrerelease ? AllReleasesApiUrl : ReleasesApiUrl);
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            if (includePrerelease)
+            {
+                foreach (var release in doc.RootElement.EnumerateArray())
+                {
+                    var candidate = ParseRelease(release, currentVersion, allowPrerelease: true);
+                    if (candidate != null) return candidate;
+                }
+                return null;
+            }
+            return ParseRelease(doc.RootElement, currentVersion, allowPrerelease: false);
+        }
+
+        private static UpdateInfo? ParseRelease(JsonElement root, string currentVersion, bool allowPrerelease)
+        {
+            if (root.TryGetProperty("draft", out var draft) && draft.GetBoolean()) return null;
+            bool prerelease = root.TryGetProperty("prerelease", out var prereleaseProperty) && prereleaseProperty.GetBoolean();
+            if (prerelease && !allowPrerelease) return null;
 
             var tagName = root.GetProperty("tag_name").GetString() ?? "";
             var latestVersion = tagName.TrimStart('v', 'V');
@@ -76,16 +94,21 @@ namespace WinVora
                 DownloadUrl = downloadUrl,
                 AssetName = assetName,
                 Sha256 = sha256 ?? "",
-                ReleaseNotes = notes
+                ReleaseNotes = notes,
+                IsPrerelease = prerelease
             };
         }
 
-        private static bool IsNewerVersion(string latest, string current)
+        internal static bool IsNewerVersion(string latest, string current)
         {
             try
             {
-                var v1 = new Version(latest);
-                var v2 = new Version(current);
+                // GitHub-Tags dürfen z. B. "0.8.5-beta.1" heißen, während
+                // Windows-Dateiversionen rein numerisch bleiben müssen.
+                string latestNumeric = latest.Split('-', '+')[0];
+                string currentNumeric = current.Split('-', '+')[0];
+                var v1 = new Version(latestNumeric);
+                var v2 = new Version(currentNumeric);
                 return v1 > v2;
             }
             catch

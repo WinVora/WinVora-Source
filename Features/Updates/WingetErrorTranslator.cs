@@ -4,6 +4,17 @@ namespace WinVora
 {
     internal static class WingetErrorTranslator
     {
+        public static bool RequiresElevation(int exitCode, string output)
+        {
+            string normalized = output.ToLowerInvariant();
+            uint code = unchecked((uint)exitCode);
+            return code is 0x80070005 or 0x80073D28 ||
+                   normalized.Contains("access denied") ||
+                   normalized.Contains("zugriff verweigert") ||
+                   normalized.Contains("administrator privileges") ||
+                   normalized.Contains("administratorrechte");
+        }
+
         public static bool ContainsRestartRequired(string output) =>
             output.Contains("restart required", StringComparison.OrdinalIgnoreCase) ||
             output.Contains("reboot required", StringComparison.OrdinalIgnoreCase) ||
@@ -22,20 +33,24 @@ namespace WinVora
             if (status == WingetUpdateStatus.RestartRequired)
                 return en ? "Installed successfully. A Windows restart is required." : "Erfolgreich installiert. Ein Windows-Neustart ist erforderlich.";
 
-            if (exitCode == 0)
-                return en ? "Installed successfully." : "Erfolgreich installiert.";
-
             if (normalized.Contains("0x80072") || normalized.Contains("internet") ||
                 normalized.Contains("network") || normalized.Contains("netzwerk") ||
                 normalized.Contains("name resolution"))
                 return en ? "No connection to the download server. Check your internet connection." : "Keine Verbindung zum Downloadserver. Prüfe deine Internetverbindung.";
 
-            if (normalized.Contains("0x80070005") || normalized.Contains("access denied") ||
-                normalized.Contains("zugriff verweigert") || normalized.Contains("administrator"))
+            if (RequiresElevation(exitCode, output))
                 return en ? "Administrator permission is required." : "Für dieses Update werden Administratorrechte benötigt.";
 
             if (normalized.Contains("hash") && (normalized.Contains("match") || normalized.Contains("stimm")))
                 return en ? "The downloaded installer failed its security check." : "Der heruntergeladene Installer hat die Sicherheitsprüfung nicht bestanden.";
+
+            if (unchecked((uint)exitCode) == 0x80073D02 || normalized.Contains("0x80073d02"))
+                return en
+                    ? "The app must be closed before it can be updated."
+                    : "Die App muss vor dem Update geschlossen werden.";
+
+            if (exitCode == 0 && status == WingetUpdateStatus.Successful)
+                return en ? "Installed successfully." : "Erfolgreich installiert.";
 
             if (normalized.Contains("no applicable installer") || normalized.Contains("kein zutreffendes installationsprogramm"))
                 return en ? "No compatible installer is available for this PC." : "Für diesen PC ist kein passender Installer verfügbar.";

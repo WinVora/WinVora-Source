@@ -23,7 +23,8 @@ namespace WinVora
         Successful,
         Failed,
         Cancelled,
-        RestartRequired
+        RestartRequired,
+        Unverified
     }
 
     internal sealed record WingetUpdateProgress(
@@ -37,5 +38,8 @@ namespace WinVora
         WingetUpdateStatus Status,
         int ExitCode,
         string Message,
-        bool RestartRequired);
+        bool RestartRequired,
+        bool RequiresElevation = false,
+        bool RequiresApplicationShutdown = false,
+        string DiagnosticDetails = "");
 }

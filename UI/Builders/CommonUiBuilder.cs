@@ -7,7 +7,7 @@ namespace WinVora
     internal static class CommonUiBuilder
     {
         public static Border CreateCard(UIElement child, ResourceDictionary resources,
-            double padding = 20, double cornerRadius = 16)
+            double padding = UiMetrics.CardPadding, double cornerRadius = UiMetrics.CardRadius)
         {
             return new Border
             {
@@ -27,18 +27,25 @@ namespace WinVora
                 : (SolidColorBrush)resources["AppSuccessBrush"];
             return new Border
             {
-                CornerRadius = new CornerRadius(7),
-                Padding = new Thickness(8, 4, 8, 4),
+                CornerRadius = new CornerRadius(UiMetrics.ControlRadius),
+                Padding = new Thickness(UiMetrics.SpaceSm, UiMetrics.SpaceXs,
+                    UiMetrics.SpaceSm, UiMetrics.SpaceXs),
                 Background = new SolidColorBrush(Windows.UI.Color.FromArgb(
                     0x24, foreground.Color.R, foreground.Color.G, foreground.Color.B)),
-                Child = new TextBlock { Text = text, FontSize = 11, Foreground = foreground }
+                Child = new TextBlock
+                {
+                    Text = text,
+                    FontSize = 12,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = foreground
+                }
             };
         }
 
         public static ContentDialog CreateConfirmation(XamlRoot xamlRoot, string title,
             object content, string? primaryText, string closeText)
         {
-            return new ContentDialog
+            var dialog = new ContentDialog
             {
                 XamlRoot = xamlRoot,
                 Title = title,
@@ -47,6 +54,9 @@ namespace WinVora
                 CloseButtonText = closeText,
                 DefaultButton = ContentDialogButton.Close
             };
+            dialog.Resources["ContentDialogMinWidth"] = 420d;
+            dialog.Resources["ContentDialogMaxWidth"] = 640d;
+            return dialog;
         }
     }
 }

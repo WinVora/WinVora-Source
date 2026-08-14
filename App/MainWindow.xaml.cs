@@ -48,6 +48,7 @@ namespace WinVora
 
         private readonly List<(WingetPackage Package, CheckBox Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> _wingetRows = new();
         private readonly Dictionary<string, TextBlock> _wingetStatusBadges = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, ProgressBar> _wingetCardProgressBars = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(StorageCategory Category, CheckBox Toggle)> _storageRows = new();
         private TextBlock? _wingetNoResultsText;
         private TextBlock? _uninstallNoResultsText;
@@ -57,6 +58,7 @@ namespace WinVora
         private CancellationTokenSource? _dashboardRefreshDebounce;
         private CancellationTokenSource? _wingetSearchDebounce;
         private CancellationTokenSource? _uninstallSearchDebounce;
+        private CancellationTokenSource? _infoBarDismissCancellation;
         private bool _closePromptOpen;
         private Windows.Graphics.RectInt32? _postStartupWindowRect;
 
@@ -78,9 +80,12 @@ namespace WinVora
         private UpdateInfo? _pendingUpdateInfo;
         private string _currentPageKey = "Übersicht";
         private string _historyFilter = "All";
+        private readonly HashSet<string> _expandedHistoryEntries = new(StringComparer.Ordinal);
         private readonly Dictionary<string, double> _pageScrollOffsets = new();
         private PcChangeSummary? _pcChangeSummary;
         private Grid? _dashboardPrimaryGrid;
+        private IReadOnlyList<LargeFolderResult> _cachedLargeFolders = Array.Empty<LargeFolderResult>();
+        private DateTime? _largeFolderAnalysisUtc;
         private bool? _narrowLayoutState;
         private bool? _compactHeightState;
 
@@ -91,6 +96,7 @@ namespace WinVora
             this.InitializeComponent();
             CoreLogicSelfTests.Run();
             SetupSystemInfoCopyButtons();
+            SetupCompactTooltips();
             RootGrid.SizeChanged += (_, args) =>
             {
                 ApplyResponsiveLayout(args.NewSize);
@@ -108,6 +114,8 @@ namespace WinVora
                 _dashboardRefreshDebounce?.Cancel();
                 _wingetSearchDebounce?.Cancel();
                 _uninstallSearchDebounce?.Cancel();
+                _infoBarDismissCancellation?.Cancel();
+                _infoBarDismissCancellation?.Dispose();
                 SaveWindowPlacement();
                 HardwareMonitorService.Shutdown();
             };
@@ -273,8 +281,20 @@ namespace WinVora
                 args.Handled = true;
             };
 
+            var commandPalette = new KeyboardAccelerator
+            {
+                Key = Windows.System.VirtualKey.K,
+                Modifiers = Windows.System.VirtualKeyModifiers.Control
+            };
+            commandPalette.Invoked += async (_, args) =>
+            {
+                args.Handled = true;
+                await ShowCommandPaletteAsync();
+            };
+
             RootGrid.KeyboardAccelerators.Add(refresh);
             RootGrid.KeyboardAccelerators.Add(search);
+            RootGrid.KeyboardAccelerators.Add(commandPalette);
         }
 
         // Setzt alle übersetzbaren Texte (Sidebar, Dashboard, Schnellzugriff)
@@ -380,6 +400,7 @@ namespace WinVora
             UninstallSearchBox.PlaceholderText = Localization.T("Uninstall.SearchPlaceholder");
             UninstallRefreshButton.Content = new FontIcon { Glyph = "\uE72C" };
             UninstallExportButton.Content = Localization.CurrentLanguage == "en" ? "Export list" : "Liste exportieren";
+            UninstallSelectedButton.Content = Localization.CurrentLanguage == "en" ? "Uninstall selected" : "Ausgewählte deinstallieren";
             ToolTipService.SetToolTip(UninstallRefreshButton, Localization.T("Common.Refresh"));
             ToolTipService.SetToolTip(WingetSelectAllButton,
                 Localization.CurrentLanguage == "en" ? "Select or deselect all visible updates" : "Alle sichtbaren Updates aus- oder abwählen");
@@ -518,16 +539,74 @@ namespace WinVora
             _dashboardPrimaryGrid.Children.Add(DashCardDisk);
 
             var systemSection = new StackPanel { Spacing = 12 };
-            systemSection.Children.Add(new TextBlock
+            var performanceHeading = new StackPanel { Spacing = 2 };
+            performanceHeading.Children.Add(new TextBlock
             {
                 Text = Localization.CurrentLanguage == "en" ? "System performance" : "Systemleistung",
                 FontSize = 17,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
             });
+            performanceHeading.Children.Add(new TextBlock
+            {
+                Text = Localization.CurrentLanguage == "en"
+                    ? "Live values for processor, memory and graphics"
+                    : "Live-Werte für Prozessor, Arbeitsspeicher und Grafik",
+                FontSize = 12,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
+            systemSection.Children.Add(performanceHeading);
             systemSection.Children.Add(DashboardStatusGrid);
+            OverviewPanel.Spacing = 18;
             OverviewPanel.Children.Insert(0, _dashboardPrimaryGrid);
             OverviewPanel.Children.Insert(1, systemSection);
+            ApplyDashboardCustomizationLayout();
+        }
+
+        private void ApplyDashboardCustomizationLayout()
+        {
+            if (_dashboardPrimaryGrid == null) return;
+            bool Hidden(string key) => _settings.HiddenDashboardCards.Contains(key, StringComparer.OrdinalIgnoreCase);
+            var primary = new[]
+            {
+                (Key: "Updates", Card: (FrameworkElement)StatCardUpdates),
+                (Key: "Security", Card: (FrameworkElement)StatCardSecurity),
+                (Key: "Storage", Card: (FrameworkElement)DashCardDisk)
+            };
+            var performance = new[]
+            {
+                (Key: "Cpu", Card: (FrameworkElement)StatCardCpu),
+                (Key: "Ram", Card: (FrameworkElement)StatCardRam),
+                (Key: "Gpu", Card: (FrameworkElement)StatCardGpu)
+            };
+            primary = primary.OrderBy(item => _settings.DashboardCardOrder.FindIndex(key => key.Equals(item.Key, StringComparison.OrdinalIgnoreCase))).ToArray();
+            performance = performance.OrderBy(item => _settings.DashboardCardOrder.FindIndex(key => key.Equals(item.Key, StringComparison.OrdinalIgnoreCase))).ToArray();
+            int maxColumns = _narrowLayoutState == true ? 2 : 3;
+
+            void Layout(Grid grid, (string Key, FrameworkElement Card)[] cards, int firstRow)
+            {
+                var visible = cards.Where(item => !Hidden(item.Key)).ToList();
+                foreach (var item in cards)
+                    item.Card.Visibility = Hidden(item.Key) ? Visibility.Collapsed : Visibility.Visible;
+                int columns = Math.Max(1, Math.Min(maxColumns, visible.Count));
+                for (int index = 0; index < grid.ColumnDefinitions.Count; index++)
+                    grid.ColumnDefinitions[index].Width = index < columns
+                        ? new GridLength(1, GridUnitType.Star)
+                        : new GridLength(0);
+                for (int index = 0; index < visible.Count; index++)
+                {
+                    Grid.SetRow(visible[index].Card, firstRow + index / columns);
+                    Grid.SetColumn(visible[index].Card, index % columns);
+                    Grid.SetColumnSpan(visible[index].Card, 1);
+                }
+            }
+
+            int primaryColumns = Math.Max(1, Math.Min(maxColumns, primary.Count(item => !Hidden(item.Key))));
+            Grid.SetRow(DashCardStatus, 0);
+            Grid.SetColumn(DashCardStatus, 0);
+            Grid.SetColumnSpan(DashCardStatus, primaryColumns);
+            Layout(_dashboardPrimaryGrid, primary, 1);
+            Layout(DashboardStatusGrid, performance, 0);
         }
 
         private void NormalizeCardMetrics()
@@ -540,9 +619,9 @@ namespace WinVora
                 StatCardCpu, StatCardRam, StatCardGpu
             })
             {
-                dashboardCard.MinHeight = 150;
-                dashboardCard.Padding = new Thickness(24);
-                dashboardCard.CornerRadius = new CornerRadius(16);
+                dashboardCard.MinHeight = UiMetrics.DashboardCardHeight;
+                dashboardCard.Padding = new Thickness(UiMetrics.CardPadding);
+                dashboardCard.CornerRadius = new CornerRadius(UiMetrics.CardRadius);
                 dashboardCard.BorderThickness = new Thickness(0);
                 dashboardCard.Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"];
             }
@@ -564,10 +643,31 @@ namespace WinVora
             })
             {
                 systemCard.MinHeight = 140;
-                systemCard.Padding = new Thickness(20);
-                systemCard.CornerRadius = new CornerRadius(16);
+                systemCard.Padding = new Thickness(UiMetrics.CardPadding);
+                systemCard.CornerRadius = new CornerRadius(UiMetrics.CardRadius);
                 systemCard.BorderThickness = new Thickness(0);
                 systemCard.Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"];
+                NormalizeSystemInfoValues(systemCard);
+            }
+        }
+
+        private static void NormalizeSystemInfoValues(DependencyObject root)
+        {
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int index = 0; index < count; index++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, index);
+                if (child is TextBlock text && Grid.GetColumn(text) == 1)
+                {
+                    text.MaxWidth = 520;
+                    text.MaxLines = 2;
+                    text.TextTrimming = TextTrimming.CharacterEllipsis;
+                    text.HorizontalAlignment = HorizontalAlignment.Right;
+                    ToolTipService.SetToolTip(text, text.Text);
+                    text.RegisterPropertyChangedCallback(TextBlock.TextProperty,
+                        (_, __) => ToolTipService.SetToolTip(text, text.Text));
+                }
+                NormalizeSystemInfoValues(child);
             }
         }
 
@@ -848,8 +948,8 @@ namespace WinVora
                     : Windows.UI.Color.FromArgb(0xFF, 0xA8, 0x68, 0x00);
             if (RootGrid.Resources["AppCardSurfaceBrush"] is SolidColorBrush cardSurface)
                 cardSurface.Color = dark
-                    ? Windows.UI.Color.FromArgb(0xFF, 0x1C, 0x1C, 0x1C)
-                    : Windows.UI.Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF2);
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x1C, 0x1B, 0x20)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xEC, 0xEA, 0xF2);
             if (RootGrid.Resources["AppDangerSurfaceBrush"] is SolidColorBrush dangerSurface)
                 dangerSurface.Color = dark
                     ? Windows.UI.Color.FromArgb(0xFF, 0x3A, 0x23, 0x28)
@@ -861,11 +961,25 @@ namespace WinVora
             if (Application.Current.Resources["WinVoraSecondaryButtonBrush"] is SolidColorBrush secondaryButton)
                 secondaryButton.Color = dark
                     ? Windows.UI.Color.FromArgb(0xFF, 0x30, 0x2B, 0x50)
-                    : Windows.UI.Color.FromArgb(0xFF, 0xE7, 0xE3, 0xFA);
+                    : Windows.UI.Color.FromArgb(0xFF, 0xEE, 0xEA, 0xFB);
             if (Application.Current.Resources["WinVoraToggleOffBrush"] is SolidColorBrush toggleOff)
                 toggleOff.Color = dark
                     ? Windows.UI.Color.FromArgb(0xFF, 0x38, 0x38, 0x38)
                     : Windows.UI.Color.FromArgb(0xFF, 0xD8, 0xD8, 0xD8);
+            SetApplicationBrush("ToggleSwitchFillOff",
+                dark ? Windows.UI.Color.FromArgb(0xFF, 0x38, 0x38, 0x38) : Windows.UI.Color.FromArgb(0xFF, 0xD8, 0xD8, 0xD8));
+            SetApplicationBrush("ToggleSwitchFillOffPointerOver",
+                dark ? Windows.UI.Color.FromArgb(0xFF, 0x42, 0x42, 0x42) : Windows.UI.Color.FromArgb(0xFF, 0xC8, 0xC8, 0xC8));
+            SetApplicationBrush("ToggleSwitchFillOffPressed",
+                dark ? Windows.UI.Color.FromArgb(0xFF, 0x30, 0x30, 0x30) : Windows.UI.Color.FromArgb(0xFF, 0xBC, 0xBC, 0xBC));
+            SetApplicationBrush("AccentButtonBackgroundDisabled",
+                dark ? Windows.UI.Color.FromArgb(0x59, 0x6C, 0x5C, 0xE7) : Windows.UI.Color.FromArgb(0xFF, 0xBF, 0xB8, 0xEC));
+            SetApplicationBrush("AccentButtonForegroundDisabled",
+                dark ? Windows.UI.Color.FromArgb(0xB0, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0xB0, 0x20, 0x1D, 0x2A));
+            if (MainCard.Resources.TryGetValue("ButtonBackgroundDisabled", out var disabledValue) && disabledValue is SolidColorBrush disabledBrush)
+                disabledBrush.Color = dark
+                    ? Windows.UI.Color.FromArgb(0xFF, 0x24, 0x23, 0x33)
+                    : Windows.UI.Color.FromArgb(0xFF, 0xE1, 0xDE, 0xE9);
 
             if (RootGrid.Resources["AppRootBackgroundBrush"] is SolidColorBrush rootBrush)
                 rootBrush.Color = dark
@@ -888,6 +1002,10 @@ namespace WinVora
             }
 
             ApplyTitleBarColors(dark);
+            if (_settingsWindow != null)
+                ApplySecondaryWindowTitleBarColors(_settingsWindow, dark);
+            if (_changelogWindow != null)
+                ApplySecondaryWindowTitleBarColors(_changelogWindow, dark);
             ApplyGlassIntensity(_settings.GlassIntensity);
 
             if (persist)
@@ -895,6 +1013,12 @@ namespace WinVora
                 _settings.DarkMode = dark;
                 _settings.Save();
             }
+        }
+
+        private static void SetApplicationBrush(string key, Windows.UI.Color color)
+        {
+            if (Application.Current.Resources.TryGetValue(key, out var resource) && resource is SolidColorBrush brush)
+                brush.Color = color;
         }
 
         private void ApplyConfiguredColorScheme(bool persist = true)
@@ -1033,7 +1157,9 @@ namespace WinVora
         {
             try
             {
-                var update = await UpdateService.CheckForUpdateAsync(CurrentVersion);
+                var update = await UpdateService.CheckForUpdateAsync(
+                    CurrentVersion,
+                    _settings.UpdateChannel == "Beta");
                 if (update != null)
                 {
                     _pendingUpdateInfo = update;
@@ -1255,7 +1381,7 @@ namespace WinVora
             {
                 From = 1,
                 To = 0,
-                Duration = TimeSpan.FromMilliseconds(160)
+                Duration = TimeSpan.FromMilliseconds(UiMetrics.MotionDurationMs)
             };
 
             var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
@@ -1357,6 +1483,7 @@ namespace WinVora
             UpdateActiveNavHighlight(title);
 
             AppsActionBar.Visibility = title == "Updates" ? Visibility.Visible : Visibility.Collapsed;
+            DashboardCustomizeHeaderButton.Visibility = title == "Übersicht" ? Visibility.Visible : Visibility.Collapsed;
             SystemActionBar.Visibility = title == "System" ? Visibility.Visible : Visibility.Collapsed;
             StorageActionBar.Visibility = title == "Storage" ? Visibility.Visible : Visibility.Collapsed;
             UninstallActionBar.Visibility = title == "Uninstall" ? Visibility.Visible : Visibility.Collapsed;
@@ -1411,7 +1538,7 @@ namespace WinVora
             {
                 From = 0,
                 To = 1,
-                Duration = TimeSpan.FromMilliseconds(160),
+                Duration = TimeSpan.FromMilliseconds(UiMetrics.MotionDurationMs),
                 EasingFunction = new Microsoft.UI.Xaml.Media.Animation.QuadraticEase()
             };
 
@@ -1502,9 +1629,99 @@ namespace WinVora
 
         private void ShowInfo(string message, InfoBarSeverity severity = InfoBarSeverity.Informational)
         {
+            _infoBarDismissCancellation?.Cancel();
+            _infoBarDismissCancellation?.Dispose();
+            _infoBarDismissCancellation = null;
+
             AppInfoBar.Message = message;
+            AppInfoBar.Content = null;
+            AppInfoBar.ActionButton = null;
             AppInfoBar.Severity = severity;
             AppInfoBar.IsOpen = true;
+
+            // Abschluss- und Erfolgshinweise verschwinden von selbst. Warnungen
+            // und Fehler bleiben offen, bis sie bewusst geschlossen werden.
+            if (severity is InfoBarSeverity.Informational or InfoBarSeverity.Success)
+            {
+                _infoBarDismissCancellation = new CancellationTokenSource();
+                var progress = new ProgressBar
+                {
+                    Minimum = 0,
+                    Maximum = 100,
+                    Value = 100,
+                    Height = 3
+                };
+                var content = new StackPanel { Spacing = 5 };
+                content.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+                content.Children.Add(progress);
+                AppInfoBar.Message = "";
+                AppInfoBar.Content = content;
+                _ = AnimateUndoProgressAsync(progress, _infoBarDismissCancellation.Token);
+                _ = DismissInfoBarAfterDelayAsync(_infoBarDismissCancellation.Token);
+            }
+
+        }
+
+        private void ShowUndoInfo(string message, Action undo)
+        {
+            ShowInfo(message, InfoBarSeverity.Informational);
+            var progress = new ProgressBar
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Value = 100,
+                Height = 3
+            };
+            var content = new StackPanel { Spacing = 5 };
+            content.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+            content.Children.Add(progress);
+            AppInfoBar.Message = "";
+            AppInfoBar.Content = content;
+            var undoButton = new Button
+            {
+                Content = Localization.CurrentLanguage == "en" ? "Undo" : "Rückgängig",
+                Padding = new Thickness(10, 5, 10, 5)
+            };
+            undoButton.Click += (_, __) =>
+            {
+                undo();
+                AppInfoBar.IsOpen = false;
+                AppInfoBar.ActionButton = null;
+            };
+            AppInfoBar.ActionButton = undoButton;
+            if (_infoBarDismissCancellation != null)
+                _ = AnimateUndoProgressAsync(progress, _infoBarDismissCancellation.Token);
+        }
+
+        private static async Task AnimateUndoProgressAsync(
+            ProgressBar progress,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                const int steps = 100;
+                for (int step = steps; step >= 0; step--)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    progress.Value = step;
+                    await Task.Delay(100, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        private async Task DismissInfoBarAfterDelayAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+                if (!cancellationToken.IsCancellationRequested)
+                    AppInfoBar.IsOpen = false;
+            }
+            catch (OperationCanceledException)
+            {
+                // Ein neuer Hinweis ersetzt den vorherigen Timer.
+            }
         }
 
         private void ApplyResponsiveLayout(Size windowSize)
@@ -1529,20 +1746,43 @@ namespace WinVora
 
             _narrowLayoutState = _narrowLayoutState switch
             {
-                null => windowSize.Width < 1180,
-                true when windowSize.Width > 1220 => false,
-                false when windowSize.Width < 1140 => true,
+                // Die Aktionsleiste benötigt zusammen mit der breiten Sidebar
+                // deutlich mehr Platz als der reine Inhaltsbereich vermuten lässt.
+                // Deshalb früher in die zweite Kopfzeile umbrechen.
+                null => windowSize.Width < 1450,
+                true when windowSize.Width > 1490 => false,
+                false when windowSize.Width < 1410 => true,
                 _ => _narrowLayoutState
             };
             bool narrow = _narrowLayoutState == true;
+            PageTitle.Text = narrow && _currentPageKey == "Updates"
+                ? (Localization.CurrentLanguage == "en" ? "Updates" : "Updates")
+                : narrow && _currentPageKey == "Uninstall"
+                    ? (Localization.CurrentLanguage == "en" ? "Apps" : "Programme")
+                    : GetPageDisplayTitle(_currentPageKey);
             MainCard.Padding = new Thickness(narrow ? 14 : 20);
             PageTitle.FontSize = narrow ? 30 : 34;
             WingetSearchBox.Width = narrow ? 220 : 280;
             UninstallSearchBox.Width = narrow ? 220 : 280;
             WingetSelectAllButton.Padding = narrow ? new Thickness(8, 6, 8, 6) : new Thickness(16, 10, 16, 10);
             StartUpdateButton.Padding = narrow ? new Thickness(10, 6, 10, 6) : new Thickness(16, 10, 16, 10);
+            DashboardCustomizeHeaderButton.Content = narrow
+                ? (Localization.CurrentLanguage == "en" ? "Customize" : "Anpassen")
+                : (Localization.CurrentLanguage == "en" ? "Customize dashboard" : "Dashboard anpassen");
+            ToolTipService.SetToolTip(DashboardCustomizeHeaderButton,
+                Localization.CurrentLanguage == "en" ? "Customize dashboard" : "Dashboard anpassen");
+            DashboardCustomizeHeaderButton.Width = double.NaN;
+            DashboardCustomizeHeaderButton.Padding = new Thickness(12, 7, 12, 7);
 
-            foreach (var bar in new[] { AppsActionBar, SystemActionBar, StorageActionBar, UninstallActionBar })
+            // Die Dashboard-Anpassung gehört direkt in die Titelzeile. Eine
+            // eigene zweite Zeile mit nur einem Zahnrad wirkte wie ein
+            // losgelöstes Bedienelement.
+            Grid.SetRow(DashboardCustomizeHeaderButton, 0);
+            Grid.SetColumn(DashboardCustomizeHeaderButton, 1);
+            Grid.SetColumnSpan(DashboardCustomizeHeaderButton, 1);
+            DashboardCustomizeHeaderButton.HorizontalAlignment = HorizontalAlignment.Right;
+
+            foreach (FrameworkElement bar in new FrameworkElement[] { AppsActionBar, SystemActionBar, StorageActionBar, UninstallActionBar })
             {
                 Grid.SetRow(bar, narrow ? 1 : 0);
                 Grid.SetColumn(bar, narrow ? 0 : 1);
@@ -1560,6 +1800,13 @@ namespace WinVora
             bool iconOnly = windowSize.Width < 1180;
             SidebarColumn.Width = new GridLength(iconOnly ? 88 : 280);
             SidebarCard.Padding = new Thickness(iconOnly ? 10 : 20);
+            // Im schmalen Symbolmodus würde die überlagernde WinUI-Scrollbar
+            // direkt über den Navigationsicons liegen. Scrollen per Mausrad,
+            // Touch und Tastatur bleibt auch ohne sichtbare Leiste möglich.
+            SidebarNavigationScrollViewer.VerticalScrollBarVisibility = iconOnly
+                ? ScrollBarVisibility.Hidden
+                : ScrollBarVisibility.Auto;
+            DispatcherQueue.TryEnqueue(UpdateSidebarScrollHints);
             foreach (var label in new[]
             {
                 LblNavDashboard, LblNavSystem, LblNavUpdates, LblNavFiles, LblNavUninstall,
@@ -1653,6 +1900,34 @@ namespace WinVora
             ToolTipService.SetToolTip(NavChangesButton, iconOnly ? LblNavChanges.Text : null);
             ToolTipService.SetToolTip(NavAutostartButton, iconOnly ? LblNavAutostart.Text : null);
             ToolTipService.SetToolTip(NavHistoryButton, iconOnly ? LblNavHistory.Text : null);
+            ApplyDashboardCustomizationLayout();
+        }
+
+        private void SetupCompactTooltips()
+        {
+            bool en = Localization.CurrentLanguage == "en";
+            ToolTipService.SetToolTip(RefreshButton, en ? "Refresh updates" : "Updates aktualisieren");
+            ToolTipService.SetToolTip(StorageRefreshButton, en ? "Analyze storage again" : "Speicher erneut analysieren");
+            ToolTipService.SetToolTip(UninstallRefreshButton, en ? "Refresh program list" : "Programmliste aktualisieren");
+            ToolTipService.SetToolTip(RefreshSystemInfoButton, en ? "Refresh system information" : "Systeminformationen aktualisieren");
+            ToolTipService.SetToolTip(WingetClearSearchButton, en ? "Clear update search" : "Update-Suche leeren");
+            ToolTipService.SetToolTip(UninstallClearSearchButton, en ? "Clear program search" : "Programmsuche leeren");
+        }
+
+        private void SidebarNavigationScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+            => UpdateSidebarScrollHints();
+
+        private void UpdateSidebarScrollHints()
+        {
+            bool compact = RootGrid.ActualWidth < 1180;
+            bool scrollable = SidebarNavigationScrollViewer.ScrollableHeight > 1;
+            SidebarScrollUpHint.Visibility = compact && scrollable && SidebarNavigationScrollViewer.VerticalOffset > 1
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            SidebarScrollDownHint.Visibility = compact && scrollable &&
+                                               SidebarNavigationScrollViewer.VerticalOffset < SidebarNavigationScrollViewer.ScrollableHeight - 1
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private void SetGlobalStatus(string? message)

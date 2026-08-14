@@ -46,7 +46,7 @@
             <SolidColorBrush x:Key="AppWarningBrush" Color="#FFC14D"/>
             <SolidColorBrush x:Key="AppNeutralStatusBrush" Color="#A0A0A0"/>
             <SolidColorBrush x:Key="AppErrorBrush" Color="#FF6B6B"/>
-            <SolidColorBrush x:Key="AppCardSurfaceBrush" Color="#1C1C1C"/>
+            <SolidColorBrush x:Key="AppCardSurfaceBrush" Color="#1C1B20"/>
             <SolidColorBrush x:Key="AppDangerSurfaceBrush" Color="#3A2328"/>
             <SolidColorBrush x:Key="AppSelectionEmptyBrush" Color="#454545"/>
         </Grid.Resources>
@@ -78,9 +78,11 @@
                 </Grid.RowDefinitions>
 
                 <!-- Menü -->
-                <ScrollViewer Grid.Row="0"
+                <ScrollViewer x:Name="SidebarNavigationScrollViewer"
+                              Grid.Row="0"
                               VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
+                              HorizontalScrollBarVisibility="Disabled"
+                              ViewChanged="SidebarNavigationScrollViewer_ViewChanged">
                     <StackPanel>
                         <Button x:Name="NavOverviewButton" Click="Overview_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,0,0,12"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE80F;"/><TextBlock x:Name="LblNavDashboard" Text="Dashboard"/></StackPanel></Button>
                         <Button x:Name="NavSystemButton" Click="System_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,0,0,12"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE950;"/><TextBlock x:Name="LblNavSystem" Text="Systeminfo"/></StackPanel></Button>
@@ -90,6 +92,29 @@
                         <Button x:Name="NavChangesButton" Click="Changes_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,12,0,0"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9D2;"/><TextBlock x:Name="LblNavChanges" Text="Veränderungen"/></StackPanel></Button>
                     </StackPanel>
                 </ScrollViewer>
+
+                <Border x:Name="SidebarScrollUpHint"
+                        Grid.Row="0"
+                        Width="28" Height="20"
+                        CornerRadius="10"
+                        VerticalAlignment="Top"
+                        HorizontalAlignment="Center"
+                        Background="{StaticResource AppCardSurfaceBrush}"
+                        Visibility="Collapsed"
+                        IsHitTestVisible="False">
+                    <FontIcon Glyph="&#xE70E;" FontSize="11"/>
+                </Border>
+                <Border x:Name="SidebarScrollDownHint"
+                        Grid.Row="0"
+                        Width="28" Height="20"
+                        CornerRadius="10"
+                        VerticalAlignment="Bottom"
+                        HorizontalAlignment="Center"
+                        Background="{StaticResource AppCardSurfaceBrush}"
+                        Visibility="Collapsed"
+                        IsHitTestVisible="False">
+                    <FontIcon Glyph="&#xE70D;" FontSize="11"/>
+                </Border>
 
 
                 <!-- Einstellungen + Version / Changelog -->
@@ -257,7 +282,7 @@
                      Akzentfarbe zurück. Diese Ressourcen gelten auch für
                      dynamisch erzeugte Such- und Eingabefelder. -->
                 <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
-                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#8B7CF6"/>
                 <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
                 <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="Transparent"/>
                 <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#6C5CE7"/>
@@ -296,8 +321,7 @@
 
                             <TextBlock x:Name="PageTitle"
                    Text="Dashboard"
-                   FontSize="34"
-                   FontWeight="Bold"
+                   Style="{StaticResource WinVoraPageTitleStyle}"
                    Foreground="{StaticResource AppForegroundBrush}"/>
 
                             <ProgressRing x:Name="UpdatesLoadingRing"
@@ -311,6 +335,16 @@
                         <TextBlock x:Name="PageSubtitle"
                Foreground="{StaticResource AppFaintForegroundBrush}"/>
                     </StackPanel>
+
+                    <Button x:Name="DashboardCustomizeHeaderButton"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Content="Dashboard anpassen"
+                            Height="40"
+                            Padding="12,7"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed"
+                            Click="DashboardCustomizeHeaderButton_Click"/>
 
                     <!-- Nur auf der Apps-Seite sichtbar -->
                     <StackPanel x:Name="AppsActionBar"
@@ -507,6 +541,17 @@
                                 </MenuFlyout>
                             </Button.Flyout>
                         </Button>
+
+                        <Button x:Name="UninstallSelectedButton"
+                                Content="Ausgewählte deinstallieren"
+                                FontSize="14"
+                                FontWeight="SemiBold"
+                                Height="42"
+                                Padding="14,10"
+                                IsEnabled="False"
+                                Background="{StaticResource AppDangerSurfaceBrush}"
+                                BorderThickness="0"
+                                Click="UninstallSelected_Click"/>
                     </StackPanel>
                 </Grid>
 
@@ -889,7 +934,7 @@
             HorizontalAlignment="Stretch"
               Visibility="Collapsed">
 
-                            <Expander x:Name="DeviceExpander" Header="Gerät" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="DeviceExpander" Header="Gerät" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardDevice" Header="Geräteinformationen" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="160" Padding="22">
                                         <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
@@ -920,7 +965,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="OsExpander" Header="Betriebssystem" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="OsExpander" Header="Betriebssystem" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardOs" Header="Windows" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="250" Padding="22">
                                         <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
@@ -960,7 +1005,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="CpuExpander" Header="Prozessor" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="CpuExpander" Header="Prozessor" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardCpu" Header="CPU" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="160" Padding="22">
                                         <Grid ColumnSpacing="44" RowSpacing="20" HorizontalAlignment="Stretch">
@@ -988,7 +1033,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="RamExpander" Header="Arbeitsspeicher" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="RamExpander" Header="Arbeitsspeicher" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardRam" Header="RAM" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="140" Padding="22">
                                         <Grid ColumnSpacing="44" RowSpacing="20" HorizontalAlignment="Stretch">
@@ -1013,7 +1058,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="BoardExpander" Header="Mainboard und BIOS" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="BoardExpander" Header="Mainboard und BIOS" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardBoard" Header="Hardware" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="130" Padding="22">
                                         <Grid ColumnSpacing="44" RowSpacing="20" HorizontalAlignment="Stretch">
@@ -1035,7 +1080,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="SecurityExpander" Header="Sicherheit" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="SecurityExpander" Header="Sicherheit" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardSecurity" Header="Sicherheitsstatus" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="220" Padding="22">
                                         <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
@@ -1069,7 +1114,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="GpuExpander" Header="Grafik" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="GpuExpander" Header="Grafik" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardGpu" Header="Grafikkarten" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="140" Padding="22">
                                         <StackPanel x:Name="SysGpuPanel" Spacing="12" HorizontalAlignment="Stretch"/>
@@ -1077,7 +1122,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="DrivesExpander" Header="Laufwerke" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="DrivesExpander" Header="Laufwerke" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardDrives" Header="Speicherlaufwerke" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="140" Padding="22">
                                         <StackPanel x:Name="SysDrivesPanel" Spacing="12" HorizontalAlignment="Stretch"/>
@@ -1085,7 +1130,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="NetworkExpander" Header="Netzwerk" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="NetworkExpander" Header="Netzwerk" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardNetwork" Header="Aktive Netzwerkadapter" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="140" Padding="22">
                                         <StackPanel x:Name="SysNetworkPanel" Spacing="12" HorizontalAlignment="Stretch"/>
@@ -1093,7 +1138,7 @@
                                 </Grid>
                             </Expander>
 
-                            <Expander x:Name="BatteryExpander" Header="Akku" IsExpanded="False" FontSize="20" FontWeight="SemiBold" MinHeight="64" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander x:Name="BatteryExpander" Header="Akku" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardBattery" Header="Energie" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="105" Padding="22">
                                         <Grid ColumnSpacing="44" HorizontalAlignment="Stretch">
@@ -1170,7 +1215,7 @@
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="Speicherfresser" FontSize="20" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Speicherfresser" Style="{StaticResource WinVoraSectionTitleStyle}"/>
                                     <TextBlock Text="Auffälliges Wachstum in Downloads, Desktop und Dokumenten ab 1 GB." FontSize="13" Foreground="{StaticResource AppMutedForegroundBrush}" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <Border Grid.Column="1" CornerRadius="12" Padding="12,7" Background="{StaticResource AppOverlay10}" VerticalAlignment="Center">

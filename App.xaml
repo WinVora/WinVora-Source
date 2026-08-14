@@ -20,6 +20,70 @@
             <SolidColorBrush x:Key="WinVoraSecondaryButtonBrush" Color="#302B50"/>
             <SolidColorBrush x:Key="WinVoraToggleOffBrush" Color="#383838"/>
             <SolidColorBrush x:Key="WinVoraTransparentBrush" Color="Transparent"/>
+            <FontFamily x:Key="WinVoraFontFamily">Segoe UI</FontFamily>
+            <x:Double x:Key="ScrollBarSize">16</x:Double>
+            <x:Double x:Key="ScrollBarVerticalThumbMinWidth">10</x:Double>
+            <SolidColorBrush x:Key="SystemControlFocusVisualPrimaryBrush" Color="#8B7CF6"/>
+            <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="Transparent"/>
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#8B7CF6"/>
+            <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#6C5CE7"/>
+
+            <!-- Eine gemeinsame typografische Basis für statische und dynamisch
+                 erzeugte Oberflächen. FontIcons behalten ihre Symbolschrift. -->
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+            </Style>
+            <Style TargetType="Button">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="MinHeight" Value="36"/>
+                <Setter Property="Padding" Value="12,7"/>
+            </Style>
+            <Style TargetType="TextBox">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="MinHeight" Value="40"/>
+            </Style>
+            <Style TargetType="PasswordBox">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="MinHeight" Value="40"/>
+            </Style>
+            <Style TargetType="ComboBox">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="MinHeight" Value="40"/>
+            </Style>
+            <Style TargetType="ToggleSwitch">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+            </Style>
+            <Style TargetType="CheckBox">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+            </Style>
+
+            <Style x:Key="WinVoraPageTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="FontSize" Value="34"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+            </Style>
+            <Style x:Key="WinVoraSectionTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="FontSize" Value="18"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
+            <Style x:Key="WinVoraCardTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
+            <Style x:Key="WinVoraBodyTextStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
+            <Style x:Key="WinVoraCaptionTextStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource WinVoraFontFamily}"/>
+                <Setter Property="FontSize" Value="12"/>
+            </Style>
 
             <!-- Deckende Auswahlflächen ohne die feine Systemkontur, die bei
                  Skalierung als helle Mischkante an den Rundungen sichtbar war. -->
@@ -32,9 +96,15 @@
             <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#383838"/>
             <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#424242"/>
             <SolidColorBrush x:Key="ToggleSwitchFillOffPressed" Color="#303030"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#6C5CE7"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#7D6FF0"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#5848CD"/>
             <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="Transparent"/>
             <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="Transparent"/>
             <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="Transparent"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="Transparent"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="Transparent"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="Transparent"/>
             <x:Double x:Key="ToggleSwitchOuterBorderStrokeThickness">0</x:Double>
             <SolidColorBrush x:Key="AccentButtonBackground" Color="#6C5CE7"/>
             <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#7D6FF0"/>
@@ -43,6 +113,7 @@
             <SolidColorBrush x:Key="AccentButtonForeground" Color="White"/>
             <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="White"/>
             <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="White"/>
+            <SolidColorBrush x:Key="AccentButtonForegroundDisabled" Color="#B0FFFFFF"/>
 
             <Style x:Key="WinVoraButtonStyle"
                    TargetType="Button"

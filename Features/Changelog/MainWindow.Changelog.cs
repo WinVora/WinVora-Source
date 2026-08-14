@@ -34,7 +34,7 @@ namespace WinVora
                 Background = (SolidColorBrush)RootGrid.Resources["AppRootBackgroundBrush"],
                 UseLayoutRounding = true
             };
-            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32) });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             root.RequestedTheme = _isDarkTheme ? ElementTheme.Dark : ElementTheme.Light;
 
@@ -65,6 +65,28 @@ namespace WinVora
             Grid.SetColumn(changelogHeading, 1);
             changelogHeader.Children.Add(changelogHeading);
             panel.Children.Add(changelogHeader);
+
+            panel.Children.Add(MakeChangelogCard(
+    Localization.CurrentLanguage == "en" ? "Version 0.8.5 Beta (preview)" : "Version 0.8.5 Beta (Vorschau)",
+    "• Neue Funktionen: In den Einstellungen kann zwischen stabilen und Beta-Updates gewählt werden\n" +
+    "• Neue Funktionen: Dashboard-Karten lassen sich per Drag-and-drop anordnen\n" +
+    "• Neue Funktionen: Speicheranalyse sortiert nach Größe, Name oder Risiko und erklärt die Einstufung\n" +
+    "• Verbesserungen: Einstellungen lassen sich einzeln pro Bereich zurücksetzen und öffnen danach automatisch neu\n" +
+    "• Verbesserungen: Deinstallationen zeigen eine sichtbare Prüfung mit Countdown und erneutem Prüfen\n" +
+    "• Verbesserungen: Der Verlauf merkt sich geöffnete Details und bleibt dadurch übersichtlich\n" +
+    "• Oberfläche: Skeleton-Lader, Tooltips, Sidebar-Scrollhinweise und kleine Fenster wurden verfeinert\n" +
+    "• Barrierefreiheit: Reduzierte Bewegung stoppt Skeleton-Animationen; Tastatur- und Fokuszustände wurden vereinheitlicht\n" +
+    "• Bugfixes: Titelleisten, Hellmodus-Kontraste, Systemwerte und Programmlisten wurden stabilisiert",
+    "• New features: Settings can switch between stable and beta update channels\n" +
+    "• New features: Dashboard cards can be reordered using drag and drop\n" +
+    "• New features: Storage analysis sorts by size, name or risk and explains each rating\n" +
+    "• Improvements: Settings can be reset per section and reopen automatically afterwards\n" +
+    "• Improvements: Uninstalls show a visible verification countdown with a retry action\n" +
+    "• Improvements: History remembers expanded details while keeping the list compact\n" +
+    "• Interface: Skeleton loaders, tooltips, sidebar scroll hints and small-window layouts were refined\n" +
+    "• Accessibility: Reduced motion disables skeleton animation; keyboard and focus states are consistent\n" +
+    "• Bug fixes: Title bars, light-mode contrast, system values and program lists were stabilized"
+));
 
             panel.Children.Add(MakeChangelogCard(
     "Version 0.8.4.1",
@@ -666,8 +688,8 @@ namespace WinVora
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Content = panel
             };
-            scrollViewer.Resources["ScrollBarSize"] = 20d;
-            scrollViewer.Resources["ScrollBarVerticalThumbMinWidth"] = 12d;
+            scrollViewer.Resources["ScrollBarSize"] = 16d;
+            scrollViewer.Resources["ScrollBarVerticalThumbMinWidth"] = 10d;
 
             var contentHost = new Grid { Padding = new Thickness(28, 18, 18, 28) };
             contentHost.Children.Add(scrollViewer);

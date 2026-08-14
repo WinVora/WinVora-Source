@@ -56,9 +56,14 @@ namespace WinVora
                 window.SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
             }
 
+            ApplySecondaryWindowTitleBarColors(window, _isDarkTheme);
+        }
+
+        private static void ApplySecondaryWindowTitleBarColors(Window window, bool dark)
+        {
             var titleBar = window.AppWindow.TitleBar;
-            var fg = _isDarkTheme ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
-            byte rgb = _isDarkTheme ? (byte)0xFF : (byte)0x00;
+            var fg = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+            byte rgb = dark ? (byte)0xFF : (byte)0x00;
 
             titleBar.BackgroundColor = Microsoft.UI.Colors.Transparent;
             titleBar.InactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
@@ -72,14 +77,9 @@ namespace WinVora
             titleBar.ButtonPressedForegroundColor = fg;
             titleBar.IconShowOptions = Microsoft.UI.Windowing.IconShowOptions.HideIconAndSystemMenu;
 
-            // BUGFIX: Die Drag-Region deckte vorher die komplette Fensterbreite
-            // ab - inklusive des Bereichs, in dem Windows die Schließen-/
-            // Minimieren-/Maximieren-Buttons zeichnet (rechts, Breite steht in
-            // "RightInset"). Das verdrängte/verdeckte die Buttons teilweise.
-            // Jetzt bleibt dieser Bereich bewusst ausgespart.
-            var rightInset = titleBar.RightInset > 0 ? titleBar.RightInset : 140;
-            var dragWidth = Math.Max(width - rightInset, 0);
-            titleBar.SetDragRectangles(new[] { new Windows.Graphics.RectInt32(0, 0, dragWidth, 40) });
+            // Keine eigene vollbreite Drag-Fläche setzen. WinUI reserviert den
+            // rechten Caption-Bereich selbst zuverlässig für Minimieren,
+            // Maximieren und Schließen – auch bei Skalierung und Themewechsel.
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -105,7 +105,7 @@ namespace WinVora
                 Background = (SolidColorBrush)RootGrid.Resources["AppRootBackgroundBrush"],
                 UseLayoutRounding = true
             };
-            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32) });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             root.RequestedTheme = _isDarkTheme ? ElementTheme.Dark : ElementTheme.Light;
 
@@ -154,7 +154,8 @@ namespace WinVora
                 BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 BorderThickness = new Thickness(0)
             };
-            settingsSearchBox.Resources["TextControlBorderBrushFocused"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            settingsSearchBox.Resources["TextControlBorderBrushFocused"] =
+                (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"];
             settingsSearchBox.Resources["TextControlBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             settingsSearchBox.Resources["TextControlBorderBrush"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(settingsSearchBox,
@@ -167,28 +168,116 @@ namespace WinVora
                 Margin = new Thickness(0, 8, 0, 8),
                 Visibility = Visibility.Collapsed
             };
+            var clearSettingsSearch = new Button
+            {
+                Content = new FontIcon { Glyph = "\uE711", FontSize = 12 },
+                Width = 34,
+                Height = 34,
+                Padding = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 5, 0),
+                Visibility = Visibility.Collapsed
+            };
+            ToolTipService.SetToolTip(clearSettingsSearch,
+                Localization.CurrentLanguage == "en" ? "Clear search" : "Suche leeren");
+            var highlightedText = new Dictionary<TextBlock, (Brush? Foreground, Windows.UI.Text.FontWeight Weight)>();
+            void HighlightSearchMatches(DependencyObject rootElement, string query)
+            {
+                int childCount = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(rootElement);
+                for (int index = 0; index < childCount; index++)
+                {
+                    var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(rootElement, index);
+                    if (child is TextBlock textBlock)
+                    {
+                        if (!highlightedText.ContainsKey(textBlock))
+                            highlightedText[textBlock] = (textBlock.Foreground, textBlock.FontWeight);
+                        bool match = !string.IsNullOrWhiteSpace(query) &&
+                            textBlock.Text.Contains(query, StringComparison.CurrentCultureIgnoreCase);
+                        textBlock.Foreground = match
+                            ? (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                            : highlightedText[textBlock].Foreground;
+                        textBlock.FontWeight = match
+                            ? Microsoft.UI.Text.FontWeights.SemiBold
+                            : highlightedText[textBlock].Weight;
+                    }
+                    HighlightSearchMatches(child, query);
+                }
+            }
+            clearSettingsSearch.Click += (_, __) =>
+            {
+                settingsSearchBox.Text = "";
+                settingsSearchBox.Focus(FocusState.Programmatic);
+            };
             settingsSearchBox.TextChanged += (_, __) =>
             {
                 string query = settingsSearchBox.Text.Trim();
+                clearSettingsSearch.Visibility = string.IsNullOrWhiteSpace(query)
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
                 int visibleCards = 0;
                 foreach (var settingsCard in panel.Children.OfType<Border>().Where(border => border.Tag is string))
                 {
                     string searchable = UiTextSearch.Collect(settingsCard);
-                    settingsCard.Visibility = string.IsNullOrWhiteSpace(query) ||
-                        searchable.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+                    bool matches = string.IsNullOrWhiteSpace(query) ||
+                        searchable.Contains(query, StringComparison.CurrentCultureIgnoreCase);
+                    settingsCard.Visibility = matches
                             ? Visibility.Visible
                             : Visibility.Collapsed;
+                    settingsCard.BorderThickness = !string.IsNullOrWhiteSpace(query) && matches
+                        ? new Thickness(1)
+                        : new Thickness(0);
+                    settingsCard.BorderBrush = !string.IsNullOrWhiteSpace(query) && matches
+                        ? (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                        : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                     if (settingsCard.Visibility == Visibility.Visible) visibleCards++;
                 }
                 noSettingsResults.Visibility = visibleCards == 0 ? Visibility.Visible : Visibility.Collapsed;
+                HighlightSearchMatches(panel, query);
             };
-            panel.Children.Add(settingsSearchBox);
+            var settingsSearchHost = new Grid();
+            settingsSearchHost.Children.Add(settingsSearchBox);
+            settingsSearchHost.Children.Add(clearSettingsSearch);
+            panel.Children.Add(settingsSearchHost);
             panel.Children.Add(noSettingsResults);
 
             // ---- Auto-Update (ganz oben, damit ein verfügbares Update sofort
             //      ins Auge fällt statt unten in der Wartung versteckt zu sein) ----
             var updateCard = MakeSettingsCard(Localization.T("Settings.UpdateSection"), out var updateContent);
             bool updateUiEnglish = Localization.CurrentLanguage == "en";
+
+            var updateChannelCombo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+            updateChannelCombo.Items.Add(new ComboBoxItem
+            {
+                Content = updateUiEnglish ? "Stable releases" : "Stabile Versionen",
+                Tag = "Stable"
+            });
+            updateChannelCombo.Items.Add(new ComboBoxItem
+            {
+                Content = updateUiEnglish ? "Beta releases" : "Beta-Versionen",
+                Tag = "Beta"
+            });
+            updateChannelCombo.SelectedIndex = _settings.UpdateChannel == "Beta" ? 1 : 0;
+            PreventClosedComboBoxWheelChange(updateChannelCombo);
+            updateChannelCombo.SelectionChanged += (_, __) =>
+            {
+                if (updateChannelCombo.SelectedItem is not ComboBoxItem item) return;
+                _settings.UpdateChannel = item.Tag?.ToString() == "Beta" ? "Beta" : "Stable";
+                _settings.Save();
+                _pendingUpdateInfo = null;
+            };
+            updateContent.Children.Add(MakeLabeledControl(
+                updateUiEnglish ? "Update channel" : "Updatekanal",
+                updateChannelCombo));
+            updateContent.Children.Add(new TextBlock
+            {
+                Text = updateUiEnglish
+                    ? "Beta releases may contain unfinished features. You can switch back to stable at any time."
+                    : "Beta-Versionen können unfertige Funktionen enthalten. Du kannst jederzeit wieder auf Stabil wechseln.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
 
             var updateStatusText = new TextBlock
             {
@@ -233,7 +322,9 @@ namespace WinVora
                     updateStatusText.Text = updateUiEnglish ? "Checking for updates..." : "Suche nach Updates...";
                     try
                     {
-                        update = await UpdateService.CheckForUpdateAsync(CurrentVersion);
+                        update = await UpdateService.CheckForUpdateAsync(
+                            CurrentVersion,
+                            _settings.UpdateChannel == "Beta");
                     }
                     catch (Exception ex)
                     {
@@ -649,7 +740,13 @@ namespace WinVora
             var maintenanceCard = MakeSettingsCard(Localization.T("Settings.Maintenance"), out var maintenanceContent);
             maintenanceContent.Spacing = 14;
 
-            var logButtonsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            var logButtonsPanel = new StackPanel { Spacing = 8 };
+            maintenanceContent.Children.Add(new TextBlock
+            {
+                Text = en ? "Logs" : "Protokolle",
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
 
             var openLogButton = new Button { Content = Localization.T("Settings.OpenLog") };
             openLogButton.Click += (_, __) =>
@@ -678,7 +775,13 @@ namespace WinVora
 
             maintenanceContent.Children.Add(logButtonsPanel);
 
-            var settingsTransferPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            var settingsTransferPanel = new StackPanel { Spacing = 8 };
+            maintenanceContent.Children.Add(new TextBlock
+            {
+                Text = en ? "Backup and transfer" : "Sichern und übertragen",
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
             var exportSettingsButton = new Button { Content = en ? "Export settings" : "Einstellungen exportieren" };
             exportSettingsButton.Click += async (_, __) => await ExportSettingsAsync(settingsWindow);
             var importSettingsButton = new Button { Content = en ? "Import settings" : "Einstellungen importieren" };
@@ -719,13 +822,22 @@ namespace WinVora
                 Content = en ? "Create anonymized support report" : "Anonymisierten Supportbericht erstellen",
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
+            maintenanceContent.Children.Add(new TextBlock
+            {
+                Text = en ? "Support" : "Support",
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
+            });
             diagnosticButton.Click += async (_, __) => await ExportDiagnosticReportAsync(settingsWindow);
             maintenanceContent.Children.Add(diagnosticButton);
 
             var resetButton = new Button
             {
                 Content = Localization.T("Settings.ResetSettings"),
-                HorizontalAlignment = HorizontalAlignment.Stretch
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Background = (SolidColorBrush)RootGrid.Resources["AppDangerSurfaceBrush"],
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppErrorBrush"],
+                BorderThickness = new Thickness(0)
             };
             resetButton.Click += async (_, __) =>
             {
@@ -743,8 +855,79 @@ namespace WinVora
                 StartLiveUsageTimer();
 
                 _settingsWindow?.Close();
+                await Task.Delay(120);
+                DispatcherQueue.TryEnqueue(() => SettingsButton_Click(this, new RoutedEventArgs()));
             };
             maintenanceContent.Children.Add(resetButton);
+
+            void AddSectionReset(StackPanel target, string sectionName, Action reset)
+            {
+                var sectionReset = new Button
+                {
+                    Content = en ? "Restore section defaults" : "Bereich zurücksetzen",
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                sectionReset.Click += async (_, __) =>
+                {
+                    var confirmation = CommonUiBuilder.CreateConfirmation(
+                        root.XamlRoot,
+                        en ? $"Reset {sectionName}?" : $"{sectionName} zurücksetzen?",
+                        en ? "Only the settings in this section will be restored." : "Nur die Einstellungen dieses Bereichs werden auf Standard gesetzt.",
+                        en ? "Reset" : "Zurücksetzen",
+                        en ? "Cancel" : "Abbrechen");
+                    if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
+                    reset();
+                    _settings.Validate();
+                    _settings.Save();
+                    ApplyConfiguredColorScheme(false);
+                    StartLiveUsageTimer();
+                    settingsWindow.Close();
+                    ShowInfo(en ? $"{sectionName} was reset." : $"{sectionName} wurde zurückgesetzt.", InfoBarSeverity.Success);
+                    await Task.Delay(120);
+                    DispatcherQueue.TryEnqueue(() => SettingsButton_Click(this, new RoutedEventArgs()));
+                };
+                target.Children.Add(sectionReset);
+            }
+
+            AddSectionReset(updateContent, en ? "Updates" : "Updates", () =>
+            {
+                _settings.NotifyUpdateCompletion = true;
+                _settings.NotifyRestartRequired = true;
+                _settings.UpdateChannel = "Stable";
+                _settings.IgnoredUpdateIds.Clear();
+                _settings.ElevatedUpdateIds.Clear();
+                _settings.ShutdownUpdateIds.Clear();
+            });
+            AddSectionReset(cardContent, en ? "Appearance" : "Darstellung", () =>
+            {
+                _settings.ColorScheme = "System";
+                _settings.UseMica = true;
+                _settings.GlassIntensity = 18;
+                _settings.AnimationMode = "Full";
+                _settings.ReducedMotion = false;
+            });
+            AddSectionReset(behaviorContent, en ? "Behavior" : "Verhalten", () =>
+            {
+                ApplyAutoStart(false);
+                _settings.AutoStartWithWindows = false;
+                _settings.StartupPage = "Übersicht";
+                _settings.LiveUpdateIntervalSeconds = 2;
+            });
+            AddSectionReset(securityContent, en ? "Security" : "Sicherheit", () =>
+            {
+                _settings.ShowDeleteConfirmations = true;
+                _settings.ConfirmDownloadsCleanup = true;
+                _settings.ConfirmRecycleBinCleanup = true;
+                _settings.ConfirmBrowserCleanup = true;
+                _settings.OfferUninstallLeftoverScan = true;
+            });
+            AddSectionReset(maintenanceContent, en ? "Maintenance" : "Wartung", () =>
+            {
+                _settings.SettingsWindowWidth = 560;
+                _settings.SettingsWindowHeight = 680;
+                _settings.ChangelogWindowWidth = 560;
+                _settings.ChangelogWindowHeight = 720;
+            });
 
             panel.Children.Add(maintenanceCard);
 
@@ -756,8 +939,8 @@ namespace WinVora
                 Padding = new Thickness(0, 0, 22, 0),
                 Content = panel
             };
-            scrollViewer.Resources["ScrollBarSize"] = 20d;
-            scrollViewer.Resources["ScrollBarVerticalThumbMinWidth"] = 12d;
+            scrollViewer.Resources["ScrollBarSize"] = 16d;
+            scrollViewer.Resources["ScrollBarVerticalThumbMinWidth"] = 10d;
 
             var categoryNavigation = new StackPanel
             {
@@ -766,11 +949,26 @@ namespace WinVora
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 2, 18, 0)
             };
+            var categoryButtons = new List<Button>();
+            void SetActiveCategory(Button activeButton)
+            {
+                foreach (var button in categoryButtons)
+                {
+                    bool active = ReferenceEquals(button, activeButton);
+                    button.Background = active
+                        ? (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"]
+                        : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                    button.BorderThickness = new Thickness(active ? 3 : 0, 0, 0, 0);
+                    button.BorderBrush = active
+                        ? (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                        : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                }
+            }
             foreach (var category in new[]
             {
+                (Label: en ? "Updates" : "Updates", Target: updateCard, Glyph: "\uE895"),
                 (Label: en ? "Appearance" : "Darstellung", Target: card, Glyph: "\uE790"),
                 (Label: en ? "Behavior" : "Verhalten", Target: behaviorCard, Glyph: "\uE713"),
-                (Label: en ? "Updates" : "Updates", Target: updateCard, Glyph: "\uE895"),
                 (Label: en ? "Security" : "Sicherheit", Target: securityCard, Glyph: "\uEA18"),
                 (Label: en ? "Maintenance" : "Wartung", Target: maintenanceCard, Glyph: "\uE74D")
             })
@@ -792,13 +990,20 @@ namespace WinVora
                         }
                     }
                 };
-                navigationButton.Click += (_, __) => category.Target.StartBringIntoView(new BringIntoViewOptions
+                categoryButtons.Add(navigationButton);
+                navigationButton.Click += (_, __) =>
                 {
-                    AnimationDesired = _settings.AnimationMode == "Full",
-                    VerticalAlignmentRatio = 0
-                });
+                    SetActiveCategory(navigationButton);
+                    category.Target.StartBringIntoView(new BringIntoViewOptions
+                    {
+                        AnimationDesired = _settings.AnimationMode == "Full",
+                        VerticalAlignmentRatio = 0
+                    });
+                };
                 categoryNavigation.Children.Add(navigationButton);
             }
+            if (categoryButtons.Count > 0)
+                SetActiveCategory(categoryButtons[0]);
 
             var navigationCard = new Border
             {
@@ -808,6 +1013,20 @@ namespace WinVora
                 Background = (SolidColorBrush)RootGrid.Resources["AppOverlay10"],
                 Child = categoryNavigation
             };
+            categoryNavigation.Children.Add(new Border
+            {
+                Height = 1,
+                Margin = new Thickness(4, 8, 4, 4),
+                Background = (SolidColorBrush)RootGrid.Resources["AppOverlay22"]
+            });
+            categoryNavigation.Children.Add(new TextBlock
+            {
+                Text = en ? "Changes are saved automatically." : "Änderungen werden automatisch gespeichert.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(8, 4, 8, 4),
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppFaintForegroundBrush"]
+            });
             categoryNavigation.Margin = new Thickness(0);
 
             var contentHost = new Grid { Padding = new Thickness(22, 18, 18, 28), ColumnSpacing = 0 };
@@ -829,8 +1048,9 @@ namespace WinVora
             root.Children.Add(titleLabel);
 
             settingsWindow.Content = root;
-            int settingsWidth = Math.Max(_settings.SettingsWindowWidth, 760);
-            int settingsHeight = Math.Max(_settings.SettingsWindowHeight, 720);
+            double rasterScale = RootGrid.XamlRoot?.RasterizationScale ?? 1d;
+            int settingsWidth = Math.Max(_settings.SettingsWindowWidth, (int)Math.Ceiling(760 * rasterScale));
+            int settingsHeight = Math.Max(_settings.SettingsWindowHeight, (int)Math.Ceiling(720 * rasterScale));
             StyleDarkWindow(settingsWindow, settingsWidth, settingsHeight);
             WindowActivationService.PlaceWindow(this, settingsWindow,
                 _settings.SettingsWindowX, _settings.SettingsWindowY,

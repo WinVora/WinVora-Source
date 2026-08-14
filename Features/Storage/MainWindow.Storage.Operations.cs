@@ -172,6 +172,17 @@ namespace WinVora
                 _settings.Save();
 
                 long totalFreedBytes = selected.Sum(c => c.SizeBytes);
+                try
+                {
+                    var afterCleanup = await StorageService.GetCategoriesWithSizesAsync();
+                    var afterByKey = afterCleanup.ToDictionary(category => category.Key, StringComparer.OrdinalIgnoreCase);
+                    totalFreedBytes = selected.Sum(category =>
+                        Math.Max(0, category.SizeBytes - (afterByKey.TryGetValue(category.Key, out var after) ? after.SizeBytes : 0)));
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Tatsächlich freigegebenen Speicher nachmessen", ex);
+                }
                 var freedDisplay = StorageService.FormatBytes(totalFreedBytes);
                 LogActivity("\uE74D",
                     $"{selected.Count} Bereich(e) bereinigt ({freedDisplay})",

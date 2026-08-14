@@ -17,6 +17,9 @@ namespace WinVora
         public string? NewVersion { get; set; }
         public string? Result { get; set; }
         public int? ExitCode { get; set; }
+        public string? SessionId { get; set; }
+        public string? DetailsDe { get; set; }
+        public string? DetailsEn { get; set; }
     }
 
     public class DeferredUpdateEntry
@@ -48,6 +51,10 @@ namespace WinVora
         // Einstellungsdateien als kompatibler Rückfallwert erhalten.
         public string ColorScheme { get; set; } = "System";
 
+        // "Stable" installiert nur reguläre Releases. "Beta" darf zusätzlich
+        // als Vorabversion markierte GitHub-Releases anbieten.
+        public string UpdateChannel { get; set; } = "Stable";
+
         // Ob WinVora automatisch mit Windows starten soll.
         public bool AutoStartWithWindows { get; set; } = false;
 
@@ -63,6 +70,7 @@ namespace WinVora
         // Zeitpunkt (UTC) der letzten erfolgreichen Speicher-Bereinigung. Null,
         // falls noch nie bereinigt wurde.
         public DateTime? LastCleanupUtc { get; set; }
+        public DateTime? LastSeenPcChangesUtc { get; set; }
 
         // Sprache der Oberfläche: "de" oder "en".
         public string Language { get; set; } = "de";
@@ -75,6 +83,14 @@ namespace WinVora
         public System.Collections.Generic.List<ActivityLogEntry> ActivityLog { get; set; } = new();
         public System.Collections.Generic.List<DeferredUpdateEntry> DeferredUpdates { get; set; } = new();
         public System.Collections.Generic.List<string> IgnoredUpdateIds { get; set; } = new();
+        public System.Collections.Generic.List<string> ElevatedUpdateIds { get; set; } = new();
+        public System.Collections.Generic.List<string> ShutdownUpdateIds { get; set; } = new();
+        public System.Collections.Generic.List<string> HiddenDashboardCards { get; set; } = new();
+        public System.Collections.Generic.List<string> DashboardCardOrder { get; set; } = new()
+        {
+            "Updates", "Security", "Storage", "Cpu", "Ram", "Gpu"
+        };
+        public System.Collections.Generic.List<string> RecentCommands { get; set; } = new();
 
         public bool NotifyUpdateCompletion { get; set; } = true;
         public bool NotifyRestartRequired { get; set; } = true;
@@ -138,6 +154,7 @@ namespace WinVora
             if (Language is not ("de" or "en")) Language = "de";
             if (ColorScheme is not ("System" or "Dark" or "Light"))
                 ColorScheme = DarkMode ? "Dark" : "Light";
+            if (UpdateChannel is not ("Stable" or "Beta")) UpdateChannel = "Stable";
             if (AnimationMode is not ("Full" or "Reduced" or "Off"))
                 AnimationMode = ReducedMotion ? "Reduced" : "Full";
             ReducedMotion = AnimationMode != "Full";
@@ -149,13 +166,25 @@ namespace WinVora
             ChangelogWindowWidth = Math.Clamp(ChangelogWindowWidth, 480, 1920);
             ChangelogWindowHeight = Math.Clamp(ChangelogWindowHeight, 520, 1440);
             ActivityLog ??= new();
+            HiddenDashboardCards ??= new();
+            DashboardCardOrder ??= new();
+            RecentCommands ??= new();
+            foreach (string key in new[] { "Updates", "Security", "Storage", "Cpu", "Ram", "Gpu" })
+                if (!DashboardCardOrder.Contains(key, StringComparer.OrdinalIgnoreCase))
+                    DashboardCardOrder.Add(key);
             DeferredUpdates ??= new();
             IgnoredUpdateIds ??= new();
+            ElevatedUpdateIds ??= new();
+            ShutdownUpdateIds ??= new();
             DeferredUpdates.RemoveAll(entry => string.IsNullOrWhiteSpace(entry.PackageId));
             IgnoredUpdateIds = IgnoredUpdateIds
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            ElevatedUpdateIds = ElevatedUpdateIds.Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            ShutdownUpdateIds = ShutdownUpdateIds.Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         public static string GetSettingsFilePath() => SettingsFilePath;

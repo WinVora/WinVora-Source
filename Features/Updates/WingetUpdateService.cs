@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -26,6 +27,7 @@ namespace WinVora
         {
             try
             {
+                DateTime startedUtc = DateTime.UtcNow;
                 _downloadWatch.Restart();
                 var startInfo = CreateStartInfo(packageId);
                 using var process = new Process { StartInfo = startInfo };
@@ -54,10 +56,15 @@ namespace WinVora
                 await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(cancellationToken));
 
                 string combinedOutput = $"{standardOutput}\n{errorOutput}";
+                var diagnostic = WingetFailureDiagnostics.Analyze(packageId, startedUtc);
+                if (!string.IsNullOrWhiteSpace(diagnostic.Details))
+                    combinedOutput += "\n" + diagnostic.Details;
                 bool restartRequired = WingetErrorTranslator.ContainsRestartRequired(combinedOutput) ||
                                        process.ExitCode is 3010 or 1641;
                 WingetUpdateStatus status = cancellationToken.IsCancellationRequested
                     ? WingetUpdateStatus.Cancelled
+                    : diagnostic.HiddenExitCode.HasValue
+                        ? WingetUpdateStatus.Failed
                     : restartRequired
                         ? WingetUpdateStatus.RestartRequired
                         : process.ExitCode == 0
@@ -75,7 +82,10 @@ namespace WinVora
                     status,
                     process.ExitCode,
                     WingetErrorTranslator.GetFriendlyMessage(process.ExitCode, combinedOutput, status),
-                    restartRequired);
+                    restartRequired,
+                    WingetErrorTranslator.RequiresElevation(process.ExitCode, combinedOutput) || diagnostic.RequiresElevation,
+                    diagnostic.RequiresApplicationShutdown,
+                    diagnostic.Details);
             }
             catch (OperationCanceledException)
             {
@@ -99,6 +109,94 @@ namespace WinVora
             }
         }
 
+        public async Task<WingetUpdateResult> UpgradeElevatedAsync(
+            string packageId,
+            IProgress<WingetUpdateProgress> progress,
+            CancellationToken cancellationToken,
+            bool forceApplicationShutdown)
+        {
+            try
+            {
+                progress.Report(new WingetUpdateProgress(
+                    WingetUpdatePhase.Installing,
+                    Localization.CurrentLanguage == "en"
+                        ? "Waiting for administrator approval"
+                        : "Warte auf Administratorbestätigung",
+                    null));
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "winget",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    CreateNoWindow = false,
+                    WindowStyle = ProcessWindowStyle.Normal
+                };
+                AddUpgradeArguments(startInfo, packageId, forceApplicationShutdown);
+
+                using var process = new Process { StartInfo = startInfo };
+                process.Start();
+                using var cancellationRegistration = cancellationToken.Register(() =>
+                {
+                    try
+                    {
+                        if (!process.HasExited)
+                            process.Kill(entireProcessTree: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Erhöhten winget-Prozess für {packageId} abbrechen", ex);
+                    }
+                });
+
+                progress.Report(new WingetUpdateProgress(
+                    WingetUpdatePhase.Installing,
+                    Localization.CurrentLanguage == "en"
+                        ? "Installer is running as administrator"
+                        : "Installer läuft als Administrator",
+                    null));
+                await process.WaitForExitAsync(cancellationToken);
+
+                WingetUpdateStatus status = process.ExitCode == 0
+                    ? WingetUpdateStatus.Successful
+                    : WingetUpdateStatus.Failed;
+                return new WingetUpdateResult(
+                    status,
+                    process.ExitCode,
+                    WingetErrorTranslator.GetFriendlyMessage(process.ExitCode, string.Empty, status),
+                    process.ExitCode is 3010 or 1641);
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                return new WingetUpdateResult(
+                    WingetUpdateStatus.Cancelled,
+                    ex.NativeErrorCode,
+                    Localization.CurrentLanguage == "en"
+                        ? "Administrator approval was cancelled."
+                        : "Die Administratorbestätigung wurde abgebrochen.",
+                    false);
+            }
+            catch (OperationCanceledException)
+            {
+                return new WingetUpdateResult(
+                    WingetUpdateStatus.Cancelled,
+                    -1,
+                    Localization.CurrentLanguage == "en"
+                        ? "Installer was cancelled."
+                        : "Installer wurde abgebrochen.",
+                    false);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"WingetUpdateService.UpgradeElevatedAsync({packageId})", ex);
+                return new WingetUpdateResult(
+                    WingetUpdateStatus.Failed,
+                    ex.HResult,
+                    ex.Message,
+                    false);
+            }
+        }
+
         private static ProcessStartInfo CreateStartInfo(string packageId)
         {
             var startInfo = new ProcessStartInfo
@@ -112,6 +210,12 @@ namespace WinVora
                 StandardErrorEncoding = Encoding.UTF8
             };
 
+            AddUpgradeArguments(startInfo, packageId, force: false);
+            return startInfo;
+        }
+
+        private static void AddUpgradeArguments(ProcessStartInfo startInfo, string packageId, bool force)
+        {
             startInfo.ArgumentList.Add("upgrade");
             startInfo.ArgumentList.Add("--id");
             startInfo.ArgumentList.Add(packageId);
@@ -119,7 +223,8 @@ namespace WinVora
             startInfo.ArgumentList.Add("--interactive");
             startInfo.ArgumentList.Add("--accept-package-agreements");
             startInfo.ArgumentList.Add("--accept-source-agreements");
-            return startInfo;
+            if (force)
+                startInfo.ArgumentList.Add("--force");
         }
 
         private async Task ReadOutputAsync(
@@ -152,13 +257,18 @@ namespace WinVora
             var withPercent = ProgressWithPercentRegex.Match(line);
             if (withPercent.Success)
             {
-                double percent = double.Parse(withPercent.Groups[1].Value, CultureInfo.InvariantCulture);
+                double percent = Math.Clamp(
+                    double.Parse(withPercent.Groups[1].Value, CultureInfo.InvariantCulture),
+                    0,
+                    100);
                 double downloaded = ParseSizeBytes(withPercent.Groups[2].Value);
                 double total = ParseSizeBytes(withPercent.Groups[3].Value);
                 double seconds = Math.Max(0.1, _downloadWatch.Elapsed.TotalSeconds);
                 double bytesPerSecond = downloaded / seconds;
-                string? speed = bytesPerSecond > 0 ? $"{FormatRate(bytesPerSecond)}/s" : null;
-                string? eta = bytesPerSecond > 0 && total > downloaded
+                bool reliableEstimate = seconds >= 2 && percent is > 0 and < 100 &&
+                                        downloaded > 0 && total > downloaded;
+                string? speed = reliableEstimate ? $"{FormatRate(bytesPerSecond)}/s" : null;
+                string? eta = reliableEstimate && bytesPerSecond > 0
                     ? TimeSpan.FromSeconds((total - downloaded) / bytesPerSecond).ToString(@"mm\:ss")
                     : null;
                 progress.Report(new WingetUpdateProgress(

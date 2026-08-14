@@ -124,12 +124,16 @@ namespace WinVora
             ["Contact.Body"] = (
                 "Fragen, Feedback oder Bugs?\n\n" +
                 "E-Mail: winvoraadmin@gmail.com\n" +
-                "GitHub (Downloads): github.com/WinVora/WinVora-Releases\n\n" +
+                "GitHub (Downloads): github.com/WinVora/WinVora-Releases\n" +
+                "Website: winvora.github.io/WinVora-Releases\n" +
+                "TikTok: tiktok.com/@winvora6\n\n" +
                 "Bei Problemen gerne einen Blick in die Logdatei werfen\n" +
                 "(Einstellungen -> Log-Datei öffnen) und mit anhängen.",
                 "Questions, feedback or bugs?\n\n" +
                 "Email: winvoraadmin@gmail.com\n" +
-                "GitHub (Downloads): github.com/WinVora/WinVora-Releases\n\n" +
+                "GitHub (Downloads): github.com/WinVora/WinVora-Releases\n" +
+                "Website: winvora.github.io/WinVora-Releases\n" +
+                "TikTok: tiktok.com/@winvora6\n\n" +
                 "If you run into problems, feel free to check the log file\n" +
                 "(Settings -> Open Log File) and attach it."
             ),

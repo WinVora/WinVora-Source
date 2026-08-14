@@ -77,9 +77,14 @@ namespace WinVora
             DashChangesText.Text = parts.Count == 0 ? (en ? "No notable changes" : "Keine auffälligen Veränderungen") : string.Join(" · ", parts);
             int totalChanges = summary.InstalledPrograms + summary.RemovedPrograms + summary.UpdatedPrograms +
                                summary.AddedStartupEntries + summary.RemovedStartupEntries;
+            bool alreadySeen = _settings.LastSeenPcChangesUtc >= summary.CurrentUtc;
             ChangesStatusBadge.Text = totalChanges == 0
                 ? (en ? "No changes" : "Keine Änderungen")
-                : (en ? $"{totalChanges} changes" : $"{totalChanges} Änderungen");
+                : alreadySeen
+                    ? (en ? "Seen" : "Gesehen")
+                    : (en ? $"{totalChanges} changes" : $"{totalChanges} Änderungen");
+            if (alreadySeen && summary.HasChanges)
+                DashChangesText.Text = en ? "Changes reviewed" : "Änderungen angesehen";
 
             AddChangeMetric(en ? "Installed" : "Installiert", summary.InstalledPrograms, "\uE710", 0, 0, "#4CD973");
             AddChangeMetric(en ? "Removed" : "Entfernt", summary.RemovedPrograms, "\uE74D", 0, 1, "#FF6B6B");
@@ -112,10 +117,34 @@ namespace WinVora
                         (Brush)RootGrid.Resources["AppMutedForegroundBrush"],
                         path =>
                     {
-                        try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true }); }
-                        catch (Exception ex) { Logger.LogError("Speicherfresser-Ordner öffnen", ex); }
+                        var result = ExplorerService.OpenFolder(path);
+                        if (result == ExplorerOpenResult.Missing)
+                            ShowInfo(en ? "The folder no longer exists." : "Der Ordner ist nicht mehr vorhanden.", InfoBarSeverity.Warning);
                     }));
                 }
+            }
+            if (summary.HasChanges && !alreadySeen)
+            {
+                var markSeen = new Button
+                {
+                    Content = en ? "Mark changes as seen" : "Änderungen als gesehen markieren",
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 8, 0, 0)
+                };
+                markSeen.Click += (_, __) =>
+                {
+                    DateTime? previousSeen = _settings.LastSeenPcChangesUtc;
+                    _settings.LastSeenPcChangesUtc = summary.CurrentUtc;
+                    _settings.Save();
+                    RenderPcChanges();
+                    ShowUndoInfo(en ? "Changes marked as seen." : "Änderungen als gesehen markiert.", () =>
+                    {
+                        _settings.LastSeenPcChangesUtc = previousSeen;
+                        _settings.Save();
+                        RenderPcChanges();
+                    });
+                };
+                StorageGrowthPanel.Children.Add(markSeen);
             }
         }
 

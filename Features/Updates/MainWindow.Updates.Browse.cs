@@ -202,7 +202,7 @@ namespace WinVora
                             : "winget ist nicht installiert oder nicht im PATH verfügbar. " +
                               "Installiere den \"App Installer\" (Windows-Paketmanager) über den Microsoft Store " +
                               "und starte WinVora danach neu.",
-                        Foreground = new SolidColorBrush(Microsoft.UI.Colors.OrangeRed),
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppErrorBrush"],
                         TextWrapping = TextWrapping.Wrap
                     });
                 }

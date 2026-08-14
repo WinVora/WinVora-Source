@@ -19,6 +19,7 @@ namespace WinVora
             ContentArea.Children.Clear();
             _wingetRows.Clear();
             _wingetStatusBadges.Clear();
+            _wingetCardProgressBars.Clear();
 
             bool en = Localization.CurrentLanguage == "en";
             DateTime now = DateTime.UtcNow;
@@ -200,10 +201,28 @@ namespace WinVora
                 };
                 _wingetStatusBadges[pkg.Id] = statusText;
 
+                var cardProgress = new ProgressBar
+                {
+                    Minimum = 0,
+                    Maximum = 100,
+                    Height = 4,
+                    Visibility = Visibility.Collapsed,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                _wingetCardProgressBars[pkg.Id] = cardProgress;
+
                 var cardActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                 cardActions.Children.Add(statusBadge);
                 cardActions.Children.Add(detailsButton);
                 cardActions.Children.Add(deferButton);
+
+                var cardContent = new StackPanel
+                {
+                    Spacing = 8,
+                    MinWidth = 230
+                };
+                cardContent.Children.Add(cardActions);
+                cardContent.Children.Add(cardProgress);
 
                 var compactHeader = new StackPanel
                 {
@@ -212,20 +231,37 @@ namespace WinVora
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 compactHeader.Children.Add(toggle);
-                compactHeader.Children.Add(new TextBlock
+                var packageNameText = new TextBlock
                 {
                     Text = pkg.Name,
                     FontSize = 15,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center
-                });
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MaxWidth = 300,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap
+                };
+                ToolTipService.SetToolTip(packageNameText, pkg.Name);
+                compactHeader.Children.Add(packageNameText);
+
+                bool requiresElevation = WingetElevationPolicy.RequiresElevationBeforeInstall(pkg.Id) ||
+                                         _settings.ElevatedUpdateIds.Contains(pkg.Id, StringComparer.OrdinalIgnoreCase);
+                bool requiresShutdown = WingetElevationPolicy.RequiresApplicationShutdown(pkg.Id) ||
+                                        _settings.ShutdownUpdateIds.Contains(pkg.Id, StringComparer.OrdinalIgnoreCase);
+                string requirementHint = requiresElevation && requiresShutdown
+                    ? (en ? " · Closes app · Administrator approval" : " · Schließt App · Administratorbestätigung")
+                    : requiresElevation
+                        ? (en ? " · Administrator approval" : " · Administratorbestätigung")
+                        : requiresShutdown
+                            ? (en ? " · Closes app" : " · Schließt App")
+                            : string.Empty;
 
                 var card = new ToolkitControls.SettingsCard
                 {
                     Header = compactHeader,
-                    Description = $"{baseDescription}     {sizeLabel.ToUpperInvariant()}  {loadingLabel}     {publisherLabel.ToUpperInvariant()}  {loadingLabel}",
+                    Description = $"{baseDescription}     {sizeLabel.ToUpperInvariant()}  {loadingLabel}     {publisherLabel.ToUpperInvariant()}  {loadingLabel}{requirementHint}",
                     HeaderIcon = new FontIcon { Glyph = "\uE7B8" }, // Platzhalter-App-Icon
-                    Content = cardActions,
+                    Content = cardContent,
                     Background = (SolidColorBrush)RootGrid.Resources["AppCardSurfaceBrush"],
                     BorderThickness = new Thickness(0),
                     BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
@@ -272,6 +308,11 @@ namespace WinVora
 
         private void DeferUpdate(WingetPackage package, int? days)
         {
+            var previousDeferred = _settings.DeferredUpdates
+                .Where(entry => entry.PackageId.Equals(package.Id, StringComparison.OrdinalIgnoreCase))
+                .Select(entry => new DeferredUpdateEntry { PackageId = entry.PackageId, HiddenUntilUtc = entry.HiddenUntilUtc })
+                .ToList();
+            bool previouslyIgnored = _settings.IgnoredUpdateIds.Contains(package.Id, StringComparer.OrdinalIgnoreCase);
             _settings.DeferredUpdates.RemoveAll(entry =>
                 entry.PackageId.Equals(package.Id, StringComparison.OrdinalIgnoreCase));
             _settings.IgnoredUpdateIds.RemoveAll(id =>
@@ -290,9 +331,17 @@ namespace WinVora
             }
             _settings.Save();
             if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
-            ShowInfo(days.HasValue
+            ShowUndoInfo(days.HasValue
                 ? $"{package.Name} wurde für {days.Value} Tag(e) zurückgestellt."
-                : $"{package.Name} wird dauerhaft ignoriert.");
+                : $"{package.Name} wird dauerhaft ignoriert.", () =>
+                {
+                    _settings.DeferredUpdates.RemoveAll(entry => entry.PackageId.Equals(package.Id, StringComparison.OrdinalIgnoreCase));
+                    _settings.IgnoredUpdateIds.RemoveAll(id => id.Equals(package.Id, StringComparison.OrdinalIgnoreCase));
+                    _settings.DeferredUpdates.AddRange(previousDeferred);
+                    if (previouslyIgnored) _settings.IgnoredUpdateIds.Add(package.Id);
+                    _settings.Save();
+                    if (_cachedPackages != null) RenderWingetPackages(_cachedPackages);
+                });
         }
     }
 }

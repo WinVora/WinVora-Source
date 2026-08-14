@@ -8,11 +8,11 @@ namespace WinVora
     {
         public static Border CreateSection(string title, ResourceDictionary resources, out StackPanel content)
         {
-            content = new StackPanel { Spacing = 20 };
+            content = new StackPanel { Spacing = UiMetrics.SpaceLg };
             content.Children.Add(new TextBlock
             {
                 Text = title,
-                FontSize = 18,
+                Style = (Style)Application.Current.Resources["WinVoraSectionTitleStyle"],
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)resources["AppForegroundBrush"]
             });
@@ -23,11 +23,11 @@ namespace WinVora
 
         public static StackPanel CreateLabeledControl(string label, FrameworkElement control, ResourceDictionary resources)
         {
-            var panel = new StackPanel { Spacing = 8 };
+            var panel = new StackPanel { Spacing = UiMetrics.SpaceSm };
             panel.Children.Add(new TextBlock
             {
                 Text = label,
-                FontSize = 14,
+                Style = (Style)Application.Current.Resources["WinVoraBodyTextStyle"],
                 Foreground = (SolidColorBrush)resources["AppForegroundBrush"]
             });
             panel.Children.Add(control);

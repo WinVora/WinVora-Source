@@ -21,19 +21,62 @@ namespace WinVora
                 unchecked((int)0x8A150006), "", WingetUpdateStatus.Failed);
             Debug.Assert(shellExecuteFailure.Contains("Installer", StringComparison.OrdinalIgnoreCase));
             Debug.Assert(!shellExecuteFailure.Contains("0x8A150006", StringComparison.OrdinalIgnoreCase));
+            Debug.Assert(WingetErrorTranslator.RequiresElevation(unchecked((int)0x80073D28), ""));
+            Debug.Assert(WingetErrorTranslator.RequiresElevation(unchecked((int)0x80070005), ""));
+            Debug.Assert(!WingetErrorTranslator.RequiresElevation(0, "Installed successfully"));
+            Debug.Assert(WingetElevationPolicy.RequiresElevationBeforeInstall("Anthropic.Claude"));
+            Debug.Assert(WingetElevationPolicy.RequiresElevationBeforeInstall("anthropic.claude"));
+            Debug.Assert(WingetElevationPolicy.RequiresElevationBeforeInstall("Microsoft.UpdateHealthTools"));
+            Debug.Assert(!WingetElevationPolicy.RequiresElevationBeforeInstall("Vendor.Demo"));
+            Debug.Assert(WingetElevationPolicy.RequiresApplicationShutdown("Anthropic.Claude"));
+            Debug.Assert(!WingetElevationPolicy.RequiresApplicationShutdown("Vendor.Demo"));
+            string appInUseMessage = WingetErrorTranslator.GetFriendlyMessage(
+                unchecked((int)0x80073D02), "", WingetUpdateStatus.Failed);
+            Debug.Assert(appInUseMessage.Contains("geschlossen", StringComparison.OrdinalIgnoreCase) ||
+                         appInUseMessage.Contains("closed", StringComparison.OrdinalIgnoreCase));
+            var appInUseDiagnostic = WingetFailureDiagnostics.AnalyzeText("Installer failed with 0x80073D02; apps need to be closed");
+            Debug.Assert(appInUseDiagnostic.RequiresApplicationShutdown);
+            Debug.Assert(appInUseDiagnostic.HiddenExitCode == unchecked((int)0x80073D02));
+            var accessDiagnostic = WingetFailureDiagnostics.AnalyzeText("Error: -2147024891 (0x80070005)");
+            Debug.Assert(accessDiagnostic.RequiresElevation);
+            Debug.Assert(accessDiagnostic.HiddenExitCode == unchecked((int)0x80070005));
+
+            var attemptedUpdate = new WingetPackage
+            {
+                Id = "Vendor.Demo",
+                Version = "1.0",
+                Available = "2.0"
+            };
+            Debug.Assert(WingetUpdateVerifier.IsStillUnchanged(attemptedUpdate, new[]
+            {
+                new WingetPackage { Id = "Vendor.Demo", Version = "1.0", Available = "2.0" }
+            }));
+            Debug.Assert(!WingetUpdateVerifier.IsStillUnchanged(attemptedUpdate, Array.Empty<WingetPackage>()));
+            Debug.Assert(!WingetUpdateVerifier.IsStillUnchanged(attemptedUpdate, new[]
+            {
+                // Version 2.0 wurde installiert; falls bereits 3.0 angeboten
+                // wird, war der vorherige Installationslauf trotzdem erfolgreich.
+                new WingetPackage { Id = "Vendor.Demo", Version = "2.0", Available = "3.0" }
+            }));
 
             var settings = new AppSettings
             {
                 StartupPage = "invalid",
                 LiveUpdateIntervalSeconds = 99,
                 Language = "xx",
-                AnimationMode = "invalid"
+                AnimationMode = "invalid",
+                UpdateChannel = "invalid"
             };
             settings.Validate();
             Debug.Assert(settings.StartupPage == "Übersicht");
             Debug.Assert(settings.LiveUpdateIntervalSeconds == 2);
             Debug.Assert(settings.Language == "de");
             Debug.Assert(settings.AnimationMode is "Full" or "Reduced" or "Off");
+            Debug.Assert(settings.UpdateChannel == "Stable");
+            Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.4.1"));
+            Debug.Assert(!UpdateService.IsNewerVersion("0.8.4-beta.1", "0.8.4.1"));
+            Debug.Assert(WingetTableParser.Parse("", Array.Empty<int>()) == null);
+            Debug.Assert(!InstalledProgramsService.TrySplitCommand("", out _, out _));
             Debug.Assert(StorageService.FormatBytes(0) == "0 B");
             Debug.Assert(StorageService.FormatBytes(1024).Contains("KB", StringComparison.Ordinal));
             Debug.Assert(StorageService.FormatBytes(1024 * 1024).Contains("MB", StringComparison.Ordinal));
