@@ -431,6 +431,79 @@ namespace WinVora
             };
             updateContent.Children.Add(updateButton);
 
+            if (CurrentVersion.Contains('-', StringComparison.Ordinal))
+            {
+                var returnToStableButton = new Button
+                {
+                    Content = updateUiEnglish
+                        ? "Return to the stable version"
+                        : "Zur stabilen Version zurückkehren",
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                returnToStableButton.Click += async (_, __) =>
+                {
+                    bool confirmed = await ConfirmAsync(
+                        updateUiEnglish ? "Return to Stable?" : "Zur stabilen Version zurückkehren?",
+                        updateUiEnglish
+                            ? "WinVora will download the latest official stable release. Preview-only features may no longer be available afterward. Your settings will be retained."
+                            : "WinVora lädt die neueste offizielle stabile Version herunter. Funktionen der Vorschau können danach nicht mehr verfügbar sein. Deine Einstellungen bleiben erhalten.",
+                        primaryButtonText: updateUiEnglish ? "Return to Stable" : "Stabile Version installieren",
+                        respectDeleteConfirmationSetting: false);
+                    if (!confirmed) return;
+
+                    returnToStableButton.IsEnabled = false;
+                    updateButton.IsEnabled = false;
+                    updateProgressBar.Visibility = Visibility.Visible;
+                    updateProgressBar.Value = 0;
+                    updateStatusText.Text = updateUiEnglish
+                        ? "Finding the latest stable version..."
+                        : "Suche die neueste stabile Version...";
+
+                    string previousChannel = _settings.UpdateChannel;
+                    try
+                    {
+                        var stableRelease = await UpdateService.GetLatestStableReleaseAsync();
+                        updateStatusText.Text = updateUiEnglish
+                            ? $"Downloading stable version {stableRelease.Version}..."
+                            : $"Lade stabile Version {stableRelease.Version} herunter...";
+
+                        var progress = new Progress<DownloadProgressInfo>(info =>
+                        {
+                            if (info.TotalBytes > 0)
+                            {
+                                updateProgressBar.IsIndeterminate = false;
+                                updateProgressBar.Value = (double)info.BytesReceived / info.TotalBytes * 100;
+                            }
+                            else
+                            {
+                                updateProgressBar.IsIndeterminate = true;
+                            }
+                        });
+
+                        var installerPath = await UpdateService.DownloadUpdateAsync(stableRelease, progress);
+                        _settings.UpdateChannel = "Stable";
+                        _settings.Save();
+                        Logger.Log($"Rückkehr zur stabilen Version {stableRelease.Version}: Installer wird gestartet.");
+                        UpdateService.RunInstaller(installerPath);
+                        Application.Current.Exit();
+                    }
+                    catch (Exception ex)
+                    {
+                        _settings.UpdateChannel = previousChannel;
+                        _settings.Save();
+                        Logger.LogError("ReturnToStable", ex);
+                        updateStatusText.Text = updateUiEnglish
+                            ? "The stable version could not be installed. Please try again later."
+                            : "Die stabile Version konnte nicht installiert werden. Bitte versuche es später erneut.";
+                        updateProgressBar.IsIndeterminate = false;
+                        updateProgressBar.Visibility = Visibility.Collapsed;
+                        returnToStableButton.IsEnabled = true;
+                        updateButton.IsEnabled = true;
+                    }
+                };
+                updateContent.Children.Add(returnToStableButton);
+            }
+
             panel.Children.Add(updateCard);
 
             // ---- Darstellung ----

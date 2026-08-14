@@ -38,15 +38,31 @@ namespace WinVora
             {
                 foreach (var release in doc.RootElement.EnumerateArray())
                 {
-                    var candidate = ParseRelease(release, currentVersion, allowPrerelease: true);
+                    var candidate = ParseRelease(release, currentVersion, allowPrerelease: true, requireNewer: true);
                     if (candidate != null) return candidate;
                 }
                 return null;
             }
-            return ParseRelease(doc.RootElement, currentVersion, allowPrerelease: false);
+            return ParseRelease(doc.RootElement, currentVersion, allowPrerelease: false, requireNewer: true);
         }
 
-        private static UpdateInfo? ParseRelease(JsonElement root, string currentVersion, bool allowPrerelease)
+        public static async Task<UpdateInfo> GetLatestStableReleaseAsync()
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("WinVora-UpdateChecker");
+            client.Timeout = TimeSpan.FromSeconds(15);
+
+            var json = await client.GetStringAsync(ReleasesApiUrl);
+            using var doc = JsonDocument.Parse(json);
+            return ParseRelease(doc.RootElement, "0.0.0", allowPrerelease: false, requireNewer: false)
+                ?? throw new InvalidDataException("Es wurde keine stabile WinVora-Version mit Installer gefunden.");
+        }
+
+        private static UpdateInfo? ParseRelease(
+            JsonElement root,
+            string currentVersion,
+            bool allowPrerelease,
+            bool requireNewer)
         {
             if (root.TryGetProperty("draft", out var draft) && draft.GetBoolean()) return null;
             bool prerelease = root.TryGetProperty("prerelease", out var prereleaseProperty) && prereleaseProperty.GetBoolean();
@@ -55,7 +71,7 @@ namespace WinVora
             var tagName = root.GetProperty("tag_name").GetString() ?? "";
             var latestVersion = tagName.TrimStart('v', 'V');
 
-            if (!IsNewerVersion(latestVersion, currentVersion))
+            if (requireNewer && !IsNewerVersion(latestVersion, currentVersion))
                 return null;
 
             string? downloadUrl = null;
