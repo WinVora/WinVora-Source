@@ -244,10 +244,17 @@ namespace WinVora
 
             if (_settings.NotifyUpdateCompletion || (restartCount > 0 && _settings.NotifyRestartRequired))
             {
-                NotificationService.ShowUpdateSummary(
+                bool notificationShown = NotificationService.ShowUpdateSummary(
                     successCount, failedCount, cancelledCount,
                     _settings.NotifyRestartRequired ? restartCount : 0,
                     unverifiedCount);
+                if (!notificationShown)
+                {
+                    ShowInfo(Localization.CurrentLanguage == "en"
+                            ? "Updates finished. The Windows notification was unavailable, so this message is shown in WinVora."
+                            : "Updates abgeschlossen. Die Windows-Benachrichtigung war nicht verfügbar; deshalb erscheint diese Meldung in WinVora.",
+                        failedCount > 0 ? InfoBarSeverity.Warning : InfoBarSeverity.Success);
+                }
             }
 
             // Die Seite bereits vor dem Bericht mit dem geprüften Stand

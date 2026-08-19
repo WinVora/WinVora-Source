@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Media;
 using System;
 using System.Linq;
@@ -39,14 +40,18 @@ namespace WinVora
                 Style = (Style)Application.Current.Resources["AccentButtonStyle"]
             };
             feedback.Click += async (_, __) => await OpenBetaFeedbackAsync(window);
+            AutomationProperties.SetName(feedback, en ? "Report a beta problem" : "Ein Beta-Problem melden");
+            ToolTipService.SetToolTip(feedback, en ? "Prepare an anonymized GitHub issue" : "Bereitet einen anonymisierten GitHub-Entwurf vor");
             panel.Children.Add(feedback);
 
             var issuesLink = new Button { Content = en ? "View known issues on GitHub" : "Bekannte Probleme auf GitHub ansehen", HorizontalAlignment = HorizontalAlignment.Stretch };
             issuesLink.Click += async (_, __) => await Windows.System.Launcher.LaunchUriAsync(new Uri("https://github.com/WinVora/WinVora-Source/issues"));
+            AutomationProperties.SetName(issuesLink, en ? "Open known issues on GitHub" : "Bekannte Probleme auf GitHub öffnen");
             panel.Children.Add(issuesLink);
 
             var diagnosticZip = new Button { Content = en ? "Save anonymized diagnostic ZIP" : "Anonymisierte Diagnose als ZIP speichern", HorizontalAlignment = HorizontalAlignment.Stretch };
             diagnosticZip.Click += async (_, __) => await ExportDiagnosticReportAsync(window);
+            AutomationProperties.SetName(diagnosticZip, en ? "Save anonymized diagnostic ZIP" : "Anonymisierte Diagnose als ZIP speichern");
             panel.Children.Add(diagnosticZip);
 
             panel.Children.Add(new TextBlock { Text = en ? "Watched folders" : "Beobachtete Ordner", FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
@@ -61,6 +66,7 @@ namespace WinVora
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                     row.Children.Add(new TextBlock { Text = path, TextTrimming = TextTrimming.CharacterEllipsis });
                     var remove = new Button { Content = en ? "Remove" : "Entfernen" };
+                    AutomationProperties.SetName(remove, en ? $"Stop watching {path}" : $"Beobachtung für {path} beenden");
                     remove.Click += (_, __) => { _settings.WatchedFolders.Remove(path); _settings.Save(); RefreshWatched(); };
                     Grid.SetColumn(remove, 1); row.Children.Add(remove);
                     watchedPanel.Children.Add(row);
@@ -69,6 +75,7 @@ namespace WinVora
             RefreshWatched();
             panel.Children.Add(watchedPanel);
             var addFolder = new Button { Content = en ? "Add folder" : "Ordner hinzufügen", HorizontalAlignment = HorizontalAlignment.Left };
+            AutomationProperties.SetName(addFolder, en ? "Add a folder to storage monitoring" : "Ordner zur Speicherbeobachtung hinzufügen");
             addFolder.Click += async (_, __) =>
             {
                 var picker = new FolderPicker();

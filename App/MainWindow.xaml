@@ -1100,7 +1100,8 @@
                             <Expander x:Name="SecurityExpander" Header="Sicherheit" IsExpanded="False" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                 <Grid Padding="0,18,0,0" HorizontalAlignment="Stretch">
                                     <controls:SettingsCard x:Name="SysCardSecurity" Header="Sicherheitsstatus" CornerRadius="16" HorizontalAlignment="Stretch" MinHeight="220" Padding="22">
-                                        <Grid ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
+                                        <Grid>
+                                        <Grid x:Name="SecurityDetailsGrid" ColumnSpacing="44" RowSpacing="18" HorizontalAlignment="Stretch">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
@@ -1126,6 +1127,18 @@
                                             <TextBlock Grid.Row="4" Grid.Column="1" x:Name="SysFirewall" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
                                             <TextBlock Grid.Row="5" Grid.Column="0" x:Name="SysLbl26" Text="BitLocker" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="5" Grid.Column="1" x:Name="SysBitLocker" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
+                                        </Grid>
+                                        <StackPanel x:Name="SecurityDetailsLoadingPanel"
+                                                    Visibility="Collapsed"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Spacing="10"
+                                                    AutomationProperties.Name="Sicherheitsdetails werden geladen">
+                                            <ProgressRing IsActive="True" Width="28" Height="28"/>
+                                            <TextBlock x:Name="SecurityDetailsLoadingText"
+                                                       Text="Sicherheitsdetails werden geprüft..."
+                                                       Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                        </StackPanel>
                                         </Grid>
                                     </controls:SettingsCard>
                                 </Grid>
@@ -1355,21 +1368,24 @@
                                    AutomationProperties.Name="WinVora-Logo"/>
                         </Border>
 
-                        <TextBlock Text="WinVora"
+                        <TextBlock x:Name="StartupBrandText"
+                                   Text="WinVora"
                                    FontSize="38"
                                    FontWeight="Bold"
                                    Foreground="#FFFFFFFF"
                                    CharacterSpacing="15"
                                    HorizontalAlignment="Center"/>
 
-                        <Border Padding="14,8"
+                        <Border x:Name="StartupStatusCard"
+                                Padding="14,8"
                                 CornerRadius="10"
                                 Background="#CC18181D"
                                 BorderBrush="#356C5CE7"
                                 BorderThickness="1"
                                 HorizontalAlignment="Center">
                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                <ProgressRing IsActive="True"
+                                <ProgressRing x:Name="StartupProgressRing"
+                                              IsActive="True"
                                               Width="20"
                                               Height="20"
                                               Foreground="#FF8B7CF6"
@@ -1385,7 +1401,7 @@
                         <StackPanel Spacing="6" Width="240">
                             <ProgressBar x:Name="StartupProgressBar" Minimum="0" Maximum="4" Value="0" Height="5"
                                          Foreground="#FF8B7CF6"/>
-                            <TextBlock x:Name="StartupProgressText" Text="0 von 4 abgeschlossen"
+                             <TextBlock x:Name="StartupProgressText" Text="0 von 4 abgeschlossen"
                                        FontSize="11" Foreground="#BFFFFFFF" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </StackPanel>

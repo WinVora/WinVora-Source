@@ -150,7 +150,6 @@ namespace WinVora
 
             var largeFolderResults = new StackPanel { Spacing = 6 };
             IReadOnlyList<LargeFolderResult> analyzedFolders = _cachedLargeFolders;
-            CancellationTokenSource? analysisCancellation = null;
             var analysisProgress = new ProgressBar { Height = 4, Visibility = Visibility.Collapsed, IsIndeterminate = true };
             var analysisStatus = new TextBlock
             {
@@ -158,11 +157,13 @@ namespace WinVora
                 FontSize = 12
             };
             var sortBox = new ComboBox { MinWidth = 150 };
+            PreventClosedComboBoxWheelChange(sortBox);
             sortBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? "Largest first" : "Größte zuerst", Tag = "size" });
             sortBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? "Name A–Z" : "Name A–Z", Tag = "name" });
             sortBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? "Risk first" : "Risiko zuerst", Tag = "risk" });
             sortBox.SelectedIndex = 0;
             var thresholdBox = new ComboBox { MinWidth = 150 };
+            PreventClosedComboBoxWheelChange(thresholdBox);
             foreach (var threshold in new[] { ("0", "All folders", "Alle Ordner"), ("104857600", "Over 100 MB", "Über 100 MB"), ("1073741824", "Over 1 GB", "Über 1 GB") })
                 thresholdBox.Items.Add(new ComboBoxItem { Content = Localization.CurrentLanguage == "en" ? threshold.Item2 : threshold.Item3, Tag = threshold.Item1 });
             thresholdBox.SelectedIndex = 0;
@@ -251,14 +252,14 @@ namespace WinVora
                 Content = Localization.CurrentLanguage == "en" ? "Cancel" : "Abbrechen",
                 Visibility = Visibility.Collapsed
             };
-            cancelAnalysisButton.Click += (_, __) => analysisCancellation?.Cancel();
+            cancelAnalysisButton.Click += (_, __) => _storageAnalysisCancellation?.Cancel();
             analyzeLargeFoldersButton.Click += async (_, __) =>
             {
                 analyzeLargeFoldersButton.IsEnabled = false;
                 analyzeLargeFoldersButton.Content = Localization.CurrentLanguage == "en" ? "Analyzing..." : "Wird analysiert...";
                 largeFolderResults.Children.Clear();
-                analysisCancellation?.Dispose();
-                analysisCancellation = new CancellationTokenSource();
+                _storageAnalysisCancellation?.Dispose();
+                _storageAnalysisCancellation = CancellationTokenSource.CreateLinkedTokenSource(_startupCancellation.Token);
                 analysisProgress.Visibility = Visibility.Visible;
                 cancelAnalysisButton.Visibility = Visibility.Visible;
                 try
@@ -268,7 +269,7 @@ namespace WinVora
                         analysisStatus.Text = Localization.CurrentLanguage == "en"
                             ? count + " folders checked"
                             : count + " Ordner geprüft");
-                    analyzedFolders = await LargeFolderAnalyzer.AnalyzeAsync(analysisCancellation.Token, progress);
+                    analyzedFolders = await LargeFolderAnalyzer.AnalyzeAsync(_storageAnalysisCancellation.Token, progress);
                     _cachedLargeFolders = analyzedFolders;
                     _largeFolderAnalysisUtc = DateTime.UtcNow;
                     watch.Stop();
@@ -291,6 +292,8 @@ namespace WinVora
                 }
                 finally
                 {
+                    _storageAnalysisCancellation?.Dispose();
+                    _storageAnalysisCancellation = null;
                     analyzeLargeFoldersButton.IsEnabled = true;
                     analyzeLargeFoldersButton.Content = Localization.CurrentLanguage == "en" ? "Analyze again" : "Erneut analysieren";
                     analysisProgress.Visibility = Visibility.Collapsed;

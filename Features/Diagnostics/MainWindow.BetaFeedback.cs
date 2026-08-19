@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using System;
 using System.IO;
 using System.Linq;
@@ -65,6 +66,8 @@ namespace WinVora
                 TextWrapping = TextWrapping.Wrap,
                 MinHeight = 60
             };
+            AutomationProperties.SetName(stepsBox, en ? "Steps to reproduce the beta problem" : "Schritte zum Nachstellen des Beta-Problems");
+            AutomationProperties.SetName(expectedBox, en ? "Expected beta behavior" : "Erwartetes Verhalten der Beta");
 
             FrameworkElement? ownerContent = owner?.Content as FrameworkElement;
             var preview = new ContentDialog

@@ -83,6 +83,11 @@ namespace WinVora
     "• Verbesserungen: Einstellungen lassen sich einzeln pro Bereich zurücksetzen und öffnen danach automatisch neu\n" +
     "• Verbesserungen: Deinstallationen zeigen eine sichtbare Prüfung mit Countdown und erneutem Prüfen\n" +
     "• Verbesserungen: Der Verlauf merkt sich geöffnete Details und bleibt dadurch übersichtlich\n" +
+    "• Leistung: WinGet und Programmliste laden erst nach dem sichtbaren Hauptfenster; Programmsymbole nur bei Bedarf\n" +
+    "• Sicherheit: Ausführliche Sicherheitsdetails zeigen beim Nachladen einen klaren Status\n" +
+    "• Einstellungen: Gespeichert werden nur noch vom Standard abweichende Werte\n" +
+    "• Zuverlässigkeit: Laufende Aufgaben werden beim Schließen einheitlich erklärt und abgebrochen\n" +
+    "• Benachrichtigungen: Falls Windows keine Meldung anzeigen kann, erscheint ein Hinweis direkt in WinVora\n" +
     "• Oberfläche: Skeleton-Lader, Tooltips, Sidebar-Scrollhinweise und kleine Fenster wurden verfeinert\n" +
     "• Barrierefreiheit: Reduzierte Bewegung stoppt Skeleton-Animationen; Tastatur- und Fokuszustände wurden vereinheitlicht\n" +
     "• Bugfixes: Titelleisten, Hellmodus-Kontraste, Systemwerte und Programmlisten wurden stabilisiert",
@@ -97,6 +102,11 @@ namespace WinVora
     "• Improvements: Settings can be reset per section and reopen automatically afterwards\n" +
     "• Improvements: Uninstalls show a visible verification countdown with a retry action\n" +
     "• Improvements: History remembers expanded details while keeping the list compact\n" +
+    "• Performance: WinGet and program lists load after the main window; program icons load only when needed\n" +
+    "• Security: Extended security details show a clear loading state\n" +
+    "• Settings: Only values that differ from the defaults are stored\n" +
+    "• Reliability: Running tasks are explained and cancelled consistently when closing\n" +
+    "• Notifications: WinVora shows an in-app fallback if Windows notifications are unavailable\n" +
     "• Interface: Skeleton loaders, tooltips, sidebar scroll hints and small-window layouts were refined\n" +
     "• Accessibility: Reduced motion disables skeleton animation; keyboard and focus states are consistent\n" +
     "• Bug fixes: Title bars, light-mode contrast, system values and program lists were stabilized"

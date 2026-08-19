@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -40,6 +41,7 @@ namespace WinVora
         private string _lastFirewallStatus = "Unbekannt";
         private CancellationTokenSource? _wingetUpdateCancellation;
         private readonly CancellationTokenSource _startupCancellation = new();
+        private readonly Stopwatch _startupOverlayLifetime = Stopwatch.StartNew();
         private readonly WingetUpdateService _wingetUpdateService = new();
         private List<WingetPackage>? _cachedPackages;
         private bool _isDarkTheme = true;
@@ -59,6 +61,7 @@ namespace WinVora
         private CancellationTokenSource? _wingetSearchDebounce;
         private CancellationTokenSource? _uninstallSearchDebounce;
         private CancellationTokenSource? _infoBarDismissCancellation;
+        private CancellationTokenSource? _storageAnalysisCancellation;
         private bool _closePromptOpen;
         private Windows.Graphics.RectInt32? _postStartupWindowRect;
 
@@ -135,6 +138,8 @@ namespace WinVora
                 _uninstallSearchDebounce?.Cancel();
                 _infoBarDismissCancellation?.Cancel();
                 _infoBarDismissCancellation?.Dispose();
+                _storageAnalysisCancellation?.Cancel();
+                _storageAnalysisCancellation?.Dispose();
                 SaveWindowPlacement();
                 HardwareMonitorService.Shutdown();
             };
@@ -195,8 +200,13 @@ namespace WinVora
 
         private async void MainWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
-            _startupCancellation.Cancel();
-            if (!_isUpdatingWinget) return;
+            bool hasCancellableWork = _isUpdatingWinget || _storageAnalysisCancellation != null;
+            bool hasExternalWork = _isUninstalling || _isDeletingStorage;
+            if (!hasCancellableWork && !hasExternalWork)
+            {
+                _startupCancellation.Cancel();
+                return;
+            }
 
             args.Cancel = true;
             if (_closePromptOpen) return;
@@ -207,16 +217,28 @@ namespace WinVora
                 var dialog = new ContentDialog
                 {
                     XamlRoot = RootGrid.XamlRoot,
-                    Title = en ? "Update is still running" : "Update läuft noch",
+                    Title = en ? "An operation is still running" : "Vorgang läuft noch",
                     Content = en
-                        ? "Keep WinVora open, or cancel the current installer. WinVora can be closed after cancellation finishes."
-                        : "Lass WinVora geöffnet oder brich den aktuellen Installer ab. Nach abgeschlossenem Abbruch kann WinVora geschlossen werden.",
-                    PrimaryButtonText = en ? "Cancel update" : "Update abbrechen",
+                        ? "WinVora is updating, analyzing, cleaning, or waiting for an uninstaller. Closing cancels WinVora tasks; manufacturer uninstallers may remain open."
+                        : "WinVora aktualisiert, analysiert, bereinigt oder wartet auf einen Deinstaller. Beim Schließen werden WinVora-Aufgaben abgebrochen; Hersteller-Deinstaller können geöffnet bleiben.",
+                    PrimaryButtonText = en ? "Cancel and close" : "Abbrechen und schließen",
                     CloseButtonText = en ? "Keep running" : "Weiterlaufen lassen",
                     DefaultButton = ContentDialogButton.Close
                 };
                 if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-                    CancelUpdate_Click(this, new RoutedEventArgs());
+                {
+                    if (_isUpdatingWinget)
+                        CancelUpdate_Click(this, new RoutedEventArgs());
+                    _storageAnalysisCancellation?.Cancel();
+                    _storageAnalysisCancellation?.Dispose();
+                    _storageAnalysisCancellation = null;
+                    _startupCancellation.Cancel();
+                    Logger.Log("Laufende Vorgänge wurden beim Schließen von WinVora abgebrochen.");
+                    _isUpdatingWinget = false;
+                    _isUninstalling = false;
+                    _isDeletingStorage = false;
+                    Close();
+                }
             }
             finally
             {
@@ -489,6 +511,10 @@ namespace WinVora
         // weil das Element noch nicht "live" ist.
         private void StartupOverlay_Loaded(object sender, RoutedEventArgs e)
         {
+            // Erst ab dem wirklich gerenderten Overlay messen. Die vorherige
+            // Messung begann bereits beim Erzeugen des Fensters und ein Teil der
+            // Mindestzeit verstrich dadurch unsichtbar während der XAML-Initialisierung.
+            _startupOverlayLifetime.Restart();
             if (_settings.AnimationMode == "Off") return;
             StartStartupGlassBarAnimation();
         }
@@ -794,14 +820,17 @@ namespace WinVora
             double startOffsetX = (overlayWidth - gridWidth) / 2;
             double startOffsetY = (overlayHeight - gridHeight) / 2;
 
+            byte baseStrokeAlpha = _isDarkTheme ? (byte)0x18 : (byte)0x48;
+            byte baseFillAlpha = _isDarkTheme ? (byte)0x08 : (byte)0x12;
+            byte haloAlpha = _isDarkTheme ? (byte)0x36 : (byte)0x48;
             var sharedStrokeBrush = new SolidColorBrush(
-                Windows.UI.Color.FromArgb(0x18, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
+                Windows.UI.Color.FromArgb(baseStrokeAlpha, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
             var sharedFillBrush = new SolidColorBrush(
-                Windows.UI.Color.FromArgb(0x08, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
+                Windows.UI.Color.FromArgb(baseFillAlpha, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
             var glowStrokeBrush = new SolidColorBrush(
                 Windows.UI.Color.FromArgb(0xFF, AccentColorLight.R, AccentColorLight.G, AccentColorLight.B));
             var glowHaloBrush = new SolidColorBrush(
-                Windows.UI.Color.FromArgb(0x36, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
+                Windows.UI.Color.FromArgb(haloAlpha, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
             var transparentFillBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
             // Mehrere deckungsgleiche Leuchtebenen teilen die Waben in
@@ -1014,6 +1043,7 @@ namespace WinVora
                     : Microsoft.UI.ColorHelper.FromArgb(0xF0, 0xFF, 0xFF, 0xFF);
 
             RootGrid.RequestedTheme = dark ? ElementTheme.Dark : ElementTheme.Light;
+            ApplyStartupOverlayTheme(dark);
 
             // Bereits geladene dynamische Statusfarben sofort an das neue
             // Farbschema anpassen, ohne eine erneute Systemprüfung abzuwarten.
@@ -1152,12 +1182,32 @@ namespace WinVora
 
             await LoadInitialDataAsync();
 
+            // Nach der Startoptimierung ist WinVora häufig schon nach gut einer
+            // Sekunde fertig. Der Ladebildschirm bleibt mindestens drei Sekunden
+            // sichtbar, damit Logo, Animation und Abschlusszustand nicht nur
+            // kurz aufblitzen. Langsame Starts werden dadurch nicht verlängert.
+            TimeSpan minimumStartupOverlayTime = TimeSpan.FromSeconds(3);
+            TimeSpan remainingOverlayTime = minimumStartupOverlayTime - _startupOverlayLifetime.Elapsed;
+            if (remainingOverlayTime > TimeSpan.Zero)
+            {
+                try
+                {
+                    await Task.Delay(remainingOverlayTime, _startupCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+
             // Responsive Umbauten während des verdeckten Startladens können
             // die Scroll-Ankerposition verschieben. Vor dem Einblenden immer
             // garantiert am echten Seitenanfang starten.
             RootGrid.UpdateLayout();
             MainContentScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
             HideStartupOverlay();
+            _ = LoadDeferredProgramDataAsync();
+            _ = LoadWingetAtStartupInBackgroundAsync();
 
             // BUGFIX: ContentDialog.ShowAsync() direkt beim allerersten
             // Activated-Event aufzurufen (bevor das Fenster überhaupt einmal
@@ -1217,6 +1267,8 @@ namespace WinVora
             _ = Task.Run(() => HardwareMonitorService.WarmUp());
 
             StartupStatusText.Text = Localization.CurrentLanguage == "en" ? "Preparing interface..." : "Oberfläche wird vorbereitet...";
+            StartupProgressBar.Value = 1;
+            StartupProgressText.Text = Localization.CurrentLanguage == "en" ? "Step 1 of 4" : "Schritt 1 von 4";
             StartLiveUsageTimer();
 
             // Letzte bekannte Werte sofort einsetzen. Die frische Abfrage
@@ -1269,7 +1321,7 @@ namespace WinVora
                     ? $"Step {step} of 4"
                     : $"Schritt {step} von 4";
             }
-            SetPhase("Systeminformationen und Sicherheit werden geladen", "Loading system information and security", 1);
+            SetPhase("Systeminformationen und Sicherheit werden geladen", "Loading system information and security", 2);
 
             async Task LoadSystemAsync()
             {
@@ -1284,21 +1336,8 @@ namespace WinVora
                 catch (Exception ex) { Logger.LogError("Startladen Systeminformationen", ex); }
             }
 
-            async Task LoadUpdatesAsync()
-            {
-                try
-                {
-                    await StartupPerformanceTracker.MeasureAsync("Programm-Updates", () => LoadWinget());
-                }
-                catch (Exception ex) { Logger.LogError("Startladen Programm-Updates", ex); }
-            }
-
             var securityTask = SystemInfoProvider.GetFastSecurityStatusAsync(cancellationToken);
             var systemTask = LoadSystemAsync();
-            var updatesTask = LoadUpdatesAsync();
-            var programsTask = StartupPerformanceTracker.MeasureAsync(
-                "Installierte Programme",
-                () => Task.Run(() => InstalledProgramsService.GetInstalledPrograms()));
             Task storageTask = _currentPageKey == "Storage" ? LoadStorage() : Task.CompletedTask;
 
             async Task FinishSystemStageAsync()
@@ -1315,67 +1354,10 @@ namespace WinVora
                 await systemTask;
             }
 
-            async Task FinishProgramsStageAsync()
-            {
-                try
-                {
-                    _installedPrograms = await programsTask;
-                    cancellationToken.ThrowIfCancellationRequested();
-                    DashInstalledCountText.Text = _installedPrograms.Count.ToString();
-                }
-                catch (OperationCanceledException)
-                {
-                    // Erwarteter Abbruch beim Schließen der App.
-                }
-                catch (Exception ex) { Logger.LogError("Startladen Programmliste", ex); }
-            }
+            await FinishSystemStageAsync();
+            if (cancellationToken.IsCancellationRequested) return;
 
-            async Task FinishStartupUpdateStageAsync()
-            {
-                // WinGet darf den sichtbaren App-Start nicht unbegrenzt
-                // blockieren. Nach zwölf Sekunden öffnet WinVora vollständig;
-                // die bereits laufende Prüfung aktualisiert die Seite später.
-                Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(12), cancellationToken);
-                if (await Task.WhenAny(updatesTask, timeoutTask) == updatesTask)
-                {
-                    await updatesTask;
-                    return;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                Logger.Log("Startphase 'Programm-Updates' läuft nach 12 Sekunden im Hintergrund weiter.");
-            }
-
-            // Die drei unabhängigen Bereiche werden wirklich nach ihrer
-            // Fertigstellung gezählt. Zuvor wartete die Anzeige immer zuerst
-            // auf die oft langsamen Systeminformationen und blieb bei 0/4,
-            // obwohl Programme oder Updates bereits geladen waren.
-            var pendingStages = new List<(Task Task, string German, string English)>
-            {
-                (FinishSystemStageAsync(), "Systeminformationen und Sicherheit werden geladen", "Loading system information and security"),
-                (FinishProgramsStageAsync(), "Installierte Programme werden geladen", "Loading installed programs"),
-                (FinishStartupUpdateStageAsync(), "Programm-Updates werden geprüft", "Checking program updates")
-            };
-
-            int completedStages = 0;
-            while (pendingStages.Count > 0)
-            {
-                var finishedTask = await Task.WhenAny(pendingStages.Select(stage => stage.Task));
-                int finishedIndex = pendingStages.FindIndex(stage => stage.Task == finishedTask);
-                await finishedTask;
-                pendingStages.RemoveAt(finishedIndex);
-
-                if (cancellationToken.IsCancellationRequested) return;
-                completedStages++;
-                if (pendingStages.Count > 0)
-                {
-                    var nextStage = pendingStages[0];
-                    SetPhase(nextStage.German, nextStage.English, completedStages + 1);
-                }
-                await Task.Yield();
-            }
-
-            SetPhase("Dashboard wird vorbereitet", "Preparing dashboard", 4);
+            SetPhase("Dashboard wird vorbereitet", "Preparing dashboard", 3);
 
             if (_currentPageKey == "Storage")
             {
@@ -2085,10 +2067,60 @@ namespace WinVora
             }
         }
 
+        private async Task LoadDeferredProgramDataAsync()
+        {
+            if (_installedPrograms.Count > 0 || _startupCancellation.IsCancellationRequested) return;
+            try
+            {
+                await Task.Yield();
+                _installedPrograms = await StartupPerformanceTracker.MeasureAsync(
+                    "Installierte Programme (Hintergrund)",
+                    () => Task.Run(() => InstalledProgramsService.GetInstalledPrograms(resolveIcons: false),
+                        _startupCancellation.Token));
+                if (_startupCancellation.IsCancellationRequested) return;
+                DashInstalledCountText.Text = _installedPrograms.Count.ToString();
+                if (_pcChangeSummary == null) await LoadPcChangesAsync();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Logger.LogError("Programmliste im Hintergrund laden", ex);
+                DashInstalledCountText.Text = "N/A";
+            }
+        }
+
+        private void ApplyStartupOverlayTheme(bool dark)
+        {
+            StartupOverlay.Background = new SolidColorBrush(dark
+                ? Windows.UI.Color.FromArgb(0xFF, 0x14, 0x14, 0x16)
+                : Windows.UI.Color.FromArgb(0xFF, 0xF8, 0xF6, 0xFC));
+            StartupBrandText.Foreground = new SolidColorBrush(dark
+                ? Microsoft.UI.Colors.White
+                : Windows.UI.Color.FromArgb(0xFF, 0x18, 0x16, 0x20));
+            StartupStatusCard.Background = new SolidColorBrush(dark
+                ? Windows.UI.Color.FromArgb(0xCC, 0x18, 0x18, 0x1D)
+                : Windows.UI.Color.FromArgb(0xF5, 0xFF, 0xFF, 0xFF));
+            StartupStatusCard.BorderBrush = new SolidColorBrush(dark
+                ? Windows.UI.Color.FromArgb(0x35, 0x6C, 0x5C, 0xE7)
+                : Windows.UI.Color.FromArgb(0x80, 0x6C, 0x5C, 0xE7));
+            StartupStatusCard.BorderThickness = dark ? new Thickness(1) : new Thickness(1.5);
+            StartupStatusText.Foreground = new SolidColorBrush(dark
+                ? Windows.UI.Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF5)
+                : Windows.UI.Color.FromArgb(0xFF, 0x2A, 0x27, 0x31));
+            StartupProgressText.Foreground = new SolidColorBrush(dark
+                ? Windows.UI.Color.FromArgb(0xBF, 0xFF, 0xFF, 0xFF)
+                : Windows.UI.Color.FromArgb(0xB8, 0x2A, 0x27, 0x31));
+        }
+
         private async Task LoadSecurityDetailsAsync()
         {
             if (_securityDetailsLoaded || _securityDetailsLoading || _cachedSnapshot == null) return;
             _securityDetailsLoading = true;
+            bool en = Localization.CurrentLanguage == "en";
+            SecurityDetailsLoadingText.Text = en ? "Checking security details..." : "Sicherheitsdetails werden geprüft...";
+            AutomationProperties.SetName(SecurityDetailsLoadingPanel, SecurityDetailsLoadingText.Text);
+            SecurityDetailsGrid.Opacity = 0.25;
+            SecurityDetailsLoadingPanel.Visibility = Visibility.Visible;
             try
             {
                 await StartupPerformanceTracker.MeasureAsync("Sicherheitsdetails", () =>
@@ -2099,7 +2131,12 @@ namespace WinVora
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { Logger.LogError("Sicherheitsdetails laden", ex); }
-            finally { _securityDetailsLoading = false; }
+            finally
+            {
+                _securityDetailsLoading = false;
+                SecurityDetailsLoadingPanel.Visibility = Visibility.Collapsed;
+                SecurityDetailsGrid.Opacity = 1;
+            }
         }
 
         private async void Overview_Click(object sender, RoutedEventArgs e)

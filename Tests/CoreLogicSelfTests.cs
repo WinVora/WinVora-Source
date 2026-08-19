@@ -104,6 +104,9 @@ namespace WinVora
             Debug.Assert(settings.AnimationMode is "Full" or "Reduced" or "Off");
             Debug.Assert(settings.UpdateChannel == "Stable");
             Debug.Assert(settings.StorageGrowthWarningBytes >= 100L * 1024 * 1024);
+            Debug.Assert(new AppSettings().SerializeForStorage().Trim() == "{}");
+            var compactSettings = new AppSettings { ColorScheme = "Light" }.SerializeForStorage();
+            Debug.Assert(compactSettings.Contains("ColorScheme") && !compactSettings.Contains("GlassIntensity"));
             Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.4.1"));
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.4-beta.1", "0.8.4.1"));
             Debug.Assert(WingetTableParser.Parse("", Array.Empty<int>()) == null);

@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -32,6 +34,10 @@ namespace WinVora
 
     public class AppSettings
     {
+        private static readonly JsonSerializerOptions CompactValueOptions = new()
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
+        };
         // Alpha-Wert (0-64) für die Deckkraft der Glas-Karten. 24 = Standard.
         public int GlassIntensity { get; set; } = 18;
 
@@ -230,7 +236,7 @@ namespace WinVora
                 var dir = Path.GetDirectoryName(SettingsFilePath);
                 if (dir != null) Directory.CreateDirectory(dir);
 
-                var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+                var json = SerializeForStorage();
                 var tempPath = SettingsFilePath + ".tmp";
                 File.WriteAllText(tempPath, json);
                 if (File.Exists(SettingsFilePath))
@@ -247,7 +253,26 @@ namespace WinVora
         internal void SaveCopy(string path)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(path, SerializeForStorage());
+        }
+
+        internal string SerializeForStorage()
+        {
+            Validate();
+            var defaults = new AppSettings();
+            var compact = new JsonObject();
+            foreach (var property in typeof(AppSettings).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                         .Where(item => item.CanRead &&
+                                        item.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() == null))
+            {
+                JsonNode? currentNode = JsonSerializer.SerializeToNode(
+                    property.GetValue(this), property.PropertyType, CompactValueOptions);
+                JsonNode? defaultNode = JsonSerializer.SerializeToNode(
+                    property.GetValue(defaults), property.PropertyType, CompactValueOptions);
+                if (!JsonNode.DeepEquals(currentNode, defaultNode))
+                    compact[property.Name] = currentNode;
+            }
+            return compact.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         }
     }
 }

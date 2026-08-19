@@ -393,27 +393,17 @@ namespace WinVora
             // Zuletzt bereinigt
             DashLastCleanupText.Text = FormatLastCleanup(_settings.LastCleanupUtc);
 
-            // Installierte Programme (Registry-Scan - im Hintergrund, kann kurz dauern)
-            try
-            {
-                var count = _installedPrograms.Count > 0
-                    ? _installedPrograms.Count
-                    : await Task.Run(() => InstalledProgramsService.GetInstalledPrograms().Count);
-                DashInstalledCountText.Text = count.ToString();
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("PopulateDashboardWidgetsAsync (Programme)", ex);
-                DashInstalledCountText.Text = "N/A";
-            }
+            // Die Programmliste wird erst nach dem sichtbaren Hauptfenster
+            // speicherschonend und ohne Icons im Hintergrund geladen.
+            DashInstalledCountText.Text = _installedPrograms.Count > 0
+                ? _installedPrograms.Count.ToString()
+                : "…";
 
             UpdateDashboardStatusSummary();
 
             // Ordnergrößen können auf großen Profilen länger dauern. Diese
             // neue Komfortfunktion darf deshalb niemals den Ladebildschirm
             // oder das Öffnen des Hauptfensters verzögern.
-            if (_pcChangeSummary == null)
-                _ = LoadPcChangesAsync();
         }
 
 

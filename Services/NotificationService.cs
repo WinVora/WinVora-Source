@@ -6,14 +6,14 @@ namespace WinVora
     {
         private static bool _notificationsUnavailable;
 
-        public static void ShowUpdateSummary(
+        public static bool ShowUpdateSummary(
             int successful,
             int failed,
             int cancelled,
             int restartRequired,
             int unverified)
         {
-            if (_notificationsUnavailable) return;
+            if (_notificationsUnavailable) return false;
 
             bool en = Localization.CurrentLanguage == "en";
             string body = en
@@ -29,6 +29,7 @@ namespace WinVora
                     .AddText(body)
                     .BuildNotification();
                 manager.Show(notification);
+                return true;
             }
             catch (Exception ex)
             {
@@ -37,6 +38,7 @@ namespace WinVora
                 // die Windows-App-SDK-Ressourcen-DLL. Die Meldung soll den
                 // Verlauf nicht bei jedem Update erneut überfluten.
                 Logger.LogErrorOnce("Windows-Benachrichtigung konnte nicht angezeigt werden", ex);
+                return false;
             }
         }
     }

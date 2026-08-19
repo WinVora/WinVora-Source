@@ -27,7 +27,7 @@ namespace WinVora
 
     public static class InstalledProgramsService
     {
-        public static List<InstalledProgram> GetInstalledPrograms()
+        public static List<InstalledProgram> GetInstalledPrograms(bool resolveIcons = true)
         {
             var results = new List<InstalledProgram>();
 
@@ -93,7 +93,7 @@ namespace WinVora
                             var displayIcon = subKey.GetValue("DisplayIcon") as string;
                             var installLocation = subKey.GetValue("InstallLocation") as string;
                             program.InstallLocation = installLocation ?? "";
-                            program.IconPath = ResolveIconPath(displayIcon, installLocation);
+                            program.IconPath = resolveIcons ? ResolveIconPath(displayIcon, installLocation) : "";
 
                             results.Add(program);
                         }

@@ -31,11 +31,11 @@ namespace WinVora
         // Kleines Label+Control-Paar (z.B. für ComboBoxen mit Beschriftung).
         private static void PreventClosedComboBoxWheelChange(ComboBox comboBox)
         {
-            comboBox.PointerWheelChanged += (_, args) =>
+            comboBox.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler((_, args) =>
             {
                 if (!comboBox.IsDropDownOpen)
                     args.Handled = true;
-            };
+            }), handledEventsToo: true);
         }
 
         private StackPanel MakeLabeledControl(string label, FrameworkElement control)

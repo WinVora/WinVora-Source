@@ -260,5 +260,34 @@ namespace WinVora
             RenderWingetPackages(packages);
         }
 
+        private async Task LoadWingetAtStartupInBackgroundAsync()
+        {
+            if (_cachedPackages != null || _isLoadingWinget || _isUpdatingWinget) return;
+            try
+            {
+                var discovery = await StartupPerformanceTracker.MeasureAsync(
+                    "Programm-Updates (Hintergrund)",
+                    () => WingetDiscoveryService.GetUpgradesAsync(_startupCancellation.Token));
+                if (_startupCancellation.IsCancellationRequested) return;
+                _cachedPackages = discovery.Packages;
+                _wingetColumns = discovery.Columns;
+
+                var hiddenIds = _settings.DeferredUpdates.Select(entry => entry.PackageId)
+                    .Concat(_settings.IgnoredUpdateIds)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                int visibleCount = _cachedPackages.Count(package => !hiddenIds.Contains(package.Id));
+                HealthUpdatesText.Text = visibleCount == 0 ? Localization.T("Common.None") : visibleCount.ToString();
+                UpdateDashboardStatusSummary();
+                if (_currentPageKey == "Updates") RenderWingetPackages(_cachedPackages);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Logger.LogError("Programm-Updates im Hintergrund prüfen", ex);
+                if (_currentPageKey == "Updates")
+                    await LoadWinget(forceRefresh: true);
+            }
+        }
+
     }
 }
