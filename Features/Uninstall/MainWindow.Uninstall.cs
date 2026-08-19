@@ -305,8 +305,21 @@ namespace WinVora
                     ? "Waiting for the publisher uninstaller."
                     : "Warte auf den Hersteller-Deinstaller.";
 
-                var result = await Task.Run(() => InstalledProgramsService.Uninstall(program));
+                (bool success, string message) result;
+                try
+                {
+                    result = await Task.Run(() => InstalledProgramsService.Uninstall(program));
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"Deinstaller für '{program.DisplayName}' starten", ex);
+                    result = (false, en
+                        ? "The uninstaller could not be started. See the diagnostic log for details."
+                        : "Der Deinstaller konnte nicht gestartet werden. Details stehen im Diagnoseprotokoll.");
+                }
                 if (result.success) started++; else failed++;
+                if (!result.success)
+                    Logger.Log($"Deinstallation '{program.DisplayName}' nicht gestartet: {result.message}");
                 LogActivity(
                     result.success ? "\uE74D" : "\uEA39",
                     result.success ? "Deinstaller für " + program.DisplayName + " gestartet" : "Deinstallation von " + program.DisplayName + " fehlgeschlagen",
@@ -465,7 +478,7 @@ namespace WinVora
             bool confirmed = await ConfirmAsync(
                 "Programm deinstallieren?",
                 $"\"{program.DisplayName}\" wird deinstalliert. Persönliche Einstellungen, Spielstände oder Programmdaten können dabei verloren gehen. " +
-                "Windows oder der Hersteller kann vorher einen Wiederherstellungspunkt anbieten. Sichere wichtige Daten und fahre nur fort, wenn du das Programm wirklich entfernen möchtest.");
+                "Sichere wichtige Daten und fahre nur fort, wenn du das Programm wirklich entfernen möchtest.");
 
             if (!confirmed) return;
 
@@ -481,7 +494,20 @@ namespace WinVora
             UninstallStatusText.Text = en ? $"Preparing {program.DisplayName}..." : $"{program.DisplayName} wird vorbereitet...";
             UninstallStatusDetailText.Text = en ? "Waiting for the program's uninstaller." : "Der Deinstaller des Programms wird aufgerufen.";
 
-            var (success, message) = await Task.Run(() => InstalledProgramsService.Uninstall(program));
+            bool success;
+            string message;
+            try
+            {
+                (success, message) = await Task.Run(() => InstalledProgramsService.Uninstall(program));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Deinstaller für '{program.DisplayName}' starten", ex);
+                success = false;
+                message = en
+                    ? "The uninstaller could not be started. See the diagnostic log for details."
+                    : "Der Deinstaller konnte nicht gestartet werden. Details stehen im Diagnoseprotokoll.";
+            }
             Logger.Log($"Deinstallation '{program.DisplayName}': {(success ? "gestartet" : "Fehler")} - {message}");
 
             UninstallStatusRing.IsActive = false;

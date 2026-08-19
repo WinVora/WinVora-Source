@@ -1,9 +1,22 @@
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using Debug = WinVora.SelfTestDebug;
 
 namespace WinVora
 {
+    internal static class SelfTestDebug
+    {
+        public static void Assert(bool condition, [CallerArgumentExpression(nameof(condition))] string? expression = null)
+        {
+            if (!condition)
+                throw new InvalidOperationException($"Interner Logiktest fehlgeschlagen: {expression}");
+        }
+    }
+
     internal static class CoreLogicSelfTests
     {
         [Conditional("DEBUG")]
@@ -40,6 +53,23 @@ namespace WinVora
             var accessDiagnostic = WingetFailureDiagnostics.AnalyzeText("Error: -2147024891 (0x80070005)");
             Debug.Assert(accessDiagnostic.RequiresElevation);
             Debug.Assert(accessDiagnostic.HiddenExitCode == unchecked((int)0x80070005));
+            Debug.Assert(UpdateErrorMessageService.ForCheck(new HttpRequestException(), false).Contains("Internet"));
+            Debug.Assert(UpdateErrorMessageService.ForCheck(new TaskCanceledException(), false).Contains("lange"));
+            Debug.Assert(UpdateErrorMessageService.ForInstall(new UnauthorizedAccessException(), false).Contains("Zugriff"));
+            Debug.Assert(UpdateErrorMessageService.ForInstall(new InvalidDataException(), false).Contains("beschädigt"));
+            string damagedDownload = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllText(damagedDownload, "damaged update test");
+                bool damagedRejected = false;
+                try
+                {
+                    UpdateService.VerifySha256Async(damagedDownload, new string('0', 64)).GetAwaiter().GetResult();
+                }
+                catch (InvalidDataException) { damagedRejected = true; }
+                Debug.Assert(damagedRejected);
+            }
+            finally { File.Delete(damagedDownload); }
 
             var attemptedUpdate = new WingetPackage
             {
@@ -73,10 +103,21 @@ namespace WinVora
             Debug.Assert(settings.Language == "de");
             Debug.Assert(settings.AnimationMode is "Full" or "Reduced" or "Off");
             Debug.Assert(settings.UpdateChannel == "Stable");
+            Debug.Assert(settings.StorageGrowthWarningBytes >= 100L * 1024 * 1024);
             Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.4.1"));
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.4-beta.1", "0.8.4.1"));
             Debug.Assert(WingetTableParser.Parse("", Array.Empty<int>()) == null);
             Debug.Assert(!InstalledProgramsService.TrySplitCommand("", out _, out _));
+            Debug.Assert(InstalledProgramsService.TrySplitCommand(
+                @"""C:\Program Files\Vendor\uninstall.exe"" /remove /quiet", out _, out string unusualArgs) &&
+                unusualArgs.Contains("/remove"));
+            var missingUninstaller = InstalledProgramsService.Uninstall(new InstalledProgram
+            {
+                DisplayName = "Test ohne Deinstaller",
+                UninstallString = "",
+                QuietUninstallString = ""
+            });
+            Debug.Assert(!missingUninstaller.success && missingUninstaller.message.Contains("kein Deinstaller"));
             Debug.Assert(StorageService.FormatBytes(0) == "0 B");
             Debug.Assert(StorageService.FormatBytes(1024).Contains("KB", StringComparison.Ordinal));
             Debug.Assert(StorageService.FormatBytes(1024 * 1024).Contains("MB", StringComparison.Ordinal));
@@ -115,6 +156,17 @@ namespace WinVora
             Debug.Assert(!sanitized.Contains("SERIAL-123"));
             Debug.Assert(!sanitized.Contains("192.168.1.5"));
             Debug.Assert(!sanitized.Contains("AA:BB:CC:DD:EE:FF"));
+            string supportReport = DiagnosticReportBuilder.Build(
+                diagnosticSnapshot,
+                "0.0-test",
+                "FEHLER SECRET-PC SECRET-USER SERIAL-123 C:\\Users\\SECRET-USER\\secret.txt 192.168.1.5 AA:BB:CC:DD:EE:FF");
+            Debug.Assert(!supportReport.Contains("SECRET-PC"));
+            Debug.Assert(!supportReport.Contains("SECRET-USER"));
+            Debug.Assert(!supportReport.Contains("SERIAL-123"));
+            Debug.Assert(!supportReport.Contains("192.168.1.5"));
+            Debug.Assert(!supportReport.Contains("AA:BB:CC:DD:EE:FF"));
+            string relevantLog = DiagnosticReportBuilder.SelectRelevantLogLines("normal\nwarning: demo\nnormal 2");
+            Debug.Assert(relevantLog.Contains("warning: demo") && !relevantLog.Contains("normal 2"));
 
             Debug.Assert(InstalledProgramsService.TrySplitCommand(
                 "\"C:\\Program Files (x86)\\Steam\\steam.exe\" steam://uninstall/123",

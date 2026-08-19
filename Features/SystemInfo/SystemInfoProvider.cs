@@ -66,7 +66,12 @@ namespace WinVora
         public static async Task<SystemInfoSnapshot> GetFullSnapshotAsync(CancellationToken cancellationToken = default)
         {
             FillBasic(CachedSnapshot);
-            var sections = Enum.GetValues<SystemInfoSection>();
+            // Die erweiterte Sicherheitsabfrage kann auf manchen PCs wegen
+            // TPM/BitLocker-WMI rund fünf Sekunden dauern. Für das Dashboard
+            // läuft bereits die schnelle, unabhängige Sicherheitsprüfung.
+            // Detailwerte werden deshalb erst beim Öffnen der Kategorie geladen.
+            var sections = Enum.GetValues<SystemInfoSection>()
+                .Where(section => section != SystemInfoSection.Security);
             await Task.WhenAll(sections.Select(section => RefreshSectionCoreAsync(
                 CachedSnapshot, section, force: false, cancellationToken)));
             return CachedSnapshot.Clone();

@@ -579,6 +579,19 @@ namespace WinVora
                         await ShowUpdateSummaryAsync(retryResults, 0);
                     };
                     resultContent.Children.Add(retryButton);
+                    var rollbackButton = new Button
+                    {
+                        Content = en ? "Open repair / rollback options" : "Reparatur-/Rollback-Optionen öffnen",
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+                    rollbackButton.Click += async (_, __) =>
+                    {
+                        await Windows.System.Launcher.LaunchUriAsync(new Uri("ms-settings:appsfeatures"));
+                    };
+                    ToolTipService.SetToolTip(rollbackButton, en
+                        ? "Opens Windows Installed apps. Select the affected app for repair, uninstall or rollback options."
+                        : "Öffnet die installierten Apps in Windows. Wähle dort das betroffene Programm für Reparatur, Deinstallation oder Rollback.");
+                    resultContent.Children.Add(rollbackButton);
                 }
                 else if (item.Result.Status == WingetUpdateStatus.Unverified)
                 {

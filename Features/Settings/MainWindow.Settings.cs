@@ -265,6 +265,7 @@ namespace WinVora
                 _settings.UpdateChannel = item.Tag?.ToString() == "Beta" ? "Beta" : "Stable";
                 _settings.Save();
                 _pendingUpdateInfo = null;
+                UpdateUpdateChannelUi();
             };
             updateContent.Children.Add(MakeLabeledControl(
                 updateUiEnglish ? "Update channel" : "Updatekanal",
@@ -329,18 +330,7 @@ namespace WinVora
                     catch (Exception ex)
                     {
                         Logger.LogError("CheckForUpdateAsync", ex);
-                        updateStatusText.Text = ex switch
-                        {
-                            HttpRequestException => updateUiEnglish
-                                ? "GitHub could not be reached. Please check your internet connection."
-                                : "GitHub ist nicht erreichbar. Bitte prüfe deine Internetverbindung.",
-                            InvalidDataException => updateUiEnglish
-                                ? "The new version has no installer available yet."
-                                : "Für die neue Version ist noch kein Installer verfügbar.",
-                            _ => updateUiEnglish
-                                ? "The update check failed. Please try again later."
-                                : "Die Update-Prüfung ist fehlgeschlagen. Bitte versuche es später erneut."
-                        };
+                        updateStatusText.Text = UpdateErrorMessageService.ForCheck(ex, updateUiEnglish);
                         updateButton.IsEnabled = true;
                         return;
                     }
@@ -361,7 +351,8 @@ namespace WinVora
                         ? $"Version {update.Version} is available (you have {CurrentVersion}). WinVora will close and update automatically. Update now?"
                         : $"Version {update.Version} ist verfügbar (du hast {CurrentVersion}). WinVora wird geschlossen und automatisch aktualisiert. Jetzt aktualisieren?",
                     primaryButtonText: updateUiEnglish ? "Update now" : "Jetzt aktualisieren",
-                    respectDeleteConfirmationSetting: false);
+                    respectDeleteConfirmationSetting: false,
+                    dialogRoot: (settingsWindow.Content as FrameworkElement)?.XamlRoot);
 
                 if (!confirmed)
                 {
@@ -370,6 +361,23 @@ namespace WinVora
                         : $"Update auf {update.Version} verfügbar, aber nicht installiert.";
                     updateButton.IsEnabled = true;
                     return;
+                }
+
+                if (update.IsPrerelease)
+                {
+                    try
+                    {
+                        SettingsBackupService.CreateAutomatic(_settings, "before-beta-update");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("Beta-Einstellungssicherung", ex);
+                        updateStatusText.Text = updateUiEnglish
+                            ? "The settings backup failed. The beta update was not started."
+                            : "Die Einstellungssicherung ist fehlgeschlagen. Das Beta-Update wurde nicht gestartet.";
+                        updateButton.IsEnabled = true;
+                        return;
+                    }
                 }
 
                 updateProgressBar.Visibility = Visibility.Visible;
@@ -418,20 +426,34 @@ namespace WinVora
                 catch (Exception ex)
                 {
                     Logger.LogError("DownloadUpdateAsync/RunInstaller", ex);
-                    updateStatusText.Text = ex is InvalidDataException
-                        ? (updateUiEnglish
-                            ? "The download is damaged or incomplete and was removed."
-                            : "Der Download ist beschädigt oder unvollständig und wurde entfernt.")
-                        : (updateUiEnglish
-                            ? "The update could not be installed. Please try again later."
-                            : "Das Update konnte nicht installiert werden. Bitte versuche es später erneut.");
+                    updateStatusText.Text = UpdateErrorMessageService.ForInstall(ex, updateUiEnglish);
                     updateProgressBar.Visibility = Visibility.Collapsed;
                     updateButton.IsEnabled = true;
                 }
             };
             updateContent.Children.Add(updateButton);
 
-            if (CurrentVersion.Contains('-', StringComparison.Ordinal))
+            if (IsBetaBuild)
+            {
+                var betaHubButton = new Button
+                {
+                    Content = updateUiEnglish ? "Open Beta Center" : "Beta-Zentrale öffnen",
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Style = (Style)Application.Current.Resources["AccentButtonStyle"]
+                };
+                betaHubButton.Click += async (_, __) => await ShowBetaHubAsync();
+                updateContent.Children.Add(betaHubButton);
+
+                var betaFeedbackButton = new Button
+                {
+                    Content = updateUiEnglish ? "Report a beta problem" : "Beta-Problem melden",
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                betaFeedbackButton.Click += async (_, __) => await OpenBetaFeedbackAsync(settingsWindow);
+                updateContent.Children.Add(betaFeedbackButton);
+            }
+
+            if (IsBetaBuild)
             {
                 var returnToStableButton = new Button
                 {
@@ -442,19 +464,8 @@ namespace WinVora
                 };
                 returnToStableButton.Click += async (_, __) =>
                 {
-                    bool confirmed = await ConfirmAsync(
-                        updateUiEnglish ? "Return to Stable?" : "Zur stabilen Version zurückkehren?",
-                        updateUiEnglish
-                            ? "WinVora will download the latest official stable release. Preview-only features may no longer be available afterward. Your settings will be retained."
-                            : "WinVora lädt die neueste offizielle stabile Version herunter. Funktionen der Vorschau können danach nicht mehr verfügbar sein. Deine Einstellungen bleiben erhalten.",
-                        primaryButtonText: updateUiEnglish ? "Return to Stable" : "Stabile Version installieren",
-                        respectDeleteConfirmationSetting: false);
-                    if (!confirmed) return;
-
                     returnToStableButton.IsEnabled = false;
                     updateButton.IsEnabled = false;
-                    updateProgressBar.Visibility = Visibility.Visible;
-                    updateProgressBar.Value = 0;
                     updateStatusText.Text = updateUiEnglish
                         ? "Finding the latest stable version..."
                         : "Suche die neueste stabile Version...";
@@ -463,6 +474,26 @@ namespace WinVora
                     try
                     {
                         var stableRelease = await UpdateService.GetLatestStableReleaseAsync();
+                        bool confirmed = await ConfirmAsync(
+                            updateUiEnglish ? "Return to Stable?" : "Zur stabilen Version zurückkehren?",
+                            updateUiEnglish
+                                ? $"Current beta: {CurrentVersion}\nAvailable stable version: {stableRelease.Version}\n\nBeta-only settings may be ignored or reset by the stable version. WinVora creates an automatic settings backup before continuing."
+                                : $"Aktuelle Beta: {CurrentVersion}\nVerfügbare Stable-Version: {stableRelease.Version}\n\nReine Beta-Einstellungen können von der stabilen Version ignoriert oder zurückgesetzt werden. WinVora erstellt vorher automatisch eine Einstellungssicherung.",
+                            primaryButtonText: updateUiEnglish ? "Install Stable" : "Stable installieren",
+                            respectDeleteConfirmationSetting: false);
+                        if (!confirmed)
+                        {
+                            updateStatusText.Text = updateUiEnglish
+                                ? $"Current version: {CurrentVersion}"
+                                : $"Aktuelle Version: {CurrentVersion}";
+                            returnToStableButton.IsEnabled = true;
+                            updateButton.IsEnabled = true;
+                            return;
+                        }
+
+                        SettingsBackupService.CreateAutomatic(_settings, "before-stable-return");
+                        updateProgressBar.Visibility = Visibility.Visible;
+                        updateProgressBar.Value = 0;
                         updateStatusText.Text = updateUiEnglish
                             ? $"Downloading stable version {stableRelease.Version}..."
                             : $"Lade stabile Version {stableRelease.Version} herunter...";
@@ -595,7 +626,6 @@ namespace WinVora
                 if (animationCombo.SelectedItem is ComboBoxItem item && item.Tag is string mode)
                 {
                     _settings.AnimationMode = mode;
-                    _settings.ReducedMotion = mode != "Full";
                     _settings.Save();
                 }
             };
@@ -763,6 +793,18 @@ namespace WinVora
                 securityContent.Children.Add(toggle);
             }
 
+            var growthThreshold = new ComboBox { Header = en ? "Folder growth warning" : "Warnung bei Ordnerwachstum", HorizontalAlignment = HorizontalAlignment.Stretch };
+            foreach (var option in new[] { 500L * 1024 * 1024, 1024L * 1024 * 1024, 5L * 1024 * 1024 * 1024 })
+                growthThreshold.Items.Add(new ComboBoxItem { Content = StorageService.FormatBytes(option), Tag = option });
+            growthThreshold.SelectedIndex = _settings.StorageGrowthWarningBytes >= 5L * 1024 * 1024 * 1024 ? 2 : _settings.StorageGrowthWarningBytes >= 1024L * 1024 * 1024 ? 1 : 0;
+            growthThreshold.SelectionChanged += (_, __) =>
+            {
+                if (growthThreshold.SelectedItem is ComboBoxItem item && item.Tag is long bytes)
+                { _settings.StorageGrowthWarningBytes = bytes; _settings.Save(); }
+            };
+            PreventClosedComboBoxWheelChange(growthThreshold);
+            securityContent.Children.Add(growthThreshold);
+
             panel.Children.Add(behaviorCard);
             panel.Children.Add(securityCard);
 
@@ -848,32 +890,17 @@ namespace WinVora
 
             maintenanceContent.Children.Add(logButtonsPanel);
 
-            var settingsTransferPanel = new StackPanel { Spacing = 8 };
-            maintenanceContent.Children.Add(new TextBlock
-            {
-                Text = en ? "Backup and transfer" : "Sichern und übertragen",
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
-            });
-            var exportSettingsButton = new Button { Content = en ? "Export settings" : "Einstellungen exportieren" };
-            exportSettingsButton.Click += async (_, __) => await ExportSettingsAsync(settingsWindow);
-            var importSettingsButton = new Button { Content = en ? "Import settings" : "Einstellungen importieren" };
-            importSettingsButton.Click += async (_, __) => await ImportSettingsAsync(settingsWindow);
-            settingsTransferPanel.Children.Add(exportSettingsButton);
-            settingsTransferPanel.Children.Add(importSettingsButton);
-            maintenanceContent.Children.Add(settingsTransferPanel);
-
             string backupDirectory = System.IO.Path.Combine(
                 System.IO.Path.GetDirectoryName(AppSettings.GetSettingsFilePath())!, "Backups");
             if (Directory.Exists(backupDirectory))
             {
                 var backups = Directory.GetFiles(backupDirectory, "settings-*.json")
-                    .OrderByDescending(File.GetLastWriteTimeUtc).Take(5).ToList();
+                    .OrderByDescending(File.GetLastWriteTimeUtc).Take(1).ToList();
                 if (backups.Count > 0)
                 {
                     maintenanceContent.Children.Add(new TextBlock
                     {
-                        Text = en ? "Available settings backups" : "Verfügbare Einstellungssicherungen",
+                        Text = en ? "Latest settings backup" : "Letzte Einstellungssicherung",
                         FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
                     });
                     foreach (string backup in backups)
@@ -977,7 +1004,6 @@ namespace WinVora
                 _settings.UseMica = true;
                 _settings.GlassIntensity = 18;
                 _settings.AnimationMode = "Full";
-                _settings.ReducedMotion = false;
             });
             AddSectionReset(behaviorContent, en ? "Behavior" : "Verhalten", () =>
             {
@@ -993,6 +1019,7 @@ namespace WinVora
                 _settings.ConfirmRecycleBinCleanup = true;
                 _settings.ConfirmBrowserCleanup = true;
                 _settings.OfferUninstallLeftoverScan = true;
+                _settings.StorageGrowthWarningBytes = 1024L * 1024 * 1024;
             });
             AddSectionReset(maintenanceContent, en ? "Maintenance" : "Wartung", () =>
             {
@@ -1133,83 +1160,24 @@ namespace WinVora
         }
 
 
-        private async Task ExportSettingsAsync(Window owner)
+        private async Task ExportDiagnosticReportAsync(Window owner)
         {
-            string json = System.Text.Json.JsonSerializer.Serialize(
-                _settings, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-            bool saved = await ReportExportService.SaveJsonAsync(owner, $"WinVora-Einstellungen-{CurrentVersion}", json);
-            if (saved)
-                ShowInfo(Localization.CurrentLanguage == "en" ? "Settings exported." : "Einstellungen wurden exportiert.", InfoBarSeverity.Success);
-        }
-
-        private async Task ImportSettingsAsync(Window owner)
-        {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker();
-            picker.FileTypeFilter.Add(".json");
-            WinRT.Interop.InitializeWithWindow.Initialize(
-                picker, WinRT.Interop.WindowNative.GetWindowHandle(owner));
-            var file = await picker.PickSingleFileAsync();
-            if (file == null) return;
-
+            SystemInfoSnapshot snapshot;
             try
             {
-                string json = await File.ReadAllTextAsync(file.Path);
-                var imported = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)
-                    ?? throw new InvalidDataException("Die Datei enthält keine gültigen WinVora-Einstellungen.");
-                imported.Validate();
-
-                bool en = Localization.CurrentLanguage == "en";
-                var preview = new TextBlock
-                {
-                    Text = (en ? "The following settings will be imported:" : "Folgende Einstellungen werden importiert:") +
-                           $"\n\n{(en ? "Language" : "Sprache")}: {imported.Language}" +
-                           $"\n{(en ? "Color scheme" : "Farbschema")}: {imported.ColorScheme}" +
-                           $"\n{(en ? "Startup page" : "Startseite")}: {imported.StartupPage}" +
-                           $"\n{(en ? "Ignored updates" : "Ignorierte Updates")}: {imported.IgnoredUpdateIds.Count}" +
-                           $"\n{(en ? "History entries" : "Verlaufseinträge")}: {imported.ActivityLog.Count}" +
-                           (en ? "\n\nYour current settings are backed up first." : "\n\nDie aktuellen Einstellungen werden vorher gesichert."),
-                    TextWrapping = TextWrapping.Wrap
-                };
-                var confirmation = new ContentDialog
-                {
-                    XamlRoot = (owner.Content as FrameworkElement)?.XamlRoot ?? RootGrid.XamlRoot,
-                    Title = en ? "Import settings?" : "Einstellungen importieren?",
-                    Content = preview,
-                    PrimaryButtonText = en ? "Import" : "Importieren",
-                    CloseButtonText = en ? "Cancel" : "Abbrechen",
-                    DefaultButton = ContentDialogButton.Close
-                };
-                if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
-
-                string currentPath = AppSettings.GetSettingsFilePath();
-                if (File.Exists(currentPath))
-                {
-                    string backupDirectory = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(currentPath)!, "Backups");
-                    Directory.CreateDirectory(backupDirectory);
-                    string backupPath = System.IO.Path.Combine(backupDirectory, $"settings-{DateTime.Now:yyyyMMdd-HHmmss}.json");
-                    File.Copy(currentPath, backupPath, overwrite: false);
-                }
-                _settings = imported;
-                _settings.Save();
-                ApplyConfiguredColorScheme();
-                ApplyLanguage();
-                StartLiveUsageTimer();
-                ShowInfo(Localization.CurrentLanguage == "en" ? "Settings imported." : "Einstellungen wurden importiert.", InfoBarSeverity.Success);
-                _settingsWindow?.Close();
+                snapshot = _cachedSnapshot ?? await SystemInfoProvider.GetFullSnapshotAsync(_startupCancellation.Token);
             }
             catch (Exception ex)
             {
-                Logger.LogError("Einstellungen importieren", ex);
-                ShowInfo((Localization.CurrentLanguage == "en" ? "Import failed: " : "Import fehlgeschlagen: ") + ex.Message, InfoBarSeverity.Error);
+                Logger.LogError("Systeminformationen für Supportbericht", ex);
+                snapshot = new SystemInfoSnapshot
+                {
+                    WindowsEdition = Environment.OSVersion.Platform.ToString(),
+                    WindowsVersion = Environment.OSVersion.VersionString,
+                    Architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString()
+                };
             }
-        }
-
-        private async Task ExportDiagnosticReportAsync(Window owner)
-        {
-            var snapshot = _cachedSnapshot ?? await SystemInfoProvider.GetFullSnapshotAsync(_startupCancellation.Token);
-            string log = File.Exists(Logger.GetLogFilePath())
-                ? await File.ReadAllTextAsync(Logger.GetLogFilePath())
-                : "Kein Protokoll vorhanden.";
+            string log = await Task.Run(() => Logger.ReadForDiagnostics());
             var report = DiagnosticReportBuilder.Build(snapshot, CurrentVersion, log);
             bool en = Localization.CurrentLanguage == "en";
             var previewDialog = new ContentDialog

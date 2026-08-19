@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Collections.Generic;
+using System.Reflection;
 
 namespace WinVora
 {
@@ -38,22 +40,22 @@ namespace WinVora
 
         // Ob Animationen in der App, einschließlich Ladebildschirm und
         // Seitenwechsel, reduziert werden sollen.
-        public bool ReducedMotion { get; set; } = false;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool ReducedMotion => AnimationMode != "Full";
 
         // "Full", "Reduced" oder "Off". ReducedMotion bleibt für ältere
         // Einstellungsdateien kompatibel und wird daraus abgeleitet.
         public string AnimationMode { get; set; } = "Full";
 
-        // Ob die Oberfläche im dunklen (true) oder hellen (false) Modus dargestellt wird.
-        public bool DarkMode { get; set; } = true;
-
-        // "System", "Dark" oder "Light". DarkMode bleibt für ältere
-        // Einstellungsdateien als kompatibler Rückfallwert erhalten.
+        // "System", "Dark" oder "Light".
         public string ColorScheme { get; set; } = "System";
 
         // "Stable" installiert nur reguläre Releases. "Beta" darf zusätzlich
         // als Vorabversion markierte GitHub-Releases anbieten.
         public string UpdateChannel { get; set; } = "Stable";
+
+        public System.Collections.Generic.List<string> WatchedFolders { get; set; } = new();
+        public long StorageGrowthWarningBytes { get; set; } = 1024L * 1024 * 1024;
 
         // Ob WinVora automatisch mit Windows starten soll.
         public bool AutoStartWithWindows { get; set; } = false;
@@ -125,10 +127,30 @@ namespace WinVora
                 if (File.Exists(SettingsFilePath))
                 {
                     var json = File.ReadAllText(SettingsFilePath);
+                    using var document = JsonDocument.Parse(json);
+                    bool hasColorScheme = document.RootElement.TryGetProperty(nameof(ColorScheme), out _);
+                    bool hasAnimationMode = document.RootElement.TryGetProperty(nameof(AnimationMode), out _);
+                    bool? legacyDarkMode = document.RootElement.TryGetProperty("DarkMode", out var darkMode) &&
+                                           darkMode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? darkMode.GetBoolean()
+                        : null;
+                    bool? legacyReducedMotion = document.RootElement.TryGetProperty("ReducedMotion", out var reducedMotion) &&
+                                                reducedMotion.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? reducedMotion.GetBoolean()
+                        : null;
                     var loaded = JsonSerializer.Deserialize<AppSettings>(json);
                     if (loaded != null)
                     {
+                        if (!hasColorScheme && legacyDarkMode.HasValue)
+                            loaded.ColorScheme = legacyDarkMode.Value ? "Dark" : "Light";
+                        if (!hasAnimationMode && legacyReducedMotion.HasValue)
+                            loaded.AnimationMode = legacyReducedMotion.Value ? "Reduced" : "Full";
                         loaded.Validate();
+                        if (ContainsLegacyOrUnknownProperties(document.RootElement))
+                        {
+                            loaded.Save();
+                            Logger.Log("Veraltete oder unbekannte Einstellungen wurden aus settings.json entfernt.");
+                        }
                         return loaded;
                     }
                 }
@@ -153,11 +175,10 @@ namespace WinVora
 
             if (Language is not ("de" or "en")) Language = "de";
             if (ColorScheme is not ("System" or "Dark" or "Light"))
-                ColorScheme = DarkMode ? "Dark" : "Light";
+                ColorScheme = "System";
             if (UpdateChannel is not ("Stable" or "Beta")) UpdateChannel = "Stable";
             if (AnimationMode is not ("Full" or "Reduced" or "Off"))
-                AnimationMode = ReducedMotion ? "Reduced" : "Full";
-            ReducedMotion = AnimationMode != "Full";
+                AnimationMode = "Full";
             GlassIntensity = Math.Clamp(GlassIntensity, 0, 64);
             WindowWidth = Math.Clamp(WindowWidth, 900, 3840);
             WindowHeight = Math.Clamp(WindowHeight, 650, 2160);
@@ -169,6 +190,10 @@ namespace WinVora
             HiddenDashboardCards ??= new();
             DashboardCardOrder ??= new();
             RecentCommands ??= new();
+            WatchedFolders ??= new();
+            WatchedFolders = WatchedFolders.Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList();
+            StorageGrowthWarningBytes = Math.Clamp(StorageGrowthWarningBytes, 100L * 1024 * 1024, 100L * 1024 * 1024 * 1024);
             foreach (string key in new[] { "Updates", "Security", "Storage", "Cpu", "Ram", "Gpu" })
                 if (!DashboardCardOrder.Contains(key, StringComparer.OrdinalIgnoreCase))
                     DashboardCardOrder.Add(key);
@@ -189,6 +214,15 @@ namespace WinVora
 
         public static string GetSettingsFilePath() => SettingsFilePath;
 
+        private static bool ContainsLegacyOrUnknownProperties(JsonElement root)
+        {
+            var supported = typeof(AppSettings).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(property => property.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() == null)
+                .Select(property => property.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            return root.EnumerateObject().Any(property => !supported.Contains(property.Name));
+        }
+
         public void Save()
         {
             try
@@ -208,6 +242,12 @@ namespace WinVora
             {
                 Logger.LogError("Einstellungen konnten nicht gespeichert werden", ex);
             }
+        }
+
+        internal void SaveCopy(string path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
         }
     }
 }

@@ -3,12 +3,15 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace WinVora
 {
     public sealed partial class MainWindow
     {
+        private int _visibleChangelogCardCount;
+
         private void ChangelogButton_Click(object sender, RoutedEventArgs e)
         {
             if (_changelogWindow != null)
@@ -65,10 +68,16 @@ namespace WinVora
             Grid.SetColumn(changelogHeading, 1);
             changelogHeader.Children.Add(changelogHeading);
             panel.Children.Add(changelogHeader);
+            _visibleChangelogCardCount = 0;
 
             panel.Children.Add(MakeChangelogCard(
-    Localization.CurrentLanguage == "en" ? "Version 0.8.5 Beta (preview)" : "Version 0.8.5 Beta (Vorschau)",
-    "• Neue Funktionen: In den Einstellungen kann zwischen stabilen und Beta-Updates gewählt werden\n" +
+    $"Version {CurrentVersion}",
+    "• Beta: In den Einstellungen kann zwischen stabilen und Beta-Updates gewechselt werden\n" +
+    "• Beta: Sichtbare Kennzeichnung, Updatekanal-Anzeige und vorbereitete Problemmeldung\n" +
+    "• Sicherheit: Einstellungen werden vor Beta-Updates und der Rückkehr zu Stable automatisch gesichert\n" +
+    "• Diagnose: Supportberichte werden anonymisiert als ZIP gespeichert\n" +
+    "• Speicher: Eigene Ordner können auf ungewöhnliches Wachstum überwacht werden\n" +
+    "• Updates: Bei Fehlern führt ein neuer Hinweis zu Reparatur- und Rollback-Optionen\n" +
     "• Neue Funktionen: Dashboard-Karten lassen sich per Drag-and-drop anordnen\n" +
     "• Neue Funktionen: Speicheranalyse sortiert nach Größe, Name oder Risiko und erklärt die Einstufung\n" +
     "• Verbesserungen: Einstellungen lassen sich einzeln pro Bereich zurücksetzen und öffnen danach automatisch neu\n" +
@@ -77,7 +86,12 @@ namespace WinVora
     "• Oberfläche: Skeleton-Lader, Tooltips, Sidebar-Scrollhinweise und kleine Fenster wurden verfeinert\n" +
     "• Barrierefreiheit: Reduzierte Bewegung stoppt Skeleton-Animationen; Tastatur- und Fokuszustände wurden vereinheitlicht\n" +
     "• Bugfixes: Titelleisten, Hellmodus-Kontraste, Systemwerte und Programmlisten wurden stabilisiert",
-    "• New features: Settings can switch between stable and beta update channels\n" +
+    "• Beta: Settings can switch between stable and beta update channels\n" +
+    "• Beta: Visible badges, update-channel status and prepared issue reports\n" +
+    "• Safety: Settings are backed up automatically before beta updates and returning to Stable\n" +
+    "• Diagnostics: Anonymized support reports are saved as ZIP files\n" +
+    "• Storage: Custom folders can be monitored for unusual growth\n" +
+    "• Updates: Failed updates now link to repair and rollback options\n" +
     "• New features: Dashboard cards can be reordered using drag and drop\n" +
     "• New features: Storage analysis sorts by size, name or risk and explains each rating\n" +
     "• Improvements: Settings can be reset per section and reopen automatically afterwards\n" +
@@ -680,6 +694,15 @@ namespace WinVora
                 "• First changelog window"
             ));
 
+            var olderReleasesButton = new Button
+            {
+                Content = Localization.CurrentLanguage == "en" ? "View older releases on GitHub" : "Ältere Versionen auf GitHub ansehen",
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            olderReleasesButton.Click += (_, __) => Process.Start(new ProcessStartInfo(
+                "https://github.com/WinVora/WinVora-Releases/releases") { UseShellExecute = true });
+            panel.Children.Add(olderReleasesButton);
+
             var scrollViewer = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -716,13 +739,16 @@ namespace WinVora
 
         private Border MakeChangelogCard(string title, string textDe, string? textEn = null)
         {
+            _visibleChangelogCardCount++;
             var text = Localization.CurrentLanguage == "en" && textEn != null ? textEn : textDe;
+            bool isCurrent = title == $"Version {CurrentVersion}";
 
             var card = new Border
             {
+                Visibility = _visibleChangelogCardCount <= 4 ? Visibility.Visible : Visibility.Collapsed,
                 CornerRadius = new CornerRadius(16),
                 Padding = new Thickness(20),
-                Background = title == $"Version {CurrentVersion}"
+                Background = isCurrent
                     ? (SolidColorBrush)RootGrid.Resources["AppAccentOverlay10"]
                     : (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
                 BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
@@ -744,22 +770,45 @@ namespace WinVora
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
             });
-            if (title == $"Version {CurrentVersion}")
+            if (isCurrent)
             {
-                var currentBadge = new Border
+                var badges = new StackPanel
                 {
-                    CornerRadius = new CornerRadius(8),
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                badges.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(7),
                     Padding = new Thickness(9, 4, 9, 4),
-                    Background = (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"],
+                    Background = (SolidColorBrush)RootGrid.Resources["AppOverlay30"],
                     Child = new TextBlock
                     {
                         Text = Localization.CurrentLanguage == "en" ? "Current" : "Aktuell",
                         FontSize = 11,
-                        Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
                     }
-                };
-                Grid.SetColumn(currentBadge, 1);
-                versionHeader.Children.Add(currentBadge);
+                });
+                if (IsBetaBuild)
+                {
+                    badges.Children.Add(new Border
+                    {
+                        CornerRadius = new CornerRadius(7),
+                        Padding = new Thickness(9, 4, 9, 4),
+                        Background = (SolidColorBrush)RootGrid.Resources["AppAccentOverlay20"],
+                        Child = new TextBlock
+                        {
+                            Text = "BETA",
+                            FontSize = 11,
+                            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                            Foreground = (SolidColorBrush)RootGrid.Resources["AppAccentBrushLight"]
+                        }
+                    });
+                }
+                Grid.SetColumn(badges, 1);
+                versionHeader.Children.Add(badges);
             }
             content.Children.Add(versionHeader);
 

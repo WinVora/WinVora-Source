@@ -4,6 +4,8 @@ using System.Text;
 using System.Threading;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace WinVora
 {
@@ -20,6 +22,30 @@ namespace WinVora
 
         public static string GetLogFilePath() => LogFilePath;
 
+        public static string ReadForDiagnostics(int archivedFiles = 2)
+        {
+            var content = new StringBuilder();
+            try
+            {
+                var paths = new List<string>();
+                for (int index = Math.Max(0, archivedFiles); index >= 1; index--)
+                    paths.Add(LogFilePath + $".{index}");
+                paths.Add(LogFilePath);
+
+                foreach (string path in paths)
+                {
+                    if (!File.Exists(path)) continue;
+                    content.AppendLine($"--- {Path.GetFileName(path)} ---");
+                    content.AppendLine(File.ReadAllText(path));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"WinVora-Protokolle konnten nicht gelesen werden: {ex}");
+            }
+            return content.Length == 0 ? "Kein Protokoll vorhanden." : content.ToString();
+        }
+
         public static void Clear()
         {
             try
@@ -27,9 +53,9 @@ namespace WinVora
                 if (File.Exists(LogFilePath))
                     File.WriteAllText(LogFilePath, string.Empty);
             }
-            catch
+            catch (Exception ex)
             {
-                // Nicht kritisch
+                Debug.WriteLine($"WinVora-Protokoll konnte nicht geleert werden: {ex}");
             }
         }
 
@@ -48,9 +74,9 @@ namespace WinVora
                     TrimIfTooLarge();
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Logging darf die App niemals selbst zum Absturz bringen
+                Debug.WriteLine($"WinVora-Protokoll konnte nicht geschrieben werden: {ex}");
             }
         }
 

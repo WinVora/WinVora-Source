@@ -201,13 +201,7 @@ namespace WinVora
                     Logger.Log($"Update-Download abgeschlossen: {totalRead} Bytes -> {tempPath}");
                 }
 
-                await using var verificationStream = File.OpenRead(tempPath);
-                var actualHash = Convert.ToHexString(await SHA256.HashDataAsync(verificationStream));
-                if (!actualHash.Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidDataException(
-                        "Die SHA-256-Prüfsumme des Downloads stimmt nicht mit GitHub überein.");
-                }
+                string actualHash = await VerifySha256Async(tempPath, update.Sha256);
 
                 Logger.Log($"Update-Prüfsumme bestätigt: {actualHash.ToLowerInvariant()}");
                 return tempPath;
@@ -225,6 +219,16 @@ namespace WinVora
 
                 throw;
             }
+        }
+
+        internal static async Task<string> VerifySha256Async(string filePath, string expectedHash)
+        {
+            await using var verificationStream = File.OpenRead(filePath);
+            string actualHash = Convert.ToHexString(
+                await SHA256.HashDataAsync(verificationStream).ConfigureAwait(false));
+            if (!actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Die SHA-256-Prüfsumme des Downloads stimmt nicht mit GitHub überein.");
+            return actualHash;
         }
 
         // Startet den heruntergeladenen Installer im komplett stillen Modus

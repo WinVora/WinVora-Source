@@ -74,6 +74,7 @@ namespace WinVora
                     ? $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}"
                     : $"{version.Major}.{version.Minor}.{version.Build}"
                 : "0.0.0");
+        private static bool IsBetaBuild => CurrentVersion.Contains('-', StringComparison.OrdinalIgnoreCase);
 
         // Vom Hintergrund-Check gefundenes Update (falls vorhanden) - damit
         // das Einstellungen-Fenster nicht nochmal extra suchen muss.
@@ -88,15 +89,31 @@ namespace WinVora
         private DateTime? _largeFolderAnalysisUtc;
         private bool? _narrowLayoutState;
         private bool? _compactHeightState;
+        private bool _securityDetailsLoaded;
+        private bool _securityDetailsLoading;
 
 
         public MainWindow()
         {
             var startupTimer = Stopwatch.StartNew();
             this.InitializeComponent();
-            CoreLogicSelfTests.Run();
+            try
+            {
+                CoreLogicSelfTests.Run();
+            }
+            catch (Exception ex)
+            {
+                // Interne Debug-Prüfungen dürfen keinen unsichtbaren Prozess
+                // ohne Hauptfenster hinterlassen. Der konkrete Testausdruck
+                // steht im Protokoll und die App bleibt praktisch testbar.
+                Logger.LogError("Interne Logiktests", ex);
+            }
             SetupSystemInfoCopyButtons();
             SetupCompactTooltips();
+            SecurityExpander.RegisterPropertyChangedCallback(Expander.IsExpandedProperty, (dependencyObject, property) =>
+            {
+                if (SecurityExpander.IsExpanded) _ = LoadSecurityDetailsAsync();
+            });
             RootGrid.SizeChanged += (_, args) =>
             {
                 ApplyResponsiveLayout(args.NewSize);
@@ -104,6 +121,8 @@ namespace WinVora
             RootGrid.Loaded += (_, __) => RemoveRoundedDecorativeBorders(RootGrid);
             this.Title = "WinVora";
             NavVersionText.Text = $"Version {CurrentVersion}";
+            NavBetaBadge.Visibility = IsBetaBuild ? Visibility.Visible : Visibility.Collapsed;
+            UpdateUpdateChannelUi();
             this.Activated += MainWindow_Activated;
             this.AppWindow.Closing += MainWindow_Closing;
             this.Closed += (_, __) =>
@@ -162,8 +181,10 @@ namespace WinVora
             }
             SetupKeyboardShortcuts();
             UpdateService.CleanupOldDownloads();
+            _ = Task.Run(LegacyFeatureCleanup.RemoveMaintenanceTasksOnceAsync);
             _uiSettings.ColorValuesChanged += SystemColorValuesChanged;
-            Logger.Log($"Hauptfenster initialisiert nach {startupTimer.ElapsedMilliseconds} ms.");
+            Logger.Log($"Hauptfenster initialisiert nach {startupTimer.ElapsedMilliseconds} ms; " +
+                $"Arbeitsspeicher: {Process.GetCurrentProcess().WorkingSet64 / 1024d / 1024d:0.0} MB.");
         }
 
         private void SystemColorValuesChanged(UISettings sender, object args)
@@ -390,6 +411,11 @@ namespace WinVora
             WingetSearchBox.PlaceholderText = Localization.T("Winget.SearchPlaceholder");
             ToolTipService.SetToolTip(RefreshButton, Localization.T("Common.Refresh"));
             StartUpdateButton.Content = Localization.T("Winget.StartUpdate");
+            UpdateUpdateChannelUi();
+            ToolTipService.SetToolTip(UpdateChannelButton,
+                Localization.CurrentLanguage == "en"
+                    ? "Change the update channel in Settings"
+                    : "Updatekanal in den Einstellungen ändern");
 
             // Storage: Action-Bar
             StorageRefreshButton.Content = new FontIcon { Glyph = "\uE72C" };
@@ -525,6 +551,7 @@ namespace WinVora
             _dashboardPrimaryGrid = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
             for (int i = 0; i < 3; i++)
                 _dashboardPrimaryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             _dashboardPrimaryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1010,7 +1037,6 @@ namespace WinVora
 
             if (persist)
             {
-                _settings.DarkMode = dark;
                 _settings.Save();
             }
         }
@@ -1032,7 +1058,6 @@ namespace WinVora
             ApplyTheme(dark, persist: false);
             if (persist)
             {
-                _settings.DarkMode = dark;
                 _settings.Save();
             }
         }
@@ -1594,7 +1619,7 @@ namespace WinVora
             return result == ContentDialogResult.Primary;
         }
 
-        private async Task<bool> ConfirmAsync(string title, string message, string primaryButtonText = "Löschen", bool respectDeleteConfirmationSetting = true)
+        private async Task<bool> ConfirmAsync(string title, string message, string primaryButtonText = "Löschen", bool respectDeleteConfirmationSetting = true, XamlRoot? dialogRoot = null)
         {
             if (respectDeleteConfirmationSetting && !_settings.ShowDeleteConfirmations) return true;
 
@@ -1605,7 +1630,7 @@ namespace WinVora
                 PrimaryButtonText = primaryButtonText,
                 CloseButtonText = "Abbrechen",
                 DefaultButton = ContentDialogButton.Close,
-                XamlRoot = this.Content.XamlRoot
+                XamlRoot = dialogRoot ?? this.Content.XamlRoot
             };
 
             var result = await dialog.ShowAsync();
@@ -1755,15 +1780,16 @@ namespace WinVora
                 _ => _narrowLayoutState
             };
             bool narrow = _narrowLayoutState == true;
+            bool veryNarrow = windowSize.Width < 820;
             PageTitle.Text = narrow && _currentPageKey == "Updates"
                 ? (Localization.CurrentLanguage == "en" ? "Updates" : "Updates")
                 : narrow && _currentPageKey == "Uninstall"
                     ? (Localization.CurrentLanguage == "en" ? "Apps" : "Programme")
                     : GetPageDisplayTitle(_currentPageKey);
-            MainCard.Padding = new Thickness(narrow ? 14 : 20);
-            PageTitle.FontSize = narrow ? 30 : 34;
-            WingetSearchBox.Width = narrow ? 220 : 280;
-            UninstallSearchBox.Width = narrow ? 220 : 280;
+            MainCard.Padding = new Thickness(veryNarrow ? 10 : narrow ? 14 : 20);
+            PageTitle.FontSize = veryNarrow ? 26 : narrow ? 30 : 34;
+            WingetSearchBox.Width = veryNarrow ? 160 : narrow ? 220 : 280;
+            UninstallSearchBox.Width = veryNarrow ? 160 : narrow ? 220 : 280;
             WingetSelectAllButton.Padding = narrow ? new Thickness(8, 6, 8, 6) : new Thickness(16, 10, 16, 10);
             StartUpdateButton.Padding = narrow ? new Thickness(10, 6, 10, 6) : new Thickness(16, 10, 16, 10);
             DashboardCustomizeHeaderButton.Content = narrow
@@ -1815,6 +1841,7 @@ namespace WinVora
                 label.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
 
             NavVersionText.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
+            NavBetaBadge.Visibility = !iconOnly && IsBetaBuild ? Visibility.Visible : Visibility.Collapsed;
             LblNavChangelogHint.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
             LblNavContact.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
             SidebarFooterLinks.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
@@ -1850,7 +1877,27 @@ namespace WinVora
                     ? new GridLength(1, GridUnitType.Star)
                     : new GridLength(0);
 
-            if (narrow)
+            if (veryNarrow)
+            {
+                DashboardStatusGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+                DashboardStatusGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                DashboardStatusGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                Grid.SetRow(StatCardCpu, 0); Grid.SetColumn(StatCardCpu, 0); Grid.SetColumnSpan(StatCardCpu, 1);
+                Grid.SetRow(StatCardRam, 1); Grid.SetColumn(StatCardRam, 0); Grid.SetColumnSpan(StatCardRam, 1);
+                Grid.SetRow(StatCardGpu, 2); Grid.SetColumn(StatCardGpu, 0); Grid.SetColumnSpan(StatCardGpu, 1);
+
+                if (_dashboardPrimaryGrid != null)
+                {
+                    _dashboardPrimaryGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+                    _dashboardPrimaryGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                    _dashboardPrimaryGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                    Grid.SetRow(DashCardStatus, 0); Grid.SetColumn(DashCardStatus, 0); Grid.SetColumnSpan(DashCardStatus, 1);
+                    Grid.SetRow(StatCardUpdates, 1); Grid.SetColumn(StatCardUpdates, 0); Grid.SetColumnSpan(StatCardUpdates, 1);
+                    Grid.SetRow(StatCardSecurity, 2); Grid.SetColumn(StatCardSecurity, 0); Grid.SetColumnSpan(StatCardSecurity, 1);
+                    Grid.SetRow(DashCardDisk, 3); Grid.SetColumn(DashCardDisk, 0); Grid.SetColumnSpan(DashCardDisk, 1);
+                }
+            }
+            else if (narrow)
             {
                 DashboardStatusGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
                 DashboardStatusGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
@@ -2036,6 +2083,23 @@ namespace WinVora
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private async Task LoadSecurityDetailsAsync()
+        {
+            if (_securityDetailsLoaded || _securityDetailsLoading || _cachedSnapshot == null) return;
+            _securityDetailsLoading = true;
+            try
+            {
+                await StartupPerformanceTracker.MeasureAsync("Sicherheitsdetails", () =>
+                    SystemInfoProvider.RefreshSectionAsync(
+                        _cachedSnapshot, SystemInfoSection.Security, _startupCancellation.Token));
+                _securityDetailsLoaded = true;
+                if (_currentPageKey == "System") ApplySnapshot(_cachedSnapshot);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Logger.LogError("Sicherheitsdetails laden", ex); }
+            finally { _securityDetailsLoading = false; }
         }
 
         private async void Overview_Click(object sender, RoutedEventArgs e)

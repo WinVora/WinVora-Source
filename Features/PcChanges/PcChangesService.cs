@@ -38,22 +38,24 @@ namespace WinVora
 
     internal static class PcChangesService
     {
-        private const long GrowthWarningBytes = 1024L * 1024 * 1024;
         private static string SnapshotPath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinVora", "pc-state.json");
 
         public static async Task<(PcStateSnapshot Current, PcChangeSummary Summary)> CaptureAndCompareAsync(
             IReadOnlyCollection<InstalledProgram> installedPrograms,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyCollection<string>? customWatchedFolders = null,
+            long growthWarningBytes = 1024L * 1024 * 1024)
         {
-            var current = await Task.Run(() => Capture(installedPrograms, cancellationToken), cancellationToken);
+            var current = await Task.Run(() => Capture(installedPrograms, cancellationToken, customWatchedFolders), cancellationToken);
             PcStateSnapshot? previous = Load();
-            var summary = Compare(previous, current);
+            var summary = Compare(previous, current, growthWarningBytes);
             Save(current);
             return (current, summary);
         }
 
-        internal static PcChangeSummary Compare(PcStateSnapshot? previous, PcStateSnapshot current)
+        internal static PcChangeSummary Compare(PcStateSnapshot? previous, PcStateSnapshot current,
+            long growthWarningBytes = 1024L * 1024 * 1024)
         {
             if (previous == null) return new PcChangeSummary { CurrentUtc = current.CapturedUtc };
 
@@ -62,7 +64,7 @@ namespace WinVora
             var updated = current.Programs.Count(pair => previous.Programs.TryGetValue(pair.Key, out string? oldVersion) &&
                                                          !string.Equals(oldVersion, pair.Value, StringComparison.OrdinalIgnoreCase));
             var growth = current.WatchedFolderBytes
-                .Where(pair => previous.WatchedFolderBytes.TryGetValue(pair.Key, out long oldSize) && pair.Value - oldSize >= GrowthWarningBytes)
+                .Where(pair => previous.WatchedFolderBytes.TryGetValue(pair.Key, out long oldSize) && pair.Value - oldSize >= growthWarningBytes)
                 .Select(pair => new StorageGrowth(Path.GetFileName(pair.Key.TrimEnd(Path.DirectorySeparatorChar)), pair.Key,
                     pair.Value - previous.WatchedFolderBytes[pair.Key], pair.Value))
                 .OrderByDescending(item => item.GrowthBytes).ToList();
@@ -83,7 +85,8 @@ namespace WinVora
             };
         }
 
-        private static PcStateSnapshot Capture(IReadOnlyCollection<InstalledProgram> programs, CancellationToken token)
+        private static PcStateSnapshot Capture(IReadOnlyCollection<InstalledProgram> programs, CancellationToken token,
+            IReadOnlyCollection<string>? customWatchedFolders)
         {
             var snapshot = new PcStateSnapshot { CapturedUtc = DateTime.UtcNow };
             foreach (var program in programs.Where(p => !string.IsNullOrWhiteSpace(p.DisplayName)))
@@ -95,7 +98,8 @@ namespace WinVora
             foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady && d.DriveType == DriveType.Fixed))
                 snapshot.DriveFreeBytes[drive.Name] = drive.AvailableFreeSpace;
 
-            foreach (string folder in GetWatchedFolders().Where(Directory.Exists))
+            foreach (string folder in GetWatchedFolders().Concat(customWatchedFolders ?? Array.Empty<string>())
+                         .Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists))
             {
                 token.ThrowIfCancellationRequested();
                 snapshot.WatchedFolderBytes[folder] = GetFolderSize(folder, token);

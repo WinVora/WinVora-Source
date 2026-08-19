@@ -204,9 +204,9 @@ namespace WinVora
                     if (exe != null) return exe;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Zugriffsfehler o.ä. - kein Icon-Pfad
+                Logger.LogErrorOnce("Ein Programmsymbol konnte nicht ermittelt werden", ex);
             }
 
             return "";
@@ -219,6 +219,9 @@ namespace WinVora
                 var command = !string.IsNullOrWhiteSpace(program.QuietUninstallString)
                     ? program.QuietUninstallString
                     : program.UninstallString;
+
+                if (string.IsNullOrWhiteSpace(command))
+                    return (false, "Für dieses Programm ist kein Deinstaller hinterlegt.");
 
                 var expandedCommand = Environment.ExpandEnvironmentVariables(command.Trim());
                 ProcessStartInfo psi;

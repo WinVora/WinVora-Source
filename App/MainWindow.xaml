@@ -194,9 +194,15 @@
                           Foreground="{StaticResource AppForegroundBrush}"
                           FontSize="18"/>
 
-                                <TextBlock x:Name="NavVersionText"
+                                 <TextBlock x:Name="NavVersionText"
                 Foreground="{StaticResource AppForegroundBrush}"
                 FontWeight="SemiBold"/>
+                                <Border x:Name="NavBetaBadge" Visibility="Collapsed"
+                                        CornerRadius="6" Padding="6,2"
+                                        Background="{StaticResource AppAccentOverlay20}">
+                                    <TextBlock Text="BETA" FontSize="10" FontWeight="Bold"
+                                               Foreground="{StaticResource AppAccentBrushLight}"/>
+                                </Border>
                             </StackPanel>
 
                             <TextBlock x:Name="LblNavChangelogHint" Margin="0,8,0,0"
@@ -354,6 +360,16 @@
             Spacing="10"
             VerticalAlignment="Center"
                     Visibility="Collapsed">
+
+                        <Button x:Name="UpdateChannelButton"
+                                Height="42" Padding="11,7"
+                                Click="UpdateChannelButton_Click"
+                                ToolTipService.ToolTip="Updatekanal in den Einstellungen ändern">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock x:Name="UpdateChannelLabel" Text="Kanal: Stabil"/>
+                                <FontIcon Glyph="&#xE70D;" FontSize="11"/>
+                            </StackPanel>
+                        </Button>
 
                         <TextBox x:Name="WingetSearchBox"
             PlaceholderText="Update suchen..."
@@ -658,6 +674,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>

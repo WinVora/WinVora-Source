@@ -17,7 +17,8 @@ namespace WinVora
             {
                 var result = await StartupPerformanceTracker.MeasureAsync(
                     "PC-Veränderungen",
-                    () => PcChangesService.CaptureAndCompareAsync(_installedPrograms, _startupCancellation.Token));
+                    () => PcChangesService.CaptureAndCompareAsync(_installedPrograms, _startupCancellation.Token,
+                        _settings.WatchedFolders, _settings.StorageGrowthWarningBytes));
                 _pcChangeSummary = result.Summary;
                 RenderPcChanges();
                 if (result.Summary.StorageGrowth.Count > 0)
