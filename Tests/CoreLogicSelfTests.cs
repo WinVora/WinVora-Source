@@ -128,6 +128,7 @@ namespace WinVora
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.5-beta.2"));
             Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.3", "0.8.5-beta.2"));
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.2", "0.8.5-beta.3"));
+            Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.3", "0.8.5.1-beta.2"));
             Debug.Assert(UpdateService.IsNewerVersion("0.8.5", "0.8.5-beta.3"));
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.3", "0.8.5"));
             Debug.Assert(WingetTableParser.Parse("", Array.Empty<int>()) == null);

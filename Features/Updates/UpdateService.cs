@@ -147,10 +147,22 @@ namespace WinVora
         {
             string withoutMetadata = value.Trim().TrimStart('v', 'V').Split('+', 2)[0];
             string[] versionParts = withoutMetadata.Split('-', 2);
-            var core = new Version(versionParts[0]);
             string[] prerelease = versionParts.Length == 2
                 ? versionParts[1].Split('.', StringSplitOptions.RemoveEmptyEntries)
                 : Array.Empty<string>();
+            var core = new Version(versionParts[0]);
+
+            // Frühere 0.8.5-Betas wurden kurzzeitig als 0.8.5.1-beta.x
+            // veröffentlicht. Die zusätzliche ".1" war kein neuerer
+            // Produktstand, sondern ein Versionsschemafehler. Ohne diese eng
+            // begrenzte Migration würde z. B. 0.8.5.1-beta.2 fälschlich als
+            // neuer als 0.8.5-beta.3 gelten und könnte nie aktualisiert werden.
+            if (core.Major == 0 && core.Minor == 8 && core.Build == 5 && core.Revision == 1 &&
+                prerelease.Length > 0 && prerelease[0].Equals("beta", StringComparison.OrdinalIgnoreCase))
+            {
+                core = new Version(core.Major, core.Minor, core.Build);
+            }
+
             return (core, prerelease);
         }
 
