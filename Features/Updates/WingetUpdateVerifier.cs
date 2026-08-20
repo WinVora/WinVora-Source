@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace WinVora
 {
@@ -23,9 +24,23 @@ namespace WinVora
         public static bool VersionsEqual(string? left, string? right) =>
             string.Equals(NormalizeVersion(left), NormalizeVersion(right), StringComparison.OrdinalIgnoreCase);
 
-        private static string NormalizeVersion(string? value) =>
-            string.IsNullOrWhiteSpace(value)
-                ? string.Empty
-                : value.Trim().TrimStart('v', 'V');
+        private static string NormalizeVersion(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            string normalized = value.Trim().TrimStart('v', 'V').Replace(',', '.');
+            if (!Regex.IsMatch(normalized, @"^\d+(?:\.\d+)*$")) return normalized;
+
+            var parts = normalized.Split('.').ToList();
+            while (parts.Count > 2 && parts[^1] == "0")
+                parts.RemoveAt(parts.Count - 1);
+            return string.Join('.', parts.Select(part =>
+                long.TryParse(part, out long number) ? number.ToString() : part));
+        }
+
+        public static bool NeedsExtendedVerification(WingetPackage package) =>
+            package.Id.Contains("GooglePlayGames", StringComparison.OrdinalIgnoreCase) ||
+            package.Name.Contains("Google Play Games", StringComparison.OrdinalIgnoreCase) ||
+            package.Id.Contains("Claude", StringComparison.OrdinalIgnoreCase) ||
+            package.Name.Contains("Claude", StringComparison.OrdinalIgnoreCase);
     }
 }

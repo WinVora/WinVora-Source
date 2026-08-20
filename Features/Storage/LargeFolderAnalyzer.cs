@@ -7,13 +7,18 @@ using System.Threading.Tasks;
 
 namespace WinVora
 {
-    internal sealed record LargeFolderResult(string Path, long SizeBytes);
+    internal sealed record LargeFolderResult(
+        string Path,
+        long SizeBytes,
+        bool IsAccessible = true,
+        string? Error = null);
 
     internal static class LargeFolderAnalyzer
     {
         public static Task<IReadOnlyList<LargeFolderResult>> AnalyzeAsync(
             CancellationToken token,
-            IProgress<int>? progress = null) =>
+            IProgress<int>? progress = null,
+            IProgress<LargeFolderResult>? resultProgress = null) =>
             Task.Run<IReadOnlyList<LargeFolderResult>>(() =>
             {
                 string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -33,15 +38,19 @@ namespace WinVora
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Select((path, index) =>
                     {
-                        var result = new LargeFolderResult(path, GetSize(path, token));
+                        var (size, accessible, error) = GetSize(path, token);
+                        var result = new LargeFolderResult(path, size, accessible, error);
                         progress?.Report(index + 1);
+                        resultProgress?.Report(result);
                         return result;
                     })
-                    .Where(item => item.SizeBytes > 0)
+                    .Where(item => item.SizeBytes > 0 || !item.IsAccessible)
+                    .ToList();
+                return candidates.Where(item => item.IsAccessible)
                     .OrderByDescending(item => item.SizeBytes)
                     .Take(10)
+                    .Concat(candidates.Where(item => !item.IsAccessible).Take(3))
                     .ToList();
-                return candidates;
             }, token);
 
         private static IEnumerable<string> EnumerateDirectories(string root)
@@ -51,9 +60,11 @@ namespace WinVora
             catch (IOException) { return Array.Empty<string>(); }
         }
 
-        private static long GetSize(string root, CancellationToken token)
+        private static (long Size, bool Accessible, string? Error) GetSize(string root, CancellationToken token)
         {
             long total = 0;
+            bool accessible = true;
+            string? error = null;
             var pending = new Stack<string>();
             pending.Push(root);
             while (pending.Count > 0)
@@ -66,16 +77,16 @@ namespace WinVora
                     {
                         token.ThrowIfCancellationRequested();
                         try { total += new FileInfo(file).Length; }
-                        catch (IOException) { }
-                        catch (UnauthorizedAccessException) { }
+                        catch (IOException) { accessible = false; error ??= "Datei nicht erreichbar"; }
+                        catch (UnauthorizedAccessException) { accessible = false; error ??= "Zugriff verweigert"; }
                     }
                     foreach (string directory in Directory.EnumerateDirectories(current))
                         pending.Push(directory);
                 }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
+                catch (IOException) { accessible = false; error ??= "Ordner nicht erreichbar"; }
+                catch (UnauthorizedAccessException) { accessible = false; error ??= "Zugriff verweigert"; }
             }
-            return total;
+            return (total, accessible, error);
         }
     }
 }

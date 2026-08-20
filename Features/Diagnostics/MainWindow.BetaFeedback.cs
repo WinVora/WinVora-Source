@@ -99,16 +99,28 @@ namespace WinVora
                         }
                     }
                 },
-                PrimaryButtonText = en ? "Open GitHub draft" : "GitHub-Entwurf öffnen",
+                PrimaryButtonText = en ? "Save ZIP and open GitHub" : "ZIP speichern und GitHub öffnen",
                 CloseButtonText = en ? "Cancel" : "Abbrechen",
                 DefaultButton = ContentDialogButton.Close
             };
             if (await preview.ShowAsync() != ContentDialogResult.Primary) return;
 
+            bool zipSaved = await ReportExportService.SaveSupportZipAsync(
+                owner ?? this,
+                $"WinVora-Beta-Diagnose-{CurrentVersion}",
+                report);
+            if (!zipSaved)
+            {
+                ShowInfo(en
+                    ? "No diagnostic ZIP was saved. GitHub was not opened."
+                    : "Es wurde kein Diagnose-ZIP gespeichert. GitHub wurde nicht geöffnet.",
+                    InfoBarSeverity.Warning);
+                return;
+            }
+
             string issueBody = (en
-                ? $"## Problem\n\nDescribe what happened.\n\n## Steps to reproduce\n\n{stepsBox.Text}\n\n## Expected behavior\n\n{expectedBox.Text}\n\n## Anonymized diagnostics\n\n```text\n"
-                : $"## Problem\n\nBeschreibe, was passiert ist.\n\n## Schritte zum Nachstellen\n\n{stepsBox.Text}\n\n## Erwartetes Verhalten\n\n{expectedBox.Text}\n\n## Anonymisierte Diagnoseinformationen\n\n```text\n")
-                + report + "\n```";
+                ? $"## Problem\n\nDescribe what happened.\n\n## Steps to reproduce\n\n{stepsBox.Text}\n\n## Expected behavior\n\n{expectedBox.Text}\n\n## Diagnostics\n\nAn anonymized WinVora diagnostic ZIP was created. Attach it to this issue if needed."
+                : $"## Problem\n\nBeschreibe, was passiert ist.\n\n## Schritte zum Nachstellen\n\n{stepsBox.Text}\n\n## Erwartetes Verhalten\n\n{expectedBox.Text}\n\n## Diagnose\n\nEin anonymisiertes WinVora-Diagnose-ZIP wurde erstellt. Hänge es bei Bedarf an dieses Issue an.");
             string url = $"{BetaIssueUrl}?labels=bug,beta&title={Uri.EscapeDataString($"[Beta {CurrentVersion}] ")}&body={Uri.EscapeDataString(issueBody)}";
             try
             {

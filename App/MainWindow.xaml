@@ -650,6 +650,7 @@
                 <ScrollViewer x:Name="MainContentScrollViewer" Grid.Row="2"
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto"
+              ViewChanged="MainContentScrollViewer_ViewChanged"
               Padding="0,0,24,0">
 
                     <Grid>
@@ -1039,7 +1040,7 @@
                                             <TextBlock Grid.Row="0" Grid.Column="0" x:Name="SysLbl14" Text="Modell" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="SysCpuName" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
                                             <TextBlock Grid.Row="1" Grid.Column="0" x:Name="SysLbl15" Text="Kerne / Threads / Takt" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysCpuDetails" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SysCpuDetails" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right" TextWrapping="Wrap"/>
                                             <TextBlock Grid.Row="2" Grid.Column="0" x:Name="SysLbl16" Text="Auslastung Live" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Right">
                                                 <ProgressBar x:Name="SysCpuUsageBar" Width="260" Height="12" Maximum="100" Foreground="{StaticResource AppAccentBrush}"/>

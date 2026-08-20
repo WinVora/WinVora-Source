@@ -18,6 +18,8 @@ namespace WinVora
 
         private List<InstalledProgram> _installedPrograms = new();
         private readonly List<(InstalledProgram Program, CheckBox Selection, Button Button)> _uninstallRows = new();
+        private readonly Dictionary<ToolkitControls.SettingsCard, InstalledProgram> _uninstallIconCards = new();
+        private readonly HashSet<ToolkitControls.SettingsCard> _loadedUninstallIcons = new();
         private HashSet<string> _uninstallSelectionRestore = new(StringComparer.OrdinalIgnoreCase);
 
         private async void Uninstaller_Click(object sender, RoutedEventArgs e)
@@ -84,6 +86,8 @@ namespace WinVora
             _isLoadingPrograms = true;
             UninstallPanel.Children.Clear();
             _uninstallRows.Clear();
+            _uninstallIconCards.Clear();
+            _loadedUninstallIcons.Clear();
             UpdateUninstallSelectionAction();
             UninstallPanel.Children.Add(LoadingStateUiBuilder.Create(RootGrid.Resources, 4, !_settings.ReducedMotion));
             UninstallSearchBox.Text = "";
@@ -129,14 +133,17 @@ namespace WinVora
                 return;
             }
 
+            int cardIndex = 0;
             foreach (var program in _installedPrograms)
             {
                 var card = MakeUninstallCard(program);
                 UninstallPanel.Children.Add(card);
+                _uninstallIconCards[card] = program;
 
-                // Icon im Hintergrund nachladen (Extraktion kostet etwas Zeit),
-                // Karte erscheint sofort mit Platzhalter-Icon.
-                _ = LoadCardIconAsync(card, program.IconPath);
+                // Nur die ersten sichtbaren Karten sofort bebildern. Weitere
+                // Icons werden beim Scrollen oder bei einer Suche nachgeladen.
+                if (cardIndex++ < 16)
+                    LoadUninstallIconOnDemand(card, program);
             }
 
             _uninstallNoResultsText = new TextBlock
@@ -151,6 +158,33 @@ namespace WinVora
                 Visibility = Visibility.Collapsed
             };
             UninstallPanel.Children.Add(_uninstallNoResultsText);
+        }
+
+        private void MainContentScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+        {
+            if (_currentPageKey != "Uninstall") return;
+            double viewportTop = MainContentScrollViewer.VerticalOffset;
+            double viewportBottom = viewportTop + MainContentScrollViewer.ViewportHeight + 240;
+            foreach (var pair in _uninstallIconCards)
+            {
+                if (pair.Key.Visibility != Visibility.Visible || _loadedUninstallIcons.Contains(pair.Key)) continue;
+                try
+                {
+                    double y = pair.Key.TransformToVisual(UninstallPanel).TransformPoint(new Windows.Foundation.Point()).Y;
+                    if (y + pair.Key.ActualHeight >= viewportTop && y <= viewportBottom)
+                        LoadUninstallIconOnDemand(pair.Key, pair.Value);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogErrorOnce("Sichtbares Programmsymbol bestimmen", ex);
+                }
+            }
+        }
+
+        private void LoadUninstallIconOnDemand(ToolkitControls.SettingsCard card, InstalledProgram program)
+        {
+            if (!_loadedUninstallIcons.Add(card) || string.IsNullOrWhiteSpace(program.IconPath)) return;
+            _ = LoadCardIconAsync(card, program.IconPath);
         }
 
         private ToolkitControls.SettingsCard MakeUninstallCard(InstalledProgram program)
@@ -450,6 +484,9 @@ namespace WinVora
                         ? Visibility.Visible
                         : Visibility.Collapsed;
                     if (card.Visibility == Visibility.Visible) visibleCount++;
+                    if (card.Visibility == Visibility.Visible && !string.IsNullOrEmpty(query) &&
+                        _uninstallIconCards.TryGetValue(card, out var program))
+                        LoadUninstallIconOnDemand(card, program);
                 }
             }
 
@@ -495,10 +532,16 @@ namespace WinVora
             UninstallStatusDetailText.Text = en ? "Waiting for the program's uninstaller." : "Der Deinstaller des Programms wird aufgerufen.";
 
             bool success;
+            bool waitedForExit = false;
             string message;
             try
             {
-                (success, message) = await Task.Run(() => InstalledProgramsService.Uninstall(program));
+                var launch = await InstalledProgramsService.UninstallAndWaitAsync(
+                    program,
+                    _startupCancellation.Token);
+                success = launch.Success;
+                message = launch.Message;
+                waitedForExit = launch.WaitedForExit;
             }
             catch (Exception ex)
             {
@@ -529,15 +572,19 @@ namespace WinVora
                     $"Uninstaller for {program.DisplayName} started");
                 ScheduleDashboardRefresh();
 
-                var finishedDialog = CommonUiBuilder.CreateConfirmation(
-                    RootGrid.XamlRoot,
-                    en ? "Finish the uninstall" : "Deinstallation abschließen",
-                    en
-                        ? "Complete and close the publisher uninstall wizard. WinVora can then verify that the program was removed."
-                        : "Schließe den Hersteller-Deinstaller vollständig. Danach kann WinVora prüfen, ob das Programm entfernt wurde.",
-                    en ? "Verify now" : "Jetzt prüfen",
-                    en ? "Later" : "Später");
-                bool verify = await finishedDialog.ShowAsync() == ContentDialogResult.Primary;
+                bool verify = waitedForExit;
+                if (!waitedForExit)
+                {
+                    var finishedDialog = CommonUiBuilder.CreateConfirmation(
+                        RootGrid.XamlRoot,
+                        en ? "Finish the uninstall" : "Deinstallation abschließen",
+                        en
+                            ? "Complete and close the publisher uninstall wizard. WinVora can then verify that the program was removed."
+                            : "Schließe den Hersteller-Deinstaller vollständig. Danach kann WinVora prüfen, ob das Programm entfernt wurde.",
+                        en ? "Verify now" : "Jetzt prüfen",
+                        en ? "Later" : "Später");
+                    verify = await finishedDialog.ShowAsync() == ContentDialogResult.Primary;
+                }
                 bool removed = false;
                 if (verify)
                 {

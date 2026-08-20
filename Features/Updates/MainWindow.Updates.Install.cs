@@ -330,7 +330,12 @@ namespace WinVora
                 // sichtbar ist. Mehrere kurze Prüfungen verhindern falsche
                 // Fehlermeldungen und veraltete Karten.
                 WingetDiscoveryResult? discovery = null;
-                int[] verificationDelaysMs = { 1200, 2200, 3500 };
+                bool needsExtendedVerification = results.Any(item =>
+                    item.Result.Status is WingetUpdateStatus.Successful or WingetUpdateStatus.RestartRequired &&
+                    WingetUpdateVerifier.NeedsExtendedVerification(item.Package));
+                int[] verificationDelaysMs = needsExtendedVerification
+                    ? new[] { 1200, 2200, 3500, 5000 }
+                    : new[] { 1200, 2200, 3500 };
                 foreach (int delayMs in verificationDelaysMs)
                 {
                     await Task.Delay(delayMs, cancellationToken);

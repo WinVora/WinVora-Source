@@ -190,7 +190,19 @@ namespace WinVora
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                     var pathText = new TextBlock { Text = folder.Path, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
                     ToolTipService.SetToolTip(pathText, folder.Path);
-                    var sizeText = new TextBlock { Text = StorageService.FormatBytes(folder.SizeBytes), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+                    var sizeText = new TextBlock
+                    {
+                        Text = folder.IsAccessible
+                            ? StorageService.FormatBytes(folder.SizeBytes)
+                            : (Localization.CurrentLanguage == "en" ? "Not accessible" : "Nicht erreichbar"),
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        Foreground = folder.IsAccessible
+                            ? (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
+                            : (SolidColorBrush)RootGrid.Resources["AppWarningBrush"],
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    if (!folder.IsAccessible)
+                        ToolTipService.SetToolTip(sizeText, folder.Error ?? (Localization.CurrentLanguage == "en" ? "Could not be scanned" : "Konnte nicht geprüft werden"));
                     int risk = GetFolderRisk(folder.Path);
                     var riskText = new TextBlock
                     {
@@ -269,7 +281,20 @@ namespace WinVora
                         analysisStatus.Text = Localization.CurrentLanguage == "en"
                             ? count + " folders checked"
                             : count + " Ordner geprüft");
-                    analyzedFolders = await LargeFolderAnalyzer.AnalyzeAsync(_storageAnalysisCancellation.Token, progress);
+                    var incrementalResults = new List<LargeFolderResult>();
+                    var resultProgress = new Progress<LargeFolderResult>(result =>
+                    {
+                        incrementalResults.Add(result);
+                        analyzedFolders = incrementalResults
+                            .OrderByDescending(item => item.SizeBytes)
+                            .Take(10)
+                            .ToArray();
+                        RenderAnalyzedFolders();
+                    });
+                    analyzedFolders = await LargeFolderAnalyzer.AnalyzeAsync(
+                        _storageAnalysisCancellation.Token,
+                        progress,
+                        resultProgress);
                     _cachedLargeFolders = analyzedFolders;
                     _largeFolderAnalysisUtc = DateTime.UtcNow;
                     watch.Stop();

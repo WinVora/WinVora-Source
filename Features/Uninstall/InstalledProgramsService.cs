@@ -5,6 +5,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace WinVora
@@ -216,22 +218,69 @@ namespace WinVora
         {
             try
             {
-                var command = !string.IsNullOrWhiteSpace(program.QuietUninstallString)
+                if (!TryStartUninstaller(program, out Process? process, out string error))
+                    return (false, error);
+                if (process == null)
+                    return (false, "Der Deinstaller konnte nicht gestartet werden.");
+                process.Dispose();
+                return (true, "Deinstallation gestartet - folge ggf. dem Assistenten in einem neuen Fenster.");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Fehler: {ex.Message}");
+            }
+        }
+
+        public static async Task<(bool Success, string Message, bool WaitedForExit)> UninstallAndWaitAsync(
+            InstalledProgram program,
+            CancellationToken cancellationToken)
+        {
+            if (!TryStartUninstaller(program, out Process? process, out string error) || process == null)
+                return (false, error, false);
+
+            using (process)
+            {
+                var watch = Stopwatch.StartNew();
+                try
+                {
+                    await process.WaitForExitAsync(cancellationToken);
+                    bool meaningfulWait = watch.Elapsed >= TimeSpan.FromSeconds(2);
+                    return (true,
+                        meaningfulWait
+                            ? "Der Hersteller-Deinstaller wurde geschlossen."
+                            : "Der Deinstaller wurde gestartet und hat die Steuerung an einen weiteren Prozess übergeben.",
+                        meaningfulWait);
+                }
+                catch (OperationCanceledException)
+                {
+                    return (true, "Die Überwachung wurde beendet; der Hersteller-Deinstaller kann weiterlaufen.", false);
+                }
+            }
+        }
+
+        private static bool TryStartUninstaller(
+            InstalledProgram program,
+            out Process? process,
+            out string error)
+        {
+            process = null;
+            error = "";
+            try
+            {
+                string command = !string.IsNullOrWhiteSpace(program.QuietUninstallString)
                     ? program.QuietUninstallString
                     : program.UninstallString;
-
                 if (string.IsNullOrWhiteSpace(command))
-                    return (false, "Für dieses Programm ist kein Deinstaller hinterlegt.");
+                {
+                    error = "Für dieses Programm ist kein Deinstaller hinterlegt.";
+                    return false;
+                }
 
-                var expandedCommand = Environment.ExpandEnvironmentVariables(command.Trim());
-                ProcessStartInfo psi;
-
-                // Direkter Start verhindert ein unnötiges, teilweise offen bleibendes
-                // cmd-Fenster (z.B. bei Steam-URLs). Nur echte Shell-Ausdrücke
-                // benötigen weiterhin cmd.exe als unsichtbaren Fallback.
+                string expandedCommand = Environment.ExpandEnvironmentVariables(command.Trim());
+                ProcessStartInfo startInfo;
                 if (TrySplitCommand(expandedCommand, out string executable, out string arguments))
                 {
-                    psi = new ProcessStartInfo
+                    startInfo = new ProcessStartInfo
                     {
                         FileName = executable,
                         Arguments = arguments,
@@ -240,7 +289,7 @@ namespace WinVora
                 }
                 else
                 {
-                    psi = new ProcessStartInfo
+                    startInfo = new ProcessStartInfo
                     {
                         FileName = "cmd.exe",
                         Arguments = $"/d /s /c \"{expandedCommand}\"",
@@ -250,13 +299,15 @@ namespace WinVora
                     };
                 }
 
-                if (Process.Start(psi) == null)
-                    return (false, "Der Deinstaller konnte nicht gestartet werden.");
-                return (true, "Deinstallation gestartet - folge ggf. dem Assistenten in einem neuen Fenster.");
+                process = Process.Start(startInfo);
+                if (process != null) return true;
+                error = "Der Deinstaller konnte nicht gestartet werden.";
+                return false;
             }
             catch (Exception ex)
             {
-                return (false, $"Fehler: {ex.Message}");
+                error = $"Fehler: {ex.Message}";
+                return false;
             }
         }
 

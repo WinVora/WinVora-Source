@@ -94,6 +94,7 @@ namespace WinVora
         private bool? _compactHeightState;
         private bool _securityDetailsLoaded;
         private bool _securityDetailsLoading;
+        private Task? _initialBackgroundRefresh;
 
 
         public MainWindow()
@@ -1300,7 +1301,9 @@ namespace WinVora
                     SetPage("Übersicht");
                     break;
             }
-            await LoadDeferredStartupDataAsync();
+            // Cache und Grundlayout reichen zum Anzeigen des Hauptfensters.
+            // Frische Systemwerte dürfen den sichtbaren Start nicht blockieren.
+            _initialBackgroundRefresh = LoadDeferredStartupDataAsync();
         }
 
         private async Task LoadDeferredStartupDataAsync()
@@ -1331,7 +1334,6 @@ namespace WinVora
                         "Systeminformationen",
                         () => SystemInfoProvider.GetFullSnapshotAsync(cancellationToken));
                     ApplySnapshot(_cachedSnapshot);
-                    _ = Task.Run(() => StartupSnapshotCache.Save(_cachedSnapshot));
                 }
                 catch (Exception ex) { Logger.LogError("Startladen Systeminformationen", ex); }
             }
@@ -1366,6 +1368,11 @@ namespace WinVora
                     }
                     ApplyDashboardSecurityStatus(security.Antivirus, security.Firewall);
                     Logger.Log($"Sicherheitsstatus: Virenschutz={security.Antivirus}, Firewall={security.Firewall}");
+                }
+                if (_cachedSnapshot != null)
+                {
+                    var snapshotForCache = _cachedSnapshot.Clone();
+                    _ = Task.Run(() => StartupSnapshotCache.Save(snapshotForCache));
                 }
             }
 
@@ -1516,6 +1523,11 @@ namespace WinVora
             ContentArea.Children.Clear();
             StoragePanel.Children.Clear();
             UninstallPanel.Children.Clear();
+            if (title != "Uninstall")
+            {
+                _uninstallIconCards.Clear();
+                _loadedUninstallIcons.Clear();
+            }
 
             if (title != "System" && title != "Übersicht")
                 _liveUsageTimer?.Stop();
@@ -1785,8 +1797,14 @@ namespace WinVora
                     : GetPageDisplayTitle(_currentPageKey);
             MainCard.Padding = new Thickness(veryNarrow ? 10 : narrow ? 14 : 20);
             PageTitle.FontSize = veryNarrow ? 26 : narrow ? 30 : 34;
-            WingetSearchBox.Width = veryNarrow ? 160 : narrow ? 220 : 280;
-            UninstallSearchBox.Width = veryNarrow ? 160 : narrow ? 220 : 280;
+            WingetSearchBox.Width = veryNarrow ? 140 : narrow ? 200 : 280;
+            UninstallSearchBox.Width = veryNarrow ? 140 : narrow ? 200 : 280;
+            UpdateChannelButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+            WingetSelectAllText.Visibility = veryNarrow ? Visibility.Collapsed : Visibility.Visible;
+            WingetSelectAllButton.MinWidth = veryNarrow ? 42 : 154;
+            UninstallExportButton.Visibility = veryNarrow ? Visibility.Collapsed : Visibility.Visible;
+            SysCpuUsageBar.Width = veryNarrow ? 100 : narrow ? 170 : 260;
+            SysRamUsageBar.Width = veryNarrow ? 100 : narrow ? 170 : 260;
             WingetSelectAllButton.Padding = narrow ? new Thickness(8, 6, 8, 6) : new Thickness(16, 10, 16, 10);
             StartUpdateButton.Padding = narrow ? new Thickness(10, 6, 10, 6) : new Thickness(16, 10, 16, 10);
             DashboardCustomizeHeaderButton.Content = narrow

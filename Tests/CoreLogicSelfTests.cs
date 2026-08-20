@@ -136,6 +136,13 @@ namespace WinVora
             Debug.Assert(SecurityStatusEvaluator.Evaluate("Aktiv", "Nicht prüfbar") == SecurityHealthState.Unknown);
             Debug.Assert(SecurityStatusEvaluator.Evaluate("Teilweise/Inaktiv", "Aktiv") == SecurityHealthState.Problem);
             Debug.Assert(SecurityStatusEvaluator.Evaluate("Aktiv", "Deaktiviert") == SecurityHealthState.Problem);
+            Debug.Assert(WingetUpdateVerifier.VersionsEqual("v1.25927.0.0", "1.25927"));
+            Debug.Assert(!WingetUpdateVerifier.VersionsEqual("26.7.855.1", "152.0.7933.0"));
+            Debug.Assert(WingetUpdateVerifier.NeedsExtendedVerification(new WingetPackage
+            {
+                Id = "Anthropic.Claude",
+                Name = "Claude"
+            }));
 
             // Eine fehlgeschlagene WMI-Abfrage wird als unbekannt bewertet und
             // darf weder fälschlich Grün noch als echtes Problem Gelb ergeben.
