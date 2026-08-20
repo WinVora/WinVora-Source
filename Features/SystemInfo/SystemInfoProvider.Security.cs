@@ -66,27 +66,130 @@ namespace WinVora
         {
             try
             {
-                using var defender = CreateWmiSearcher(@"root\Microsoft\Windows\Defender",
-                    "SELECT AntivirusEnabled, RealTimeProtectionEnabled FROM MSFT_MpComputerStatus");
-                s.DefenderStatus = en ? "Unknown" : "Unbekannt";
-
-                foreach (ManagementObject mo in defender.Get())
-                {
-                    var av = Convert.ToBoolean(mo["AntivirusEnabled"]);
-                    var rt = Convert.ToBoolean(mo["RealTimeProtectionEnabled"]);
-                    s.DefenderStatus = av && rt ? (en ? "Active" : "Aktiv") : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
-                    break;
-                }
-                if (s.DefenderStatus.Contains("Inactive", StringComparison.OrdinalIgnoreCase) ||
-                    s.DefenderStatus.Contains("Inaktiv", StringComparison.OrdinalIgnoreCase))
-                    ApplyRegisteredAntivirusFallback(s, en);
+                s.DefenderStatus = ReadAntivirusStatus(en);
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.LogErrorOnce("Defenderstatus lesen", ex);
                 s.DefenderStatus = en ? "Unknown" : "Unbekannt";
-                ApplyRegisteredAntivirusFallback(s, en);
             }
         }
+
+        private static string ReadAntivirusStatus(bool en)
+        {
+            // Defender selbst ist die verlässlichste Quelle. SecurityCenter2
+            // listet auf manchen Windows-Installationen zeitweise gar kein
+            // Produkt auf und führte dadurch zu einem falschen „Nicht prüfbar“.
+            try
+            {
+                using var defender = CreateWmiSearcher(@"root\Microsoft\Windows\Defender",
+                    "SELECT AntivirusEnabled, RealTimeProtectionEnabled FROM MSFT_MpComputerStatus");
+                foreach (ManagementObject item in defender.Get())
+                {
+                    bool antivirusEnabled = Convert.ToBoolean(item["AntivirusEnabled"]);
+                    bool realtimeEnabled = Convert.ToBoolean(item["RealTimeProtectionEnabled"]);
+                    return antivirusEnabled && realtimeEnabled
+                        ? (en ? "Active" : "Aktiv")
+                        : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogErrorOnce("Direkten Defenderstatus lesen", ex);
+            }
+
+            try
+            {
+                using var products = CreateWmiSearcher(@"root\SecurityCenter2",
+                    "SELECT displayName, productState FROM AntiVirusProduct");
+                bool foundProduct = false;
+                bool foundActiveProduct = false;
+                foreach (ManagementObject item in products.Get())
+                {
+                    foundProduct = true;
+                    int productState = Convert.ToInt32(item["productState"]);
+                    int realtimeState = (productState >> 8) & 0xFF;
+                    if (realtimeState is 0x10 or 0x11)
+                        foundActiveProduct = true;
+                }
+
+                if (foundActiveProduct)
+                    return en ? "Active" : "Aktiv";
+                if (foundProduct)
+                    return en ? "Partial/Inactive" : "Teilweise/Inaktiv";
+            }
+            catch (Exception ex)
+            {
+                Logger.LogErrorOnce("Registrierten Virenschutzstatus lesen", ex);
+            }
+
+            // Manche Windows-Systeme liefern weder über den Defender-Namespace
+            // noch über SecurityCenter2 einen Datensatz. Der Dienststatus ist
+            // dann noch immer aussagekräftiger als ein falsches „Nicht prüfbar“.
+            if (TryGetServiceRunning("WinDefend", out bool defenderRunning))
+                return defenderRunning
+                    ? (en ? "Active" : "Aktiv")
+                    : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
+
+            return en ? "Unknown" : "Unbekannt";
+        }
+
+        private static bool TryGetServiceRunning(string serviceName, out bool running)
+        {
+            running = false;
+            nint manager = OpenSCManager(null, null, 0x0001); // SC_MANAGER_CONNECT
+            if (manager == 0)
+                return false;
+
+            try
+            {
+                nint service = OpenService(manager, serviceName, 0x0004); // SERVICE_QUERY_STATUS
+                if (service == 0)
+                    return false;
+
+                try
+                {
+                    if (!QueryServiceStatus(service, out ServiceStatus status))
+                        return false;
+                    running = status.CurrentState == 0x00000004; // SERVICE_RUNNING
+                    return true;
+                }
+                finally
+                {
+                    CloseServiceHandle(service);
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(manager);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ServiceStatus
+        {
+            public uint ServiceType;
+            public uint CurrentState;
+            public uint ControlsAccepted;
+            public uint Win32ExitCode;
+            public uint ServiceSpecificExitCode;
+            public uint CheckPoint;
+            public uint WaitHint;
+        }
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern nint OpenSCManager(string? machineName, string? databaseName, uint desiredAccess);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern nint OpenService(nint serviceManager, string serviceName, uint desiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool QueryServiceStatus(nint service, out ServiceStatus serviceStatus);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseServiceHandle(nint handle);
 
         private static void FillFirewall(SystemInfoSnapshot s, bool en)
         {
@@ -170,21 +273,6 @@ namespace WinVora
             return en
                 ? "Not available (administrator rights may be required)"
                 : "Nicht verfügbar (ggf. Administratorrechte erforderlich)";
-        }
-
-        private static void ApplyRegisteredAntivirusFallback(SystemInfoSnapshot s, bool en)
-        {
-            try
-            {
-                using var products = CreateWmiSearcher(@"root\SecurityCenter2", "SELECT displayName FROM AntiVirusProduct");
-                var names = products.Get().Cast<ManagementObject>()
-                    .Select(item => item["displayName"]?.ToString())
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .ToList();
-                if (names.Count > 0)
-                    s.DefenderStatus = (en ? "Protection registered: " : "Schutz registriert: ") + string.Join(", ", names);
-            }
-            catch (Exception ex) { Logger.LogErrorOnce("Registrierten Virenschutz lesen", ex); }
         }
 
         // ================= BOARD + BIOS + SERIAL =================

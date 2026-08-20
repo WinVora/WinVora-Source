@@ -1342,16 +1342,31 @@ namespace WinVora
 
             async Task FinishSystemStageAsync()
             {
+                (string Antivirus, string Firewall)? fastSecurity = null;
                 try
                 {
-                    var fastSecurity = await securityTask;
+                    fastSecurity = await securityTask;
                     cancellationToken.ThrowIfCancellationRequested();
-                    ApplyDashboardSecurityStatus(fastSecurity.Antivirus, fastSecurity.Firewall);
                 }
                 catch (OperationCanceledException) { return; }
                 catch (Exception ex) { Logger.LogError("Schnelle Sicherheitsprüfung", ex); }
 
                 await systemTask;
+
+                // GetFullSnapshotAsync lädt die langsamen Sicherheitsdetails
+                // bewusst noch nicht. Deshalb den schnellen Status erst nach
+                // dem übrigen Snapshot anwenden, damit leere Detailwerte ihn
+                // nicht wieder mit „Nicht prüfbar“ überschreiben.
+                if (fastSecurity is { } security)
+                {
+                    if (_cachedSnapshot != null)
+                    {
+                        _cachedSnapshot.DefenderStatus = security.Antivirus;
+                        _cachedSnapshot.FirewallStatus = security.Firewall;
+                    }
+                    ApplyDashboardSecurityStatus(security.Antivirus, security.Firewall);
+                    Logger.Log($"Sicherheitsstatus: Virenschutz={security.Antivirus}, Firewall={security.Firewall}");
+                }
             }
 
             await FinishSystemStageAsync();

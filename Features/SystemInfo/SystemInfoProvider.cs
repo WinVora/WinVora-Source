@@ -36,13 +36,7 @@ namespace WinVora
 
                 try
                 {
-                    using var products = CreateWmiSearcher(@"root\SecurityCenter2", "SELECT displayName FROM AntiVirusProduct");
-                    var names = products.Get().Cast<ManagementObject>()
-                        .Select(item => item["displayName"]?.ToString())
-                        .Where(name => !string.IsNullOrWhiteSpace(name))
-                        .ToList();
-                    if (names.Count > 0)
-                        antivirus = (en ? "Protection registered: " : "Schutz registriert: ") + string.Join(", ", names);
+                    antivirus = ReadAntivirusStatus(en);
                 }
                 catch (Exception ex) { Logger.LogErrorOnce("Schnellprüfung Antivirus", ex); }
 

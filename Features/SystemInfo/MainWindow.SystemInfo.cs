@@ -141,7 +141,11 @@ namespace WinVora
             // oder "Nicht verfügbar"; das ist kein Beleg für ein
             // Sicherheitsproblem und darf den Dashboardstatus nicht dauerhaft
             // gelb färben.
-            ApplyDashboardSecurityStatus(s.DefenderStatus, s.FirewallStatus);
+            if (!string.IsNullOrWhiteSpace(s.DefenderStatus) &&
+                !string.IsNullOrWhiteSpace(s.FirewallStatus))
+            {
+                ApplyDashboardSecurityStatus(s.DefenderStatus, s.FirewallStatus);
+            }
         }
 
         private void ApplyDashboardSecurityStatus(string antivirusStatus, string firewallStatus)
