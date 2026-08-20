@@ -124,6 +124,10 @@ namespace WinVora
             Debug.Assert(compactSettings.Contains("ColorScheme") && !compactSettings.Contains("GlassIntensity"));
             Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.4.1"));
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.4-beta.1", "0.8.4.1"));
+            Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.2", "0.8.5-beta.1"));
+            Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.5-beta.2"));
+            Debug.Assert(UpdateService.IsNewerVersion("0.8.5", "0.8.5-beta.2"));
+            Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.2", "0.8.5"));
             Debug.Assert(WingetTableParser.Parse("", Array.Empty<int>()) == null);
             Debug.Assert(!InstalledProgramsService.TrySplitCommand("", out _, out _));
             Debug.Assert(InstalledProgramsService.TrySplitCommand(

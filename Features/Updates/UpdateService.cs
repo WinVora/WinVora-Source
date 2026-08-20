@@ -119,13 +119,14 @@ namespace WinVora
         {
             try
             {
-                // GitHub-Tags dürfen z. B. "0.8.5-beta.1" heißen, während
-                // Windows-Dateiversionen rein numerisch bleiben müssen.
-                string latestNumeric = latest.Split('-', '+')[0];
-                string currentNumeric = current.Split('-', '+')[0];
-                var v1 = new Version(latestNumeric);
-                var v2 = new Version(currentNumeric);
-                return v1 > v2;
+                var latestParts = ParseSemanticVersion(latest);
+                var currentParts = ParseSemanticVersion(current);
+
+                int coreComparison = latestParts.Core.CompareTo(currentParts.Core);
+                if (coreComparison != 0)
+                    return coreComparison > 0;
+
+                return ComparePrerelease(latestParts.Prerelease, currentParts.Prerelease) > 0;
             }
             catch
             {
@@ -133,6 +134,45 @@ namespace WinVora
                 // vorsichtshalber nur bei echtem Unterschied ein Update anbieten.
                 return !string.Equals(latest, current, StringComparison.OrdinalIgnoreCase);
             }
+        }
+
+        private static (Version Core, string[] Prerelease) ParseSemanticVersion(string value)
+        {
+            string withoutMetadata = value.Trim().TrimStart('v', 'V').Split('+', 2)[0];
+            string[] versionParts = withoutMetadata.Split('-', 2);
+            var core = new Version(versionParts[0]);
+            string[] prerelease = versionParts.Length == 2
+                ? versionParts[1].Split('.', StringSplitOptions.RemoveEmptyEntries)
+                : Array.Empty<string>();
+            return (core, prerelease);
+        }
+
+        private static int ComparePrerelease(string[] left, string[] right)
+        {
+            // Eine stabile Version ist neuer als jede Vorabversion mit demselben Kern.
+            if (left.Length == 0) return right.Length == 0 ? 0 : 1;
+            if (right.Length == 0) return -1;
+
+            for (int i = 0; i < Math.Max(left.Length, right.Length); i++)
+            {
+                if (i >= left.Length) return -1;
+                if (i >= right.Length) return 1;
+
+                bool leftNumeric = int.TryParse(left[i], out int leftNumber);
+                bool rightNumeric = int.TryParse(right[i], out int rightNumber);
+                int comparison;
+
+                if (leftNumeric && rightNumeric)
+                    comparison = leftNumber.CompareTo(rightNumber);
+                else if (leftNumeric != rightNumeric)
+                    comparison = leftNumeric ? -1 : 1;
+                else
+                    comparison = string.Compare(left[i], right[i], StringComparison.OrdinalIgnoreCase);
+
+                if (comparison != 0) return comparison;
+            }
+
+            return 0;
         }
 
         public static async Task<string> DownloadUpdateAsync(UpdateInfo update, IProgress<DownloadProgressInfo>? progress)
