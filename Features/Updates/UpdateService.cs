@@ -156,7 +156,8 @@ namespace WinVora
             // veröffentlicht. Die zusätzliche ".1" war kein neuerer
             // Produktstand, sondern ein Versionsschemafehler. Ohne diese eng
             // begrenzte Migration würde z. B. 0.8.5.1-beta.2 fälschlich als
-            // neuer als 0.8.5-beta.3 gelten und könnte nie aktualisiert werden.
+            // neuer als eine regulär nummerierte 0.8.5-Beta gelten und könnte
+            // deshalb nie auf Beta 3, Beta 4 oder einen späteren Stand wechseln.
             if (core.Major == 0 && core.Minor == 8 && core.Build == 5 && core.Revision == 1 &&
                 prerelease.Length > 0 && prerelease[0].Equals("beta", StringComparison.OrdinalIgnoreCase))
             {

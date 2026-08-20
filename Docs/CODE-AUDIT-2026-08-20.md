@@ -2,7 +2,7 @@
 
 Stand: 20. August 2026, nach Umsetzung der Fix-Roadmap und erneutem Code-/Build-Abgleich
 Auditbasis: aktueller lokaler Arbeitsstand von `WinVora-Source` einschließlich nicht committeter Änderungen  
-Version: `0.8.5-beta.3`
+Version: `0.8.5-beta.4`
 
 ## A. Executive Summary
 
@@ -18,7 +18,7 @@ Positiv bewertet werden insbesondere:
 - getrennte Defender-, Firewall-, TPM- und BitLocker-Abfragen mit Fallbacks;
 - begrenzte Logrotation und Anonymisierung des Supportberichts;
 - erfolgreicher Release-Publish ohne Compilerwarnungen;
-- ein echtes MSTest-Projekt mit 20 bestandenen Release-Tests und CI-Test-Gate;
+- ein echtes MSTest-Projekt mit 23 bestandenen Release-Tests und CI-Test-Gate;
 - auf unveränderliche Commit-SHAs fixierte GitHub Actions;
 - keine aktuell bekannten verwundbaren direkten oder transitiven NuGet-Pakete.
 
@@ -546,7 +546,7 @@ Keine bestätigten kritischen Findings.
 
 ### L-07 – Abhängigkeiten sind teilweise nicht auf dem neuesten Stand
 
-**Status im Re-Audit:** Teilweise behoben. Windows App SDK wurde für die Beta kontrolliert auf 2.4.0 und `System.Management` auf 10.0.11 aktualisiert. Release-Build, 20 Tests und self-contained Publish sind sauber; die übrigen `System.*`-Pakete bleiben bewusst auf der zum .NET-8-Ziel passenden Hauptversion, statt blind auf 10.x gehoben zu werden.
+**Status im Re-Audit:** Teilweise behoben. Windows App SDK wurde für die Beta kontrolliert auf 2.4.0 und `System.Management` auf 10.0.11 aktualisiert. Release-Build, 23 Tests und self-contained Publish sind sauber; die übrigen `System.*`-Pakete bleiben bewusst auf der zum .NET-8-Ziel passenden Hauptversion, statt blind auf 10.x gehoben zu werden.
 
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -677,11 +677,11 @@ Operation-Controller, `SystemAccess`-Schnittstellen, zentrale Telemetrie, getren
 | Performance | 8/10 | Telemetrie läuft im Hintergrund, ist serialisiert und gecacht; reales Low-End-Profiling und RAM-Optimierung bleiben offen. |
 | Architektur | 7/10 | Controller und Schnittstellen verbessern die Testbarkeit deutlich; `MainWindow` bleibt der zentrale Orchestrator. |
 | Codequalität | 8/10 | Nullable, Analyzer, Validatoren, zentrale Logger und entfernte tote Pfade ergeben einen sauberen Build. |
-| Wartbarkeit | 8/10 | Gute Featurestruktur, 20 Release-Tests und zweckgebundene Teilmodule; UI-gebundene Partialklassen bleiben. |
+| Wartbarkeit | 8/10 | Gute Featurestruktur, 23 Release-Tests und zweckgebundene Teilmodule; UI-gebundene Partialklassen bleiben. |
 | Fehlerbehandlung | 9/10 | Timeouts, Exitcodes, Abbruchtoken, Nutzerabbruch und Logging sind vereinheitlicht; externe Ausgabeformate bleiben ein Risiko. |
 | UI-Zuverlässigkeit | 8/10 | Responsive Layouts, Hintergrundarbeit und Navigation wurden praktisch geprüft und korrigiert. |
 | Kompatibilität | 8/10 | Windows 10/11 x64, PerMonitorV2 und self-contained Publish sind sauber konfiguriert; ARM64 fehlt bewusst. |
-| Release-Reife | 9/10 | Release-Build, 20 Tests und Publish-Readiness sind sauber; Frisch-PC-Praxistest und Signatur begrenzen die Bewertung. |
+| Release-Reife | 9/10 | Release-Build, 23 Tests und Publish-Readiness sind sauber; Frisch-PC-Praxistest und Signatur begrenzen die Bewertung. |
 
 **Gesamtdurchschnitt: 8,4/10** (vor dem Re-Audit: 6,6/10).
 
@@ -693,9 +693,9 @@ Der aktuelle Stand ist für eine öffentliche Beta release-bereit. Die früheren
 
 ## Nachweis der technischen Prüfung
 
-- Release-Testlauf erfolgreich: 20 von 20 Tests bestanden, keine übersprungen.
+- Release-Testlauf erfolgreich: 23 von 23 Tests bestanden, keine übersprungen.
 - Release-Build erfolgreich und ohne Compilerwarnungen.
-- Self-contained Publish-Prüfung erfolgreich: Version `0.8.5-beta.3`, 504 Dateien, 198,4 MB, keine PDB im Endnutzerordner.
+- Self-contained Publish-Prüfung erfolgreich: Version `0.8.5-beta.4`, 504 Dateien, 198,4 MB, keine PDB im Endnutzerordner.
 - Lokalisierungsprüfung meldet 352 vollständige Schlüssel.
 - UI-Qualitätsskript erfolgreich.
 - Releaseworkflow führt Tests vor Publish und Installerbau aus.

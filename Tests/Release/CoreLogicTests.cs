@@ -21,6 +21,9 @@ public sealed class CoreLogicTests
     [DataRow("0.8.5-beta.3", "0.8.5-beta.2", true)]
     [DataRow("0.8.5-beta.2", "0.8.5-beta.3", false)]
     [DataRow("0.8.5-beta.3", "0.8.5.1-beta.2", true)]
+    [DataRow("0.8.5-beta.4", "0.8.5-beta.3", true)]
+    [DataRow("0.8.5-beta.3", "0.8.5-beta.4", false)]
+    [DataRow("0.8.5-beta.4", "0.8.5.1-beta.2", true)]
     [DataRow("0.8.4", "0.8.5", false)]
     public void VersionComparisonOrdersStableAndPrereleaseCorrectly(
         string latest,
