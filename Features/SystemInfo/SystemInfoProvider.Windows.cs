@@ -179,7 +179,9 @@ namespace WinVora
             try
             {
                 using var searcher = CreateWmiSearcher(
-                    "SELECT LicenseStatus FROM SoftwareLicensingProduct WHERE PartialProductKey IS NOT NULL");
+                    "SELECT LicenseStatus FROM SoftwareLicensingProduct " +
+                    "WHERE PartialProductKey IS NOT NULL " +
+                    "AND ApplicationID = '55c92734-d682-4d71-983e-d6ec3f16059f'");
 
                 foreach (ManagementObject mo in searcher.Get())
                     if (mo["LicenseStatus"]?.ToString() == "1")

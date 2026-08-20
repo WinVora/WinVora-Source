@@ -9,15 +9,22 @@
 
 		<RootNamespace>WinVora</RootNamespace>
 		<AssemblyName>WinVora</AssemblyName>
-		<Version>0.8.5-beta.2</Version>
+		<Version>0.8.5-beta.3</Version>
 		<InformationalVersion>$(Version)</InformationalVersion>
 		<IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 		<ApplicationIcon>Assets\app.ico</ApplicationIcon>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
 
 		<UseWinUI>true</UseWinUI>
 
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<EnableNETAnalyzers>true</EnableNETAnalyzers>
+		<AnalysisLevel>latest-minimum</AnalysisLevel>
+		<!-- Bestehende API-Form und reine Mikrooptimierungen werden bewusst nicht
+		     als Buildwarnung geführt. Korrektheits-, Interop- und Async-Analyzer
+		     bleiben aktiv und müssen warnungsfrei sein. -->
+		<NoWarn>$(NoWarn);CA1068;CA1507;CA1822;CA1859;CA1861;CA1865;CA1870</NoWarn>
 
 		<!-- Architektur fix -->
 		<PlatformTarget>x64</PlatformTarget>
@@ -39,8 +46,11 @@
 		     packt den kompletten publish-Ordner sowieso in eine einzige
 		     Setup.exe, egal ob darin 1 oder 489 Dateien stecken. -->
 
-		<!-- Keine .pdb-Datei mehr im Publish-Output -->
-		<DebugType>none</DebugType>
+		<!-- Release-Symbole werden intern archiviert und anschließend aus dem
+		     Endnutzer-Publish entfernt. Dadurch bleiben Abstürze diagnostizierbar,
+		     ohne die PDB mit dem Installer auszuliefern. -->
+		<DebugType Condition="'$(Configuration)' == 'Release'">portable</DebugType>
+		<DebugSymbols Condition="'$(Configuration)' == 'Release'">true</DebugSymbols>
 
 		<!-- Reduziert die vielen af-ZA/am-ET/... Sprachordner im Publish-Output
 		     auf die tatsächlich benötigten Sprachen. -->
@@ -59,6 +69,14 @@
 		<Platforms>x64</Platforms>
 
 	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Remove="Tests\Release\**\*.cs" />
+		<Compile Remove="Tests\obj\**\*.cs" />
+		<Compile Remove="Tests\bin\**\*.cs" />
+		<None Include="Tests\Release\**\*.cs" />
+		<None Include="Tests\WinVora.Tests.csproj" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
@@ -109,6 +127,22 @@
 	     deutsche UI-Texte bereits während des Builds. -->
 	<Target Name="ValidateLocalization" BeforeTargets="BeforeCompile">
 		<Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Test-Localization.ps1&quot; -ProjectRoot &quot;$(MSBuildProjectDirectory)&quot;" />
+	</Target>
+
+	<Target Name="ValidateUiQuality" BeforeTargets="BeforeCompile">
+		<Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Test-UiQuality.ps1&quot; -ProjectRoot &quot;$(MSBuildProjectDirectory)&quot;" />
+	</Target>
+
+	<Target Name="ArchiveReleaseSymbols" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+		<PropertyGroup>
+			<SymbolArchiveDir>$(MSBuildProjectDirectory)\artifacts\symbols\$(Version)</SymbolArchiveDir>
+		</PropertyGroup>
+		<MakeDir Directories="$(SymbolArchiveDir)" />
+		<Copy SourceFiles="$(TargetDir)$(TargetName).pdb"
+			  DestinationFiles="$(SymbolArchiveDir)\$(TargetName).pdb"
+			  Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+		<Delete Files="$(PublishDir)$(TargetName).pdb"
+			Condition="Exists('$(PublishDir)$(TargetName).pdb')" />
 	</Target>
 
 </Project>

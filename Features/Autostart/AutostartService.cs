@@ -44,6 +44,23 @@ namespace WinVora
             }
         }
 
+        public static bool RemoveEntry(AutostartEntry entry)
+        {
+            try
+            {
+                string keyPath = entry.Enabled ? RunKey : DisabledKey;
+                using var key = Registry.CurrentUser.OpenSubKey(keyPath, writable: true);
+                if (key == null) return false;
+                key.DeleteValue(entry.Name, throwOnMissingValue: false);
+                return key.GetValue(entry.Name) == null;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"AutostartService.RemoveEntry({entry.Name})", ex);
+                return false;
+            }
+        }
+
         public static bool CommandTargetExists(string command)
             => TryGetCommandTargetPath(command, out string path) && File.Exists(path);
 

@@ -126,13 +126,17 @@ namespace WinVora
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.4-beta.1", "0.8.4.1"));
             Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.2", "0.8.5-beta.1"));
             Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.1", "0.8.5-beta.2"));
-            Debug.Assert(UpdateService.IsNewerVersion("0.8.5", "0.8.5-beta.2"));
-            Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.2", "0.8.5"));
+            Debug.Assert(UpdateService.IsNewerVersion("0.8.5-beta.3", "0.8.5-beta.2"));
+            Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.2", "0.8.5-beta.3"));
+            Debug.Assert(UpdateService.IsNewerVersion("0.8.5", "0.8.5-beta.3"));
+            Debug.Assert(!UpdateService.IsNewerVersion("0.8.5-beta.3", "0.8.5"));
             Debug.Assert(WingetTableParser.Parse("", Array.Empty<int>()) == null);
             Debug.Assert(!InstalledProgramsService.TrySplitCommand("", out _, out _));
             Debug.Assert(InstalledProgramsService.TrySplitCommand(
                 @"""C:\Program Files\Vendor\uninstall.exe"" /remove /quiet", out _, out string unusualArgs) &&
                 unusualArgs.Contains("/remove"));
+            Debug.Assert(!InstalledProgramsService.TrySplitCommand("cleanup.cmd /silent", out _, out _));
+            Debug.Assert(!InstalledProgramsService.TrySplitCommand("uninstall.exe & calc.exe", out _, out _));
             var missingUninstaller = InstalledProgramsService.Uninstall(new InstalledProgram
             {
                 DisplayName = "Test ohne Deinstaller",
@@ -185,6 +189,15 @@ namespace WinVora
             Debug.Assert(!sanitized.Contains("SERIAL-123"));
             Debug.Assert(!sanitized.Contains("192.168.1.5"));
             Debug.Assert(!sanitized.Contains("AA:BB:CC:DD:EE:FF"));
+            string extendedSanitized = DiagnosticReportBuilder.Sanitize(
+                @"user@example.com \\fileserver\private\report.txt fe80::1234:5678:9abc:def0 C:\Users\Other User\secret.txt",
+                diagnosticSnapshot);
+            Debug.Assert(!extendedSanitized.Contains("user@example.com"));
+            Debug.Assert(!extendedSanitized.Contains("fileserver"));
+            Debug.Assert(!extendedSanitized.Contains("fe80::1234:5678:9abc:def0"));
+            Debug.Assert(!extendedSanitized.Contains("Other User"));
+            var placeholderSnapshot = new SystemInfoSnapshot { SerialNumber = "Not available" };
+            Debug.Assert(DiagnosticReportBuilder.Sanitize("Status: Not available", placeholderSnapshot).Contains("Not available"));
             string supportReport = DiagnosticReportBuilder.Build(
                 diagnosticSnapshot,
                 "0.0-test",
@@ -202,6 +215,54 @@ namespace WinVora
                 out string steamExe, out string steamArgs));
             Debug.Assert(steamExe.EndsWith("steam.exe", StringComparison.OrdinalIgnoreCase));
             Debug.Assert(steamArgs == "steam://uninstall/123");
+
+            var sameNamedPrograms = InstalledProgramsService.DeduplicatePrograms(new[]
+            {
+                new InstalledProgram { DisplayName = "Demo Runtime", Version = "1.0", InstallLocation = @"C:\Demo1", UninstallString = @"C:\Demo1\remove.exe" },
+                new InstalledProgram { DisplayName = "Demo Runtime", Version = "2.0", InstallLocation = @"C:\Demo2", UninstallString = @"C:\Demo2\remove.exe" },
+                new InstalledProgram { DisplayName = "Demo Runtime", Version = "2.0", InstallLocation = @"C:\Demo2\", UninstallString = @"C:\Demo2\remove.exe" }
+            }).ToList();
+            Debug.Assert(sameNamedPrograms.Count == 2);
+            Debug.Assert(InstalledProgramsService.DeduplicatePrograms(new[]
+            {
+                new InstalledProgram { DisplayName = "Demo", Version = "1", UninstallString = @"C:\Demo\remove.exe" },
+                new InstalledProgram { DisplayName = "Demo", Version = "1", UninstallString = @"C:\Demo\remove.exe", IsPerUserInstall = true }
+            }).Count() == 2);
+            Debug.Assert(ElevatedActionService.TryValidateStorageKeys(new[] { "windows_temp" }, out _));
+            Debug.Assert(!ElevatedActionService.TryValidateStorageKeys(new[] { "downloads" }, out _));
+            Debug.Assert(!ElevatedActionService.TryValidateStorageKeys(new[] { "unknown-category" }, out _));
+
+            using (var updates = new UpdateOperationController())
+            {
+                Debug.Assert(updates.TryBeginDiscovery());
+                Debug.Assert(!updates.TryBeginInstall());
+                updates.CompleteDiscovery();
+                Debug.Assert(updates.TryBeginInstall());
+                updates.Cancel();
+                Debug.Assert(updates.Token.IsCancellationRequested);
+                updates.CompleteInstall();
+                Debug.Assert(!updates.IsBusy);
+            }
+            using (var storage = new StorageOperationController())
+            {
+                Debug.Assert(storage.TryBeginScan());
+                Debug.Assert(!storage.TryBeginDelete());
+                storage.Reset();
+                Debug.Assert(storage.TryBeginDelete());
+            }
+            var viewState = new MainWindowViewState();
+            Debug.Assert(viewState.IsUpdateSelected("Vendor.App"));
+            viewState.SetUpdateSelected("Vendor.App", false);
+            Debug.Assert(!viewState.IsUpdateSelected("Vendor.App"));
+            viewState.SetStorageSelected("user_temp", true);
+            Debug.Assert(viewState.IsStorageSelected("user_temp"));
+            viewState.RetainStorage(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "other" });
+            Debug.Assert(!viewState.IsStorageSelected("user_temp"));
+            Debug.Assert(PerformanceActionCatalog.TryGetExternalTool("DeviceManager", out var deviceManager) &&
+                         deviceManager.FileName.Equals("devmgmt.msc", StringComparison.OrdinalIgnoreCase));
+            Debug.Assert(PerformanceActionCatalog.TryGetExternalTool("ReliabilityMonitor", out var reliability) &&
+                         reliability.Arguments == "/rel");
+            Debug.Assert(PerformanceActionCatalog.TryGetExternalTool("EventViewerSystem", out _));
 
             var oldPcState = new PcStateSnapshot
             {

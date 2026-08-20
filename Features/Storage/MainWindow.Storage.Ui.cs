@@ -17,7 +17,7 @@ namespace WinVora
             bool en = Localization.CurrentLanguage == "en";
             var toggle = new CheckBox
             {
-                IsChecked = false,
+                IsChecked = _viewState.IsStorageSelected(category.Key),
                 VerticalAlignment = VerticalAlignment.Center
             };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle,
@@ -100,8 +100,16 @@ namespace WinVora
             };
 
             // Akzentfarbener Rand, solange die Kategorie zum Löschen ausgewählt ist.
-            toggle.Checked += (_, __) => UpdateStorageSelectionSummary();
-            toggle.Unchecked += (_, __) => UpdateStorageSelectionSummary();
+            toggle.Checked += (_, __) =>
+            {
+                _viewState.SetStorageSelected(category.Key, true);
+                UpdateStorageSelectionSummary();
+            };
+            toggle.Unchecked += (_, __) =>
+            {
+                _viewState.SetStorageSelected(category.Key, false);
+                UpdateStorageSelectionSummary();
+            };
 
             _storageRows.Add((category, toggle));
             return card;
@@ -148,7 +156,12 @@ namespace WinVora
         private bool RequiresProtectedCleanupConfirmation(IEnumerable<StorageCategory> categories)
         {
             var keys = categories.Select(category => category.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return (_settings.ConfirmDownloadsCleanup && keys.Contains("downloads")) ||
+            // Windows.old und $WINDOWS.~BT enthalten die Dateien für eine mögliche
+            // Rückkehr zur vorherigen Windows-Version. Ihre Bestätigung darf nie
+            // durch die globale Einstellung "Bestätigungen anzeigen" entfallen.
+            return keys.Contains("old_install_files") ||
+                   keys.Contains("upgrade_logs") ||
+                   (_settings.ConfirmDownloadsCleanup && keys.Contains("downloads")) ||
                    (_settings.ConfirmRecycleBinCleanup && keys.Contains("recycle_bin")) ||
                    (_settings.ConfirmBrowserCleanup && (keys.Contains("browser_cache") || keys.Contains("inet_cache")));
         }
@@ -157,13 +170,22 @@ namespace WinVora
         {
             var keys = categories.Select(category => category.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var warnings = new List<string>();
+            bool english = Localization.CurrentLanguage == "en";
+            if (keys.Contains("old_install_files") || keys.Contains("upgrade_logs"))
+                warnings.Add(english
+                    ? "Windows rollback files will be permanently removed; returning to the previous Windows version may no longer be possible"
+                    : "Windows-Rollback-Dateien werden endgültig entfernt; die Rückkehr zur vorherigen Windows-Version ist danach möglicherweise nicht mehr möglich");
             if (_settings.ConfirmDownloadsCleanup && keys.Contains("downloads"))
-                warnings.Add("Downloads können persönliche Dateien enthalten");
+                warnings.Add(english ? "Downloads may contain personal files" : "Downloads können persönliche Dateien enthalten");
             if (_settings.ConfirmRecycleBinCleanup && keys.Contains("recycle_bin"))
-                warnings.Add("Dateien im Papierkorb werden endgültig gelöscht");
+                warnings.Add(english ? "Recycle Bin files will be permanently deleted" : "Dateien im Papierkorb werden endgültig gelöscht");
             if (_settings.ConfirmBrowserCleanup && (keys.Contains("browser_cache") || keys.Contains("inet_cache")))
-                warnings.Add("Browserdaten können Anmeldungen oder Offline-Inhalte beeinflussen");
-            return warnings.Count == 0 ? "" : "\n\nBesonders geschützt: " + string.Join("; ", warnings) + ".";
+                warnings.Add(english
+                    ? "Browser data may affect sign-ins or offline content"
+                    : "Browserdaten können Anmeldungen oder Offline-Inhalte beeinflussen");
+            return warnings.Count == 0
+                ? ""
+                : (english ? "\n\nProtected cleanup: " : "\n\nBesonders geschützt: ") + string.Join("; ", warnings) + ".";
         }
     }
 }

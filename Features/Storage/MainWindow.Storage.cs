@@ -18,7 +18,7 @@ namespace WinVora
 
         private async void Cleaner_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("Storage");
+            if (!TrySetPage("Storage")) return;
             await LoadStorage();
             ScheduleDashboardRefresh();
         }
@@ -75,11 +75,13 @@ namespace WinVora
         private async Task LoadStorage()
         {
             if (_isLoadingStorage || _isDeletingStorage) return;
-            _isLoadingStorage = true;
+            if (!_storageOperations.TryBeginScan()) return;
             SetGlobalStatus(Localization.CurrentLanguage == "en" ? "Analyzing storage..." : "Speicher wird analysiert...");
             StoragePanel.Children.Clear();
             StoragePanel.Children.Add(LoadingStateUiBuilder.Create(RootGrid.Resources, 4, !_settings.ReducedMotion));
             _storageRows.Clear();
+            _viewState.RetainStorage(StorageService.GetCategoryDefinitions().Select(category => category.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase));
 
             StorageRefreshButton.IsEnabled = false;
             StorageDeleteSelectedButton.IsEnabled = false;
@@ -91,7 +93,7 @@ namespace WinVora
 
             try
             {
-                categories = await StorageService.GetCategoriesWithSizesAsync();
+                categories = await StorageService.GetCategoriesWithSizesAsync(_storageOperations.Token);
             }
             catch (Exception ex)
             {
@@ -105,7 +107,7 @@ namespace WinVora
             }
             finally
             {
-                _isLoadingStorage = false;
+                _storageOperations.CompleteScan();
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
                 StorageRefreshButton.IsEnabled = true;

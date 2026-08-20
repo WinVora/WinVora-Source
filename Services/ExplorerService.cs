@@ -14,7 +14,7 @@ namespace WinVora
             {
                 string fullPath = Path.GetFullPath(path);
                 if (!Directory.Exists(fullPath)) return ExplorerOpenResult.Missing;
-                Process.Start(new ProcessStartInfo { FileName = fullPath, UseShellExecute = true });
+                SystemAccess.Process.Start(new ProcessStartInfo { FileName = fullPath, UseShellExecute = true });
                 return ExplorerOpenResult.Opened;
             }
             catch (Exception ex)
@@ -36,7 +36,7 @@ namespace WinVora
                     UseShellExecute = true
                 };
                 startInfo.ArgumentList.Add("/select," + fullPath);
-                Process.Start(startInfo);
+                SystemAccess.Process.Start(startInfo);
                 return ExplorerOpenResult.Opened;
             }
             catch (Exception ex)

@@ -325,7 +325,8 @@ namespace WinVora
                     {
                         update = await UpdateService.CheckForUpdateAsync(
                             CurrentVersion,
-                            _settings.UpdateChannel == "Beta");
+                            _settings.UpdateChannel == "Beta",
+                            _startupCancellation.Token);
                     }
                     catch (Exception ex)
                     {
@@ -414,7 +415,10 @@ namespace WinVora
 
                 try
                 {
-                    var installerPath = await UpdateService.DownloadUpdateAsync(update, progress);
+                    var installerPath = await UpdateService.DownloadUpdateAsync(
+                        update,
+                        progress,
+                        _startupCancellation.Token);
                     Logger.Log($"Update auf Version {update.Version} heruntergeladen, starte Installer.");
 
                     UpdateService.RunInstaller(installerPath);
@@ -473,7 +477,8 @@ namespace WinVora
                     string previousChannel = _settings.UpdateChannel;
                     try
                     {
-                        var stableRelease = await UpdateService.GetLatestStableReleaseAsync();
+                        var stableRelease = await UpdateService.GetLatestStableReleaseAsync(
+                            _startupCancellation.Token);
                         bool confirmed = await ConfirmAsync(
                             updateUiEnglish ? "Return to Stable?" : "Zur stabilen Version zurückkehren?",
                             updateUiEnglish
@@ -511,7 +516,10 @@ namespace WinVora
                             }
                         });
 
-                        var installerPath = await UpdateService.DownloadUpdateAsync(stableRelease, progress);
+                        var installerPath = await UpdateService.DownloadUpdateAsync(
+                            stableRelease,
+                            progress,
+                            _startupCancellation.Token);
                         _settings.UpdateChannel = "Stable";
                         _settings.Save();
                         Logger.Log($"Rückkehr zur stabilen Version {stableRelease.Version}: Installer wird gestartet.");

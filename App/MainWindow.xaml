@@ -90,6 +90,7 @@
                         <Button x:Name="NavCleanerButton" Click="Cleaner_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,0,0,12"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE8B7;"/><TextBlock x:Name="LblNavFiles" Text="Dateien"/></StackPanel></Button>
                         <Button x:Name="NavUninstallButton" Click="Uninstaller_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE74D;"/><TextBlock x:Name="LblNavUninstall" Text="Deinstallieren"/></StackPanel></Button>
                         <Button x:Name="NavChangesButton" Click="Changes_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,12,0,0"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9D2;"/><TextBlock x:Name="LblNavChanges" Text="Veränderungen"/></StackPanel></Button>
+                        <Button x:Name="NavPerformanceButton" Click="Performance_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" FontSize="18" FontWeight="SemiBold" MinHeight="56" Padding="18,14" Margin="0,12,0,0"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9D9;"/><TextBlock x:Name="LblNavPerformance" Text="PC-Check"/></StackPanel></Button>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -189,21 +190,28 @@
         Click="ChangelogButton_Click">
 
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE789;"
-                          Foreground="{StaticResource AppForegroundBrush}"
-                          FontSize="18"/>
-
-                                 <TextBlock x:Name="NavVersionText"
-                Foreground="{StaticResource AppForegroundBrush}"
-                FontWeight="SemiBold"/>
-                                <Border x:Name="NavBetaBadge" Visibility="Collapsed"
-                                        CornerRadius="6" Padding="6,2"
-                                        Background="{StaticResource AppAccentOverlay20}">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE789;"
+                                          Foreground="{StaticResource AppForegroundBrush}"
+                                          FontSize="18"/>
+                                <TextBlock Grid.Column="1" x:Name="NavVersionText"
+                                           Foreground="{StaticResource AppForegroundBrush}"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"/>
+                                <Border Grid.Column="2" x:Name="NavBetaBadge" Visibility="Collapsed"
+                                        CornerRadius="6" Padding="7,2"
+                                        Background="{StaticResource AppAccentOverlay20}"
+                                        VerticalAlignment="Center">
                                     <TextBlock Text="BETA" FontSize="10" FontWeight="Bold"
                                                Foreground="{StaticResource AppAccentBrushLight}"/>
                                 </Border>
-                            </StackPanel>
+                            </Grid>
 
                             <TextBlock x:Name="LblNavChangelogHint" Margin="0,8,0,0"
                        Foreground="{StaticResource AppMutedForegroundBrush}"
@@ -1222,6 +1230,34 @@
                             <StackPanel x:Name="HistoryListPanel" Spacing="10"/>
                         </StackPanel>
 
+                        <StackPanel x:Name="PerformancePanel" Spacing="16" Visibility="Collapsed">
+                            <Border CornerRadius="18" Padding="22"
+                                    Background="{StaticResource AppAccentOverlay10}"
+                                    BorderBrush="{StaticResource AppAccentOverlay20}"
+                                    BorderThickness="1">
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock x:Name="PerformanceSummaryText" Text="PC wird analysiert..."
+                                                   FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="PerformanceIntroText"
+                                                   Text="WinVora prüft wichtige Bereiche und verändert nichts automatisch."
+                                                   Foreground="{StaticResource AppMutedForegroundBrush}"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="PerformanceCheckedAtText"
+                                                   FontSize="12" Foreground="{StaticResource AppFaintForegroundBrush}"/>
+                                    </StackPanel>
+                                    <Button x:Name="PerformanceRefreshButton" Grid.Column="1"
+                                            Content="Erneut analysieren" VerticalAlignment="Center"
+                                            Padding="14,8" Click="PerformanceRefresh_Click"/>
+                                </Grid>
+                            </Border>
+                            <StackPanel x:Name="PerformanceFindingsPanel" Spacing="10"/>
+                        </StackPanel>
+
                         <StackPanel x:Name="AutostartPanel" Spacing="12" Visibility="Collapsed">
                             <TextBlock x:Name="AutostartIntroText" Text="Programme, die automatisch mit Windows starten" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                             <StackPanel x:Name="AutostartListPanel" Spacing="10"/>
@@ -1400,7 +1436,7 @@
                             </StackPanel>
                         </Border>
                         <StackPanel Spacing="6" Width="240">
-                            <ProgressBar x:Name="StartupProgressBar" Minimum="0" Maximum="4" Value="0" Height="5"
+                            <ProgressBar x:Name="StartupProgressBar" Minimum="0" Maximum="2" Value="0" Height="5"
                                          Foreground="#FF8B7CF6"/>
                              <TextBlock x:Name="StartupProgressText" Text="0 von 4 abgeschlossen"
                                        FontSize="11" Foreground="#BFFFFFFF" HorizontalAlignment="Center"/>

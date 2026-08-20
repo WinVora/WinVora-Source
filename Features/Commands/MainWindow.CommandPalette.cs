@@ -21,13 +21,14 @@ namespace WinVora
             };
             var commands = new List<(string Key, string Glyph, string De, string En, string Shortcut, Func<Task> Run)>
             {
-                ("dashboard", "\uE80F", "Dashboard öffnen", "Open dashboard", "", () => { SetPage("Übersicht"); return Task.CompletedTask; }),
-                ("system", "\uE950", "Systeminformationen öffnen", "Open system information", "", () => { SetPage("System"); return Task.CompletedTask; }),
-                ("updates", "\uE895", "Programm-Updates prüfen", "Check program updates", "Strg+R", async () => { SetPage("Updates"); await LoadWinget(forceRefresh: true); }),
-                ("storage", "\uE8B7", "Dateien analysieren", "Analyze storage", "", async () => { SetPage("Storage"); await LoadStorage(); }),
-                ("programs", "\uE74D", "Programme anzeigen", "Show installed programs", "", async () => { SetPage("Uninstall"); await LoadInstalledPrograms(); }),
-                ("changes", "\uE9D2", "Veränderungen öffnen", "Open PC changes", "", () => { SetPage("Changes"); return Task.CompletedTask; }),
-                ("history", "\uE81C", "Verlauf öffnen", "Open history", "", () => { SetPage("History"); RenderHistoryPage(); return Task.CompletedTask; }),
+                ("dashboard", "\uE80F", "Dashboard öffnen", "Open dashboard", "", () => { TrySetPage("Übersicht"); return Task.CompletedTask; }),
+                ("system", "\uE950", "Systeminformationen öffnen", "Open system information", "", () => { TrySetPage("System"); return Task.CompletedTask; }),
+                ("updates", "\uE895", "Programm-Updates prüfen", "Check program updates", "Strg+R", async () => { if (TrySetPage("Updates")) await LoadWinget(forceRefresh: true); }),
+                ("storage", "\uE8B7", "Dateien analysieren", "Analyze storage", "", async () => { if (TrySetPage("Storage")) await LoadStorage(); }),
+                ("programs", "\uE74D", "Programme anzeigen", "Show installed programs", "", async () => { if (TrySetPage("Uninstall")) await LoadInstalledPrograms(); }),
+                ("changes", "\uE9D2", "Veränderungen öffnen", "Open PC changes", "", () => { TrySetPage("Changes"); return Task.CompletedTask; }),
+                ("performance", "\uE9D9", "PC-Check starten", "Run PC Check", "", async () => { if (TrySetPage("Performance")) await AnalyzePerformanceAsync(); }),
+                ("history", "\uE81C", "Verlauf öffnen", "Open history", "", () => { if (TrySetPage("History")) RenderHistoryPage(); return Task.CompletedTask; }),
                 ("settings", "\uE713", "Einstellungen öffnen", "Open settings", "", () => { SettingsButton_Click(this, new RoutedEventArgs()); return Task.CompletedTask; }),
                 ("diagnostics", "\uE9D9", "WinVora-Status prüfen", "Check WinVora status", "", async () => await ShowInternalDiagnosticsAsync())
                 ,("support-report", "\uE8A5", "Diagnosebericht erstellen", "Create diagnostic report", "", async () => await ExportDiagnosticReportAsync(this))

@@ -18,6 +18,8 @@ namespace WinVora
         {
             ContentArea.Children.Clear();
             _wingetRows.Clear();
+            _wingetIconCards.Clear();
+            _loadedWingetIcons.Clear();
             _wingetStatusBadges.Clear();
             _wingetCardProgressBars.Clear();
 
@@ -131,12 +133,13 @@ namespace WinVora
             // unten) - der Button muss also mit "Alle abwählen" starten.
             _wingetSelectAllState = true;
             UpdateWingetSelectAllAppearance();
+            _viewState.RetainUpdates(packages.Select(package => package.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
             foreach (var pkg in packages)
             {
                 var toggle = new CheckBox
                 {
-                    IsChecked = true,
+                    IsChecked = _viewState.IsUpdateSelected(pkg.Id),
                     VerticalAlignment = VerticalAlignment.Center,
                     MinWidth = 22,
                     Padding = new Thickness(0)
@@ -274,6 +277,7 @@ namespace WinVora
 
                 void UpdateSelectionVisual()
                 {
+                    _viewState.SetUpdateSelected(pkg.Id, toggle.IsChecked == true);
                     if (_isBulkUpdatingWingetSelection) return;
                     UpdateWingetSelectionButton();
                 }

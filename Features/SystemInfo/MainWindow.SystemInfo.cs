@@ -7,12 +7,15 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using ToolkitControls = CommunityToolkit.WinUI.Controls;
 
 namespace WinVora
 {
     public sealed partial class MainWindow
     {
+        private int _extendedSystemInfoGeneration;
         // ================= SYSTEM =================
 
         private void SetupSystemInfoCopyButtons()
@@ -41,6 +44,19 @@ namespace WinVora
             SystemInfoCopyButton.Attach(SysCardBattery,
                 () => FromSnapshot(SystemInfoFormatter.Battery));
 
+            // Die Kategorie steht bereits im Expander. Ein zweiter Header in
+            // SettingsCard reserviert sonst fast die halbe Kartenbreite.
+            foreach (var card in new[]
+            {
+                SysCardDevice, SysCardOs, SysCardCpu, SysCardRam, SysCardBoard,
+                SysCardSecurity, SysCardGpu, SysCardDrives, SysCardNetwork, SysCardBattery
+            })
+            {
+                card.ClearValue(ToolkitControls.SettingsCard.HeaderProperty);
+                card.ClearValue(ToolkitControls.SettingsCard.DescriptionProperty);
+                card.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            }
+
             foreach (var value in new[]
             {
                 SysComputerName, SysUserName, SysManufacturerModel, SysSerialNumber, SysArchitecture,
@@ -57,10 +73,10 @@ namespace WinVora
 
         private async void System_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("System");
+            if (!TrySetPage("System")) return;
             await LoadSystemSnapshotIfNeededAsync(
-                "Wird geladen...",
-                "Fehler beim Laden der Systeminfos");
+                Localization.T("Common.Loading"),
+                Localization.T("System.LoadError"));
         }
 
         private void ApplySnapshot(SystemInfoSnapshot s)
@@ -104,34 +120,35 @@ namespace WinVora
             SysGpuPanel.Children.Clear();
             if (s.Gpus.Length == 0)
             {
-                SysGpuPanel.Children.Add(MakeInfoCard(en ? "No GPU detected" : "Keine GPU erkannt", ""));
+                SysGpuPanel.Children.Add(MakeSystemInfoRow(en ? "No GPU detected" : "Keine GPU erkannt", ""));
             }
             foreach (var gpu in s.Gpus)
             {
-                SysGpuPanel.Children.Add(MakeInfoCard(gpu, en ? "Graphics Card" : "Grafikkarte"));
+                SysGpuPanel.Children.Add(MakeSystemInfoRow(en ? "Graphics Card" : "Grafikkarte", gpu));
             }
 
             SysDrivesPanel.Children.Clear();
             foreach (var drive in s.Drives)
             {
-                SysDrivesPanel.Children.Add(MakeInfoCard(drive.Name, drive.TotalSize,
+                SysDrivesPanel.Children.Add(MakeSystemInfoRow(drive.Name, drive.TotalSize,
                     en ? $"{drive.FreeSpace} free" : $"{drive.FreeSpace} frei"));
             }
 
             SysNetworkPanel.Children.Clear();
             if (s.NetworkAdapters.Length == 0)
             {
-                SysNetworkPanel.Children.Add(MakeInfoCard(en ? "No active network adapter found" : "Kein aktiver Netzwerkadapter gefunden", ""));
+                SysNetworkPanel.Children.Add(MakeSystemInfoRow(en ? "No active network adapter found" : "Kein aktiver Netzwerkadapter gefunden", ""));
             }
             foreach (var net in s.NetworkAdapters)
             {
-                SysNetworkPanel.Children.Add(MakeInfoCard(
+                SysNetworkPanel.Children.Add(MakeSystemInfoRow(
                     net.Name,
                     $"IPv4: {net.IPv4}  •  MAC: {net.MacAddress}",
                     en ? $"Gateway: {net.Gateway}\nDNS: {net.Dns}" : $"Gateway: {net.Gateway}\nDNS: {net.Dns}"));
             }
 
             SysBattery.Text = s.BatteryStatus;
+            _ = RefreshExtendedSystemInfoDetailsAsync();
             if (_currentPageKey == "System")
                 PageSubtitle.Text = Localization.CurrentLanguage == "en"
                     ? $"Last checked: {DateTime.Now:G}"
@@ -145,6 +162,103 @@ namespace WinVora
                 !string.IsNullOrWhiteSpace(s.FirewallStatus))
             {
                 ApplyDashboardSecurityStatus(s.DefenderStatus, s.FirewallStatus);
+            }
+        }
+
+        private async Task RefreshExtendedSystemInfoDetailsAsync()
+        {
+            int generation = ++_extendedSystemInfoGeneration;
+            bool initialEnglish = Localization.CurrentLanguage == "en";
+            string loading = initialEnglish ? "Loading live sensor data..." : "Live-Sensordaten werden geladen...";
+            string cpuBase = SysCpuDetails.Text;
+            string boardBase = SysMainboard.Text;
+            string batteryBase = SysBattery.Text;
+            SysCpuDetails.Text = $"{cpuBase}\n{loading}";
+            SysMainboard.Text = $"{boardBase}\n{loading}";
+            SysBattery.Text = $"{batteryBase}  •  {loading}";
+            var gpuLoading = MakeSystemInfoRow(initialEnglish ? "Live sensors" : "Live-Sensoren", loading);
+            var driveLoading = MakeSystemInfoRow(initialEnglish ? "Drive sensors" : "Laufwerkssensoren", loading);
+            var networkLoading = MakeSystemInfoRow(initialEnglish ? "Network diagnostics" : "Netzwerkdiagnose", loading);
+            SysGpuPanel.Children.Add(gpuLoading);
+            SysDrivesPanel.Children.Add(driveLoading);
+            SysNetworkPanel.Children.Add(networkLoading);
+            try
+            {
+                var details = await Task.Run(() =>
+                {
+                    var telemetry = HardwareTelemetryService.GetSnapshot(refreshSensors: true);
+                    return (Hardware: telemetry.Sensors,
+                        BatteryHealth: ExtendedPcCheckService.ReadBatteryHealthPercent(),
+                        NetworkErrors: ExtendedPcCheckService.ReadNetworkErrorCount());
+                });
+                if (_currentPageKey != "System" || generation != _extendedSystemInfoGeneration) return;
+                bool en = Localization.CurrentLanguage == "en";
+
+                SysCpuDetails.Text = cpuBase;
+                SysMainboard.Text = boardBase;
+                SysBattery.Text = batteryBase;
+                SysGpuPanel.Children.Remove(gpuLoading);
+                SysDrivesPanel.Children.Remove(driveLoading);
+                SysNetworkPanel.Children.Remove(networkLoading);
+
+                var cpuParts = new List<string>();
+                if (details.Hardware.CpuClockMhz is double clock) cpuParts.Add($"{(en ? "Live clock" : "Live-Takt")}: {clock:0} MHz");
+                if (details.Hardware.CpuTemperature is double cpuTemp) cpuParts.Add($"{(en ? "Temperature" : "Temperatur")}: {cpuTemp:0} °C");
+                if (details.Hardware.CpuPowerWatts is double cpuPower && cpuPower > 0.5) cpuParts.Add($"{(en ? "Power" : "Leistung")}: {cpuPower:0.0} W");
+                if (cpuParts.Count > 0)
+                    SysCpuDetails.Text += $"\n{string.Join("  •  ", cpuParts)}";
+
+                var activeFans = details.Hardware.Fans.Where(f => f.Rpm > 0).ToList();
+                if (activeFans.Count > 0)
+                    SysMainboard.Text += $"\n{(en ? "Fans" : "Lüfter")}: {string.Join("  •  ", activeFans.Select(f => $"{f.Name}: {f.Rpm:0} RPM"))}";
+                else SysMainboard.Text += $"\n{(en ? "Fan sensors: Not available" : "Lüftersensoren: Nicht verfügbar")}";
+
+                if (details.Hardware.GpuLoadPercent is double gpuLoad ||
+                    details.Hardware.GpuTemperature is double || details.Hardware.GpuPowerWatts is double)
+                {
+                    var gpuParts = new List<string>();
+                    if (details.Hardware.GpuLoadPercent is double load) gpuParts.Add($"{(en ? "Usage" : "Auslastung")}: {load:0} %");
+                    if (details.Hardware.GpuTemperature is double temp) gpuParts.Add($"{(en ? "Temperature" : "Temperatur")}: {temp:0} °C");
+                    if (details.Hardware.GpuPowerWatts is double power && power > 0.5) gpuParts.Add($"{(en ? "Power" : "Leistung")}: {power:0.0} W");
+                    SysGpuPanel.Children.Add(MakeSystemInfoRow(en ? "Live sensors" : "Live-Sensoren", string.Join("  •  ", gpuParts)));
+                }
+                else SysGpuPanel.Children.Add(MakeSystemInfoRow(en ? "Live sensors" : "Live-Sensoren", en ? "Not available" : "Nicht verfügbar"));
+
+                foreach (var storage in details.Hardware.Storage)
+                {
+                    var parts = new List<string>();
+                    if (storage.Temperature is double temp) parts.Add($"{(en ? "Temperature" : "Temperatur")}: {temp:0} °C");
+                    if (storage.RemainingLife is double life) parts.Add($"{(en ? "Remaining life" : "Verbleibende Lebensdauer")}: {life:0} %");
+                    if (parts.Count > 0) SysDrivesPanel.Children.Add(MakeSystemInfoRow(storage.Name, string.Join("  •  ", parts)));
+                }
+                if (details.Hardware.Storage.Count == 0)
+                    SysDrivesPanel.Children.Add(MakeSystemInfoRow(en ? "SMART sensors" : "SMART-Sensoren", en ? "Not available" : "Nicht verfügbar"));
+
+                if (details.NetworkErrors is long errors)
+                    SysNetworkPanel.Children.Add(MakeSystemInfoRow(en ? "Packet errors since startup" : "Paketfehler seit dem Start", errors.ToString("N0")));
+                else SysNetworkPanel.Children.Add(MakeSystemInfoRow(en ? "Packet errors" : "Paketfehler", en ? "Not available" : "Nicht verfügbar"));
+
+                if (details.BatteryHealth is double health)
+                    SysBattery.Text += $"  •  {(en ? "Health" : "Gesundheit")}: {health:0} %";
+                else if (!batteryBase.Contains(en ? "No battery" : "Kein Akku", StringComparison.OrdinalIgnoreCase))
+                    SysBattery.Text += $"  •  {(en ? "Health: Not available" : "Gesundheit: Nicht verfügbar")}";
+            }
+            catch (Exception ex)
+            {
+                Logger.LogErrorOnce("Erweiterte Systeminfos darstellen", ex);
+                if (_currentPageKey == "System" && generation == _extendedSystemInfoGeneration)
+                {
+                    bool en = Localization.CurrentLanguage == "en";
+                    SysCpuDetails.Text = cpuBase;
+                    SysMainboard.Text = $"{boardBase}\n{(en ? "Fan sensors: Not available" : "Lüftersensoren: Nicht verfügbar")}";
+                    SysBattery.Text = batteryBase;
+                    SysGpuPanel.Children.Remove(gpuLoading);
+                    SysDrivesPanel.Children.Remove(driveLoading);
+                    SysNetworkPanel.Children.Remove(networkLoading);
+                    SysGpuPanel.Children.Add(MakeSystemInfoRow(en ? "Live sensors" : "Live-Sensoren", en ? "Not available" : "Nicht verfügbar"));
+                    SysDrivesPanel.Children.Add(MakeSystemInfoRow(en ? "SMART sensors" : "SMART-Sensoren", en ? "Not available" : "Nicht verfügbar"));
+                    SysNetworkPanel.Children.Add(MakeSystemInfoRow(en ? "Network diagnostics" : "Netzwerkdiagnose", en ? "Not available" : "Nicht verfügbar"));
+                }
             }
         }
 
@@ -201,7 +315,7 @@ namespace WinVora
             }.ShowAsync();
         }
 
-        // Kleine Hilfsmethode, um schnell eine SettingsCard mit Header/Beschreibung/Inhalt zu bauen
+        // Gemeinsame Karte für Verlauf und weitere dynamische Inhalte.
         private Border MakeInfoCard(
             string header,
             string description,
@@ -219,9 +333,7 @@ namespace WinVora
                 BorderThickness = new Thickness(1)
             };
 
-            // Bestehender Hintergrund-Hover, plus Akzentfarbe am Rand beim
-            // Überfahren (konsistent mit den Dashboard-/Settings-Karten).
-            var infoCardOriginalBorder = item.BorderBrush;
+            var originalBorder = item.BorderBrush;
             item.PointerEntered += (_, __) =>
             {
                 item.Background = (SolidColorBrush)RootGrid.Resources["AppOverlay28"];
@@ -231,30 +343,23 @@ namespace WinVora
             item.PointerExited += (_, __) =>
             {
                 item.Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"];
-                item.BorderBrush = infoCardOriginalBorder;
+                item.BorderBrush = originalBorder;
             };
 
             item.Shadow = new ThemeShadow();
             item.Translation = new System.Numerics.Vector3(0, 0, 12);
 
-            var panel = new StackPanel
-            {
-                Spacing = 8,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-
-            var headerText = new TextBlock
+            var panel = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Stretch };
+            panel.Children.Add(new TextBlock
             {
                 Text = header,
                 FontSize = 17,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"],
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
-            };
-            panel.Children.Add(headerText);
+            });
 
             if (!string.IsNullOrWhiteSpace(description))
-            {
                 panel.Children.Add(new TextBlock
                 {
                     Text = description,
@@ -262,10 +367,8 @@ namespace WinVora
                     Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundC0"],
                     TextWrapping = TextWrapping.Wrap
                 });
-            }
 
             if (!string.IsNullOrWhiteSpace(content))
-            {
                 panel.Children.Add(new TextBlock
                 {
                     Text = content,
@@ -273,7 +376,81 @@ namespace WinVora
                     Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundD8"],
                     TextWrapping = TextWrapping.Wrap
                 });
+
+            item.Child = panel;
+            return item;
+        }
+
+        // Schlichte Informationszeilen innerhalb der großen Systeminfo-Karte.
+        // So entstehen bei GPU, Laufwerken und Netzwerk keine Karten-in-Karten.
+        private Border MakeSystemInfoRow(
+            string header,
+            string description,
+            string? content = null)
+        {
+            var item = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MinHeight = 64,
+                Padding = new Thickness(0, 12, 0, 12),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderBrush = (SolidColorBrush)RootGrid.Resources["AppOverlay22"],
+                BorderThickness = new Thickness(0, 0, 0, 1)
+            };
+
+            var panel = new Grid
+            {
+                ColumnSpacing = 32,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var headerText = new TextBlock
+            {
+                Text = header,
+                FontSize = 16,
+                Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"],
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(headerText, 0);
+            panel.Children.Add(headerText);
+
+            var values = new StackPanel
+            {
+                Spacing = 5,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(values, 1);
+
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                values.Children.Add(new TextBlock
+                {
+                    Text = description,
+                    FontSize = 15,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundC0"],
+                    TextWrapping = TextWrapping.Wrap,
+                    TextAlignment = TextAlignment.Right
+                });
             }
+
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                values.Children.Add(new TextBlock
+                {
+                    Text = content,
+                    FontSize = 15,
+                    Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundD8"],
+                    TextWrapping = TextWrapping.Wrap,
+                    TextAlignment = TextAlignment.Right
+                });
+            }
+
+            panel.Children.Add(values);
 
             item.Child = panel;
             return item;
@@ -290,6 +467,7 @@ namespace WinVora
 
 
         private int _hardwareTickCounter;
+        private int _liveUsageTickActive;
         private readonly Queue<double> _cpuHistory = new();
         private readonly Queue<double> _ramHistory = new();
         private readonly Queue<double> _gpuHistory = new();
@@ -300,7 +478,7 @@ namespace WinVora
             _liveUsageTimer?.Stop();
             _hardwareTickCounter = 0;
             _liveUsageTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(_settings.LiveUpdateIntervalSeconds) };
-            _liveUsageTimer.Tick += async (_, __) => await UpdateLiveUsageAsync();
+            _liveUsageTimer.Tick += LiveUsageTimer_Tick;
 
             _liveUsageTimer.Start();
 
@@ -311,14 +489,35 @@ namespace WinVora
             // jeder 3. Tick) wird für diesen allerersten Aufruf bewusst
             // übersprungen, sonst würde GPU trotzdem erst nach 2-3 Intervallen
             // erscheinen.
-            _ = UpdateLiveUsageAsync(forceHardwareRead: true);
+            _ = RunLiveUsageTickAsync(forceHardwareRead: true);
+        }
+
+        private async void LiveUsageTimer_Tick(object? sender, object e)
+        {
+            try { await RunLiveUsageTickAsync(forceHardwareRead: false); }
+            catch (OperationCanceledException) when (_startupCancellation.IsCancellationRequested) { }
+            catch (Exception ex) { Logger.LogErrorOnce("Live-Hardwarewerte aktualisieren", ex); }
+        }
+
+        private async Task RunLiveUsageTickAsync(bool forceHardwareRead)
+        {
+            if (Interlocked.Exchange(ref _liveUsageTickActive, 1) != 0) return;
+            try { await UpdateLiveUsageAsync(forceHardwareRead); }
+            finally { Volatile.Write(ref _liveUsageTickActive, 0); }
         }
 
         private async Task UpdateLiveUsageAsync(bool forceHardwareRead = false)
         {
             // Läuft im Hintergrund, damit der UI-Thread (und damit das
             // Scrollen) nicht alle 2 Sekunden kurz blockiert wird.
-            var (cpu, ram, _, ramUsedGb, ramTotalGb) = await Task.Run(() => SystemInfoProvider.GetLiveUsage());
+            _hardwareTickCounter++;
+            bool refreshSensors = forceHardwareRead || _hardwareTickCounter % 3 == 0;
+            var telemetry = await HardwareTelemetryService.GetSnapshotAsync(
+                refreshSensors, _startupCancellation.Token);
+            double cpu = telemetry.CpuPercent;
+            double ram = telemetry.RamPercent;
+            double ramUsedGb = telemetry.RamUsedGb;
+            double ramTotalGb = telemetry.RamTotalGb;
 
             SysCpuUsageBar.Value = cpu;
             SysCpuUsageText.Text = $"{cpu}%";
@@ -343,10 +542,9 @@ namespace WinVora
             // deutlich "teurer" abzufragen als die einfachen Performance
             // Counter für CPU/RAM - deshalb bewusst nur jeden 3. Tick,
             // um nicht unnötig Ressourcen zu verbrauchen.
-            _hardwareTickCounter++;
-            if (forceHardwareRead || _hardwareTickCounter % 3 == 0)
+            if (refreshSensors)
             {
-                var readings = await Task.Run(() => HardwareMonitorService.GetReadings());
+                var readings = telemetry.Sensors;
 
                 // Große Statuskarte oben (StatCardGpu) befüllen - die kleine
                 // GPU-Kachel im Live-Dashboard wurde entfernt, da GPU jetzt
@@ -563,5 +761,6 @@ namespace WinVora
 
         private void DashPrograms_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
             => Uninstaller_Click(sender, new RoutedEventArgs());
+
     }
 }

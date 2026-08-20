@@ -66,7 +66,7 @@ namespace WinVora
         {
             try
             {
-                s.DefenderStatus = ReadAntivirusStatus(en);
+                s.DefenderStatus = SecurityStatusEvaluator.Format(ReadAntivirusState(), en);
             }
             catch (Exception ex)
             {
@@ -75,7 +75,7 @@ namespace WinVora
             }
         }
 
-        private static string ReadAntivirusStatus(bool en)
+        private static SecurityComponentState ReadAntivirusState()
         {
             // Defender selbst ist die verlässlichste Quelle. SecurityCenter2
             // listet auf manchen Windows-Installationen zeitweise gar kein
@@ -89,8 +89,8 @@ namespace WinVora
                     bool antivirusEnabled = Convert.ToBoolean(item["AntivirusEnabled"]);
                     bool realtimeEnabled = Convert.ToBoolean(item["RealTimeProtectionEnabled"]);
                     return antivirusEnabled && realtimeEnabled
-                        ? (en ? "Active" : "Aktiv")
-                        : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
+                        ? SecurityComponentState.Active
+                        : SecurityComponentState.Partial;
                 }
             }
             catch (Exception ex)
@@ -114,9 +114,9 @@ namespace WinVora
                 }
 
                 if (foundActiveProduct)
-                    return en ? "Active" : "Aktiv";
+                    return SecurityComponentState.Active;
                 if (foundProduct)
-                    return en ? "Partial/Inactive" : "Teilweise/Inaktiv";
+                    return SecurityComponentState.Partial;
             }
             catch (Exception ex)
             {
@@ -128,10 +128,10 @@ namespace WinVora
             // dann noch immer aussagekräftiger als ein falsches „Nicht prüfbar“.
             if (TryGetServiceRunning("WinDefend", out bool defenderRunning))
                 return defenderRunning
-                    ? (en ? "Active" : "Aktiv")
-                    : (en ? "Partial/Inactive" : "Teilweise/Inaktiv");
+                    ? SecurityComponentState.Active
+                    : SecurityComponentState.Partial;
 
-            return en ? "Unknown" : "Unbekannt";
+            return SecurityComponentState.Unknown;
         }
 
         private static bool TryGetServiceRunning(string serviceName, out bool running)
@@ -196,14 +196,12 @@ namespace WinVora
             try
             {
                 using var fw = CreateWmiSearcher(@"root\StandardCimv2", "SELECT Enabled FROM MSFT_NetFirewallProfile");
-                bool anyEnabled = false;
+                var states = new System.Collections.Generic.List<bool?>();
 
                 foreach (ManagementObject mo in fw.Get())
-                {
-                    if (Convert.ToBoolean(mo["Enabled"])) anyEnabled = true;
-                }
+                    states.Add(mo["Enabled"] == null ? null : Convert.ToBoolean(mo["Enabled"]));
 
-                s.FirewallStatus = anyEnabled ? (en ? "Active" : "Aktiv") : (en ? "Disabled" : "Deaktiviert");
+                s.FirewallStatus = SecurityStatusEvaluator.Format(EvaluateFirewallProfileState(states), en);
             }
             catch
             {
@@ -213,12 +211,13 @@ namespace WinVora
                 try
                 {
                     string[] profiles = { "DomainProfile", "PublicProfile", "StandardProfile" };
-                    bool enabled = profiles.Any(profile =>
+                    var states = profiles.Select(profile =>
                     {
                         using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\{profile}");
-                        return Convert.ToInt32(key?.GetValue("EnableFirewall", 0)) == 1;
-                    });
-                    s.FirewallStatus = enabled ? (en ? "Active" : "Aktiv") : (en ? "Unknown" : "Unbekannt");
+                        object? value = key?.GetValue("EnableFirewall");
+                        return value == null ? (bool?)null : Convert.ToInt32(value) == 1;
+                    }).ToArray();
+                    s.FirewallStatus = SecurityStatusEvaluator.Format(EvaluateFirewallProfileState(states), en);
                 }
                 catch (Exception ex)
                 {

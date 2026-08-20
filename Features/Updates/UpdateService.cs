@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace WinVora
@@ -25,14 +26,19 @@ namespace WinVora
         private const string ReleasesApiUrl = "https://api.github.com/repos/WinVora/WinVora-Releases/releases/latest";
         private const string AllReleasesApiUrl = "https://api.github.com/repos/WinVora/WinVora-Releases/releases?per_page=20";
 
-        public static async Task<UpdateInfo?> CheckForUpdateAsync(string currentVersion, bool includePrerelease = false)
+        public static async Task<UpdateInfo?> CheckForUpdateAsync(
+            string currentVersion,
+            bool includePrerelease = false,
+            CancellationToken cancellationToken = default)
         {
             using var client = new HttpClient();
             // GitHub verlangt zwingend einen User-Agent-Header, sonst kommt 403.
             client.DefaultRequestHeaders.UserAgent.ParseAdd("WinVora-UpdateChecker");
             client.Timeout = TimeSpan.FromSeconds(15);
 
-            var json = await client.GetStringAsync(includePrerelease ? AllReleasesApiUrl : ReleasesApiUrl);
+            var json = await client.GetStringAsync(
+                includePrerelease ? AllReleasesApiUrl : ReleasesApiUrl,
+                cancellationToken).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
             if (includePrerelease)
             {
@@ -46,13 +52,14 @@ namespace WinVora
             return ParseRelease(doc.RootElement, currentVersion, allowPrerelease: false, requireNewer: true);
         }
 
-        public static async Task<UpdateInfo> GetLatestStableReleaseAsync()
+        public static async Task<UpdateInfo> GetLatestStableReleaseAsync(
+            CancellationToken cancellationToken = default)
         {
             using var client = new HttpClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("WinVora-UpdateChecker");
             client.Timeout = TimeSpan.FromSeconds(15);
 
-            var json = await client.GetStringAsync(ReleasesApiUrl);
+            var json = await client.GetStringAsync(ReleasesApiUrl, cancellationToken).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
             return ParseRelease(doc.RootElement, "0.0.0", allowPrerelease: false, requireNewer: false)
                 ?? throw new InvalidDataException("Es wurde keine stabile WinVora-Version mit Installer gefunden.");
@@ -175,7 +182,10 @@ namespace WinVora
             return 0;
         }
 
-        public static async Task<string> DownloadUpdateAsync(UpdateInfo update, IProgress<DownloadProgressInfo>? progress)
+        public static async Task<string> DownloadUpdateAsync(
+            UpdateInfo update,
+            IProgress<DownloadProgressInfo>? progress,
+            CancellationToken cancellationToken = default)
         {
             if (!Uri.TryCreate(update.DownloadUrl, UriKind.Absolute, out var downloadUri) ||
                 downloadUri.Scheme != Uri.UriSchemeHttps ||
@@ -210,7 +220,10 @@ namespace WinVora
 
             try
             {
-                using var response = await client.GetAsync(downloadUri, HttpCompletionOption.ResponseHeadersRead);
+                using var response = await client.GetAsync(
+                    downloadUri,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
                 var finalUri = response.RequestMessage?.RequestUri;
@@ -224,16 +237,24 @@ namespace WinVora
                 var totalBytes = response.Content.Headers.ContentLength ?? -1;
                 Logger.Log($"Update-Download: HTTP {(int)response.StatusCode}, Content-Length: {(totalBytes > 0 ? totalBytes.ToString() : "unbekannt")}");
 
-                await using var contentStream = await response.Content.ReadAsStreamAsync();
-                await using (var fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using (var fileStream = new FileStream(
+                    tempPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    81920,
+                    useAsync: true))
                 {
                     var buffer = new byte[81920];
                     long totalRead = 0;
                     int bytesRead;
 
-                    while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
                     {
-                        await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                        await fileStream.WriteAsync(
+                            buffer.AsMemory(0, bytesRead),
+                            cancellationToken).ConfigureAwait(false);
                         totalRead += bytesRead;
                         progress?.Report(new DownloadProgressInfo(totalRead, totalBytes));
                     }
@@ -241,7 +262,10 @@ namespace WinVora
                     Logger.Log($"Update-Download abgeschlossen: {totalRead} Bytes -> {tempPath}");
                 }
 
-                string actualHash = await VerifySha256Async(tempPath, update.Sha256);
+                string actualHash = await VerifySha256Async(
+                    tempPath,
+                    update.Sha256,
+                    cancellationToken).ConfigureAwait(false);
 
                 Logger.Log($"Update-Prüfsumme bestätigt: {actualHash.ToLowerInvariant()}");
                 return tempPath;
@@ -261,11 +285,14 @@ namespace WinVora
             }
         }
 
-        internal static async Task<string> VerifySha256Async(string filePath, string expectedHash)
+        internal static async Task<string> VerifySha256Async(
+            string filePath,
+            string expectedHash,
+            CancellationToken cancellationToken = default)
         {
             await using var verificationStream = File.OpenRead(filePath);
             string actualHash = Convert.ToHexString(
-                await SHA256.HashDataAsync(verificationStream).ConfigureAwait(false));
+                await SHA256.HashDataAsync(verificationStream, cancellationToken).ConfigureAwait(false));
             if (!actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Die SHA-256-Prüfsumme des Downloads stimmt nicht mit GitHub überein.");
             return actualHash;

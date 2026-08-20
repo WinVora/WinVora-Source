@@ -55,7 +55,7 @@ namespace WinVora
 
         private static IEnumerable<string> EnumerateDirectories(string root)
         {
-            try { return Directory.EnumerateDirectories(root).ToArray(); }
+            try { return SystemAccess.FileSystem.EnumerateDirectories(root).Where(path => !StorageService.IsReparsePoint(path)).ToArray(); }
             catch (UnauthorizedAccessException) { return Array.Empty<string>(); }
             catch (IOException) { return Array.Empty<string>(); }
         }
@@ -71,17 +71,18 @@ namespace WinVora
             {
                 token.ThrowIfCancellationRequested();
                 string current = pending.Pop();
+                if (StorageService.IsReparsePoint(current)) continue;
                 try
                 {
-                    foreach (string file in Directory.EnumerateFiles(current))
+                    foreach (string file in SystemAccess.FileSystem.EnumerateFiles(current))
                     {
                         token.ThrowIfCancellationRequested();
                         try { total += new FileInfo(file).Length; }
                         catch (IOException) { accessible = false; error ??= "Datei nicht erreichbar"; }
                         catch (UnauthorizedAccessException) { accessible = false; error ??= "Zugriff verweigert"; }
                     }
-                    foreach (string directory in Directory.EnumerateDirectories(current))
-                        pending.Push(directory);
+                    foreach (string directory in SystemAccess.FileSystem.EnumerateDirectories(current))
+                        if (!StorageService.IsReparsePoint(directory)) pending.Push(directory);
                 }
                 catch (IOException) { accessible = false; error ??= "Ordner nicht erreichbar"; }
                 catch (UnauthorizedAccessException) { accessible = false; error ??= "Zugriff verweigert"; }

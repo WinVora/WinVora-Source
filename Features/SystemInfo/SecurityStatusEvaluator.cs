@@ -3,14 +3,40 @@ using System;
 namespace WinVora
 {
     internal enum SecurityHealthState { Active, Unknown, Problem }
+    internal enum SecurityComponentState { Active, Partial, Disabled, Unknown }
 
     internal static class SecurityStatusEvaluator
     {
         public static SecurityHealthState Evaluate(string antivirus, string firewall)
         {
-            if (IsProblem(antivirus) || IsProblem(firewall)) return SecurityHealthState.Problem;
-            if (IsUnknown(antivirus) || IsUnknown(firewall)) return SecurityHealthState.Unknown;
-            return SecurityHealthState.Active;
+            return Evaluate(Parse(antivirus), Parse(firewall));
+        }
+
+        public static SecurityHealthState Evaluate(
+            SecurityComponentState antivirus,
+            SecurityComponentState firewall) =>
+            antivirus is SecurityComponentState.Partial or SecurityComponentState.Disabled ||
+            firewall is SecurityComponentState.Partial or SecurityComponentState.Disabled
+                ? SecurityHealthState.Problem
+                : antivirus == SecurityComponentState.Unknown || firewall == SecurityComponentState.Unknown
+                    ? SecurityHealthState.Unknown
+                    : SecurityHealthState.Active;
+
+        public static string Format(SecurityComponentState state, bool english) => state switch
+        {
+            SecurityComponentState.Active => english ? "Active" : "Aktiv",
+            SecurityComponentState.Partial => english ? "Partial/Inactive" : "Teilweise/Inaktiv",
+            SecurityComponentState.Disabled => english ? "Disabled" : "Deaktiviert",
+            _ => english ? "Unknown" : "Unbekannt"
+        };
+
+        private static SecurityComponentState Parse(string value)
+        {
+            if (IsProblem(value))
+                return Contains(value, "Teilweise", "Partial", "Inaktiv", "Inactive")
+                    ? SecurityComponentState.Partial
+                    : SecurityComponentState.Disabled;
+            return IsUnknown(value) ? SecurityComponentState.Unknown : SecurityComponentState.Active;
         }
 
         private static bool IsProblem(string value) =>

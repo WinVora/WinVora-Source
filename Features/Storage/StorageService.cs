@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace WinVora
@@ -210,90 +211,111 @@ namespace WinVora
             };
         }
 
-        public static async Task<List<StorageCategory>> GetCategoriesWithSizesAsync()
+        public static async Task<List<StorageCategory>> GetCategoriesWithSizesAsync(CancellationToken cancellationToken = default)
         {
             var categories = GetCategoryDefinitions();
-
-            var tasks = categories.Select(c => Task.Run(() =>
+            using var scanGate = new SemaphoreSlim(3, 3);
+            var tasks = categories.Select(async c =>
             {
-                c.SizeBytes = c.ActionType switch
+                await scanGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    StorageActionType.RecycleBin => GetRecycleBinSize(),
-                    StorageActionType.DnsFlush => 0,
-                    StorageActionType.StoreCacheReset => 0,
-                    _ => c.Paths.Sum(p => GetDirectorySize(p, c.FilePattern))
-                };
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Task.Run(() =>
+                    {
+                        c.SizeBytes = c.ActionType switch
+                        {
+                            StorageActionType.RecycleBin => GetRecycleBinSize(),
+                            StorageActionType.DnsFlush => 0,
+                            StorageActionType.StoreCacheReset => 0,
+                            _ => c.Paths.Sum(p => GetDirectorySize(p, c.FilePattern, cancellationToken))
+                        };
 
-                c.SizeDisplay = c.ActionType is StorageActionType.DnsFlush or StorageActionType.StoreCacheReset
-                    ? "Aktion"
-                    : FormatBytes(c.SizeBytes);
-            }));
+                        c.SizeDisplay = c.ActionType is StorageActionType.DnsFlush or StorageActionType.StoreCacheReset
+                            ? Localization.T("Common.Action")
+                            : FormatBytes(c.SizeBytes);
+                    }, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    scanGate.Release();
+                }
+            });
 
             await Task.WhenAll(tasks);
 
             return categories;
         }
 
-        public static async Task<(bool success, string message)> DeleteCategoryAsync(StorageCategory category)
+        public static async Task<(bool success, string message)> DeleteCategoryAsync(
+            StorageCategory category, CancellationToken cancellationToken = default)
         {
-            return await Task.Run(() =>
+            cancellationToken.ThrowIfCancellationRequested();
+            switch (category.ActionType)
             {
-                switch (category.ActionType)
-                {
-                    case StorageActionType.RecycleBin:
-                        return EmptyRecycleBin();
+                case StorageActionType.RecycleBin:
+                    return await Task.Run(EmptyRecycleBin, cancellationToken).ConfigureAwait(false);
 
-                    case StorageActionType.DnsFlush:
-                        return RunHiddenCommand("ipconfig", "/flushdns");
+                case StorageActionType.DnsFlush:
+                    return await RunHiddenCommandAsync(
+                        Path.Combine(Environment.SystemDirectory, "ipconfig.exe"),
+                        "/flushdns", TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
 
-                    case StorageActionType.StoreCacheReset:
-                        return RunHiddenCommand("wsreset.exe", "");
+                case StorageActionType.StoreCacheReset:
+                    return await RunHiddenCommandAsync(
+                        Path.Combine(Environment.SystemDirectory, "wsreset.exe"),
+                        string.Empty, TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
 
-                    default:
-                        // BUGFIX: Windows.old UND $WINDOWS.~BT (Windows Upgrade
-                        // Logs) gehören TrustedInstaller - normales
-                        // File.Delete/Directory.Delete schlägt dort so gut wie
-                        // immer fehl, selbst mit Admin-Rechten. Wir übernehmen
-                        // vorher gezielt den Besitz und setzen die Rechte.
-                        if (category.Key is "old_install_files" or "upgrade_logs")
-                        {
-                            return DeleteProtectedFolder(category.Paths.FirstOrDefault() ?? "");
-                        }
+                default:
+                    if (category.Key is "old_install_files" or "upgrade_logs")
+                        return await DeleteProtectedFolderAsync(
+                            category.Paths.FirstOrDefault() ?? string.Empty,
+                            cancellationToken).ConfigureAwait(false);
 
+                    return await Task.Run(() =>
+                    {
                         int deleted = 0, failed = 0;
                         foreach (var path in category.Paths)
                         {
-                            var (d, f) = DeleteDirectoryContents(path, category.FilePattern);
+                            cancellationToken.ThrowIfCancellationRequested();
+                            var (d, f) = DeleteDirectoryContents(path, category.FilePattern, cancellationToken);
                             deleted += d;
                             failed += f;
                         }
 
-                        if (failed == 0)
-                            return (true, $"{deleted} Element(e) gelöscht.");
-
-                        return (deleted > 0,
-                            $"{deleted} Element(e) gelöscht, {failed} übersprungen (in Benutzung oder keine Berechtigung).");
-                }
-            });
+                        return failed == 0
+                            ? (true, $"{deleted} Element(e) gelöscht.")
+                            : (deleted > 0,
+                                $"{deleted} Element(e) gelöscht, {failed} übersprungen (in Benutzung oder keine Berechtigung).");
+                    }, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         // ================= SIZE CALCULATION =================
 
-        private static long GetDirectorySize(string path, string pattern)
+        private static long GetDirectorySize(string path, string pattern, CancellationToken cancellationToken)
         {
-            if (!Directory.Exists(path)) return 0;
+            if (!SystemAccess.FileSystem.DirectoryExists(path) || IsReparsePoint(path)) return 0;
 
             long size = 0;
-
-            try
+            var pending = new Stack<string>();
+            pending.Push(path);
+            while (pending.Count > 0)
             {
-                foreach (var file in Directory.EnumerateFiles(path, pattern, SearchOption.AllDirectories))
+                cancellationToken.ThrowIfCancellationRequested();
+                string current = pending.Pop();
+                try
                 {
-                    try { size += new FileInfo(file).Length; }
-                    catch { /* Datei nicht zugreifbar - ignorieren */ }
+                    foreach (var file in SystemAccess.FileSystem.EnumerateFiles(current, pattern))
+                    {
+                        try { size += new FileInfo(file).Length; }
+                        catch { /* Datei nicht zugreifbar - ignorieren */ }
+                    }
+                    foreach (var directory in SystemAccess.FileSystem.EnumerateDirectories(current))
+                        if (!IsReparsePoint(directory)) pending.Push(directory);
                 }
+                catch { /* Ordner nicht zugreifbar - ignorieren */ }
             }
-            catch { /* Ordner nicht zugreifbar - ignorieren */ }
 
             return size;
         }
@@ -314,7 +336,8 @@ namespace WinVora
 
         // ================= DELETION =================
 
-        private static (int deleted, int failed) DeleteDirectoryContents(string path, string pattern)
+        private static (int deleted, int failed) DeleteDirectoryContents(
+            string path, string pattern, CancellationToken cancellationToken)
         {
             int deleted = 0, failed = 0;
             if (!Directory.Exists(path)) return (0, 0);
@@ -323,6 +346,7 @@ namespace WinVora
             {
                 foreach (var file in SafeEnumerateFiles(path, pattern))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
                         File.SetAttributes(file, FileAttributes.Normal);
@@ -336,6 +360,7 @@ namespace WinVora
 
             foreach (var file in SafeEnumerateFiles(path, "*"))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     File.SetAttributes(file, FileAttributes.Normal);
@@ -349,9 +374,18 @@ namespace WinVora
             {
                 foreach (var dir in Directory.EnumerateDirectories(path, "*", SearchOption.TopDirectoryOnly))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (IsReparsePoint(dir))
+                    {
+                        failed++;
+                        continue;
+                    }
                     try
                     {
-                        Directory.Delete(dir, true);
+                        var (nestedDeleted, nestedFailed) = DeleteRecursiveBestEffort(dir, cancellationToken);
+                        deleted += nestedDeleted;
+                        failed += nestedFailed;
+                        Directory.Delete(dir);
                         deleted++;
                     }
                     catch { failed++; }
@@ -374,11 +408,19 @@ namespace WinVora
             }
         }
 
+        internal static bool IsReparsePoint(string path)
+        {
+            try { return (SystemAccess.FileSystem.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+            catch { return true; }
+        }
+
         // Für Ordner, die (wie Windows.old) TrustedInstaller gehören:
         // erst Besitz übernehmen, dann Vollzugriff für Administratoren
         // setzen, erst dann löschen. Auch dann kann es ohne aktive
         // Admin-Rechte fehlschlagen - das wird sauber zurückgemeldet.
-        private static (bool success, string message) DeleteProtectedFolder(string path)
+        private static async Task<(bool success, string message)> DeleteProtectedFolderAsync(
+            string path,
+            CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
                 return (true, "Nicht vorhanden, nichts zu löschen.");
@@ -391,9 +433,25 @@ namespace WinVora
 
             try
             {
-                RunHiddenCommand("takeown.exe", $"/F \"{path}\" /R /D Y");
+                string systemDirectory = Environment.SystemDirectory;
+                var ownership = await RunHiddenCommandAsync(
+                    Path.Combine(systemDirectory, "takeown.exe"),
+                    $"/F \"{path}\" /R /D Y",
+                    TimeSpan.FromMinutes(5),
+                    cancellationToken).ConfigureAwait(false);
+                if (!ownership.success)
+                    return (false, $"Besitzübernahme fehlgeschlagen: {ownership.message}");
+
                 // S-1-5-32-544 = lokale Gruppe "Administratoren" (sprachunabhängig)
-                RunHiddenCommand("icacls.exe", $"\"{path}\" /grant *S-1-5-32-544:F /T /C /Q");
+                var permissions = await RunHiddenCommandAsync(
+                    Path.Combine(systemDirectory, "icacls.exe"),
+                    $"\"{path}\" /grant *S-1-5-32-544:F /T /C /Q",
+                    TimeSpan.FromMinutes(5),
+                    cancellationToken).ConfigureAwait(false);
+                if (!permissions.success)
+                    return (false, $"Berechtigungen konnten nicht gesetzt werden: {permissions.message}");
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // BUGFIX: Directory.Delete(path, true) ist alles-oder-nichts -
                 // eine einzige besonders geschützte Datei (z.B. "bcd", die
@@ -401,7 +459,7 @@ namespace WinVora
                 // sich selbst mit Admin-Rechten nicht löschen und ließ dadurch
                 // bisher ALLES scheitern. Jetzt wird Datei für Datei einzeln
                 // versucht, geschützte Einzeldateien werden einfach übersprungen.
-                var (deleted, failed) = DeleteRecursiveBestEffort(path);
+                var (deleted, failed) = DeleteRecursiveBestEffort(path, cancellationToken);
 
                 // Versuchen, den (jetzt hoffentlich leeren oder fast leeren)
                 // Ordner selbst noch zu entfernen - schlägt das fehl, ist das
@@ -425,23 +483,8 @@ namespace WinVora
         {
             try
             {
-                var windowsPath = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-                var systemRoot = Path.GetPathRoot(windowsPath);
-                if (string.IsNullOrWhiteSpace(systemRoot)) return false;
-
                 var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                var allowedPaths = new[]
-                {
-                    Path.Combine(systemRoot, "Windows.old"),
-                    Path.Combine(systemRoot, "$WINDOWS.~BT")
-                };
-
-                if (!allowedPaths.Any(allowed =>
-                    string.Equals(fullPath, Path.GetFullPath(allowed).TrimEnd(Path.DirectorySeparatorChar),
-                        StringComparison.OrdinalIgnoreCase)))
-                {
-                    return false;
-                }
+                if (!IsProtectedFolderPathAllowlisted(fullPath)) return false;
 
                 // Ein Reparse Point könnte trotz korrektem Namen auf einen ganz
                 // anderen Ordner zeigen und darf deshalb nie rekursiv gelöscht werden.
@@ -456,42 +499,51 @@ namespace WinVora
 
         // Löscht rekursiv Datei für Datei, überspringt einzelne nicht
         // löschbare Dateien statt komplett abzubrechen.
-        private static (int deleted, int failed) DeleteRecursiveBestEffort(string root)
+        private static (int deleted, int failed) DeleteRecursiveBestEffort(
+            string root, CancellationToken cancellationToken = default)
         {
             int deleted = 0, failed = 0;
-
-            IEnumerable<string> files;
-            try { files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToList(); }
-            catch { return (0, 0); }
-
-            foreach (var file in files)
+            if (IsReparsePoint(root)) return (0, 1);
+            var pending = new Stack<string>();
+            var directories = new List<string>();
+            pending.Push(root);
+            while (pending.Count > 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                string current = pending.Pop();
                 try
                 {
-                    File.SetAttributes(file, FileAttributes.Normal);
-                    File.Delete(file);
-                    deleted++;
+                    foreach (var file in Directory.EnumerateFiles(current, "*", SearchOption.TopDirectoryOnly))
+                    {
+                        try
+                        {
+                            File.SetAttributes(file, FileAttributes.Normal);
+                            File.Delete(file);
+                            deleted++;
+                        }
+                        catch { failed++; }
+                    }
+                    foreach (var directory in Directory.EnumerateDirectories(current, "*", SearchOption.TopDirectoryOnly))
+                    {
+                        if (IsReparsePoint(directory))
+                        {
+                            failed++;
+                            continue;
+                        }
+                        directories.Add(directory);
+                        pending.Push(directory);
+                    }
                 }
-                catch
-                {
-                    failed++;
-                }
+                catch { failed++; }
             }
 
             // Leere Unterordner von innen nach außen entfernen (umgekehrte
             // Reihenfolge, damit tiefste Ordner zuerst dran sind).
-            try
+            foreach (var dir in directories.OrderByDescending(d => d.Length))
             {
-                var dirs = Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
-                    .OrderByDescending(d => d.Length);
-
-                foreach (var dir in dirs)
-                {
-                    try { Directory.Delete(dir); } // nur wenn leer
-                    catch { /* nicht leer oder gesperrt - einfach liegen lassen */ }
-                }
+                try { Directory.Delete(dir); } // nur wenn leer
+                catch { /* nicht leer oder gesperrt - einfach liegen lassen */ }
             }
-            catch { /* Ordnerliste nicht zugreifbar - ignorieren */ }
 
             return (deleted, failed);
         }
@@ -504,10 +556,12 @@ namespace WinVora
                 const uint SHERB_NOPROGRESSUI = 0x00000002;
                 const uint SHERB_NOSOUND = 0x00000004;
 
-                SHEmptyRecycleBin(IntPtr.Zero, null,
+                uint result = SHEmptyRecycleBin(IntPtr.Zero, null,
                     SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
 
-                return (true, "Papierkorb geleert.");
+                return result == 0
+                    ? (true, "Papierkorb geleert.")
+                    : (false, $"Papierkorb konnte nicht geleert werden (HRESULT 0x{result:X8}).");
             }
             catch (Exception ex)
             {
@@ -515,33 +569,67 @@ namespace WinVora
             }
         }
 
-        private static (bool success, string message) RunHiddenCommand(string fileName, string arguments)
+        private static async Task<(bool success, string message)> RunHiddenCommandAsync(
+            string fileName,
+            string arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
         {
             try
             {
-                var p = new Process
-                {
-                    StartInfo = new ProcessStartInfo
+                var result = await SystemAccess.ProcessRunner.RunAsync(
+                    new ProcessStartInfo
                     {
                         FileName = fileName,
-                        Arguments = arguments,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    }
-                };
+                        Arguments = arguments
+                    },
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
 
-                p.Start();
-                p.WaitForExit(15000);
+                if (result.TimedOut)
+                    return (false, $"Zeitüberschreitung nach {timeout.TotalSeconds:0} Sekunden.");
 
-                return p.ExitCode == 0
+                string details = string.IsNullOrWhiteSpace(result.StandardError)
+                    ? result.StandardOutput.Trim()
+                    : result.StandardError.Trim();
+                return result.ExitCode == 0
                     ? (true, "Erfolgreich ausgeführt.")
-                    : (false, $"Beendet mit Code {p.ExitCode}.");
+                    : (false, string.IsNullOrWhiteSpace(details)
+                        ? $"Beendet mit Code {result.ExitCode}."
+                        : $"Beendet mit Code {result.ExitCode}: {details}");
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
+                Logger.LogError($"Systembefehl ausführen: {Path.GetFileName(fileName)}", ex);
                 return (false, $"Fehler: {ex.Message}");
+            }
+        }
+
+        internal static bool IsProtectedFolderPathAllowlisted(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            try
+            {
+                string windowsPath = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                string? systemRoot = Path.GetPathRoot(windowsPath);
+                if (string.IsNullOrWhiteSpace(systemRoot)) return false;
+
+                string fullPath = Path.GetFullPath(path).TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar);
+                return new[]
+                {
+                    Path.Combine(systemRoot, "Windows.old"),
+                    Path.Combine(systemRoot, "$WINDOWS.~BT")
+                }.Any(allowed => string.Equals(
+                    fullPath,
+                    Path.GetFullPath(allowed).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase));
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -572,7 +660,7 @@ namespace WinVora
             public long i64NumItems;
         }
 
-        [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+        [DllImport("shell32.dll", EntryPoint = "SHQueryRecycleBinW", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern int SHQueryRecycleBin(string? pszRootPath, ref SHQUERYRBINFO pSHQueryRBInfo);
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

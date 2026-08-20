@@ -11,11 +11,19 @@ $definedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringC
 $duplicateKeys = [System.Collections.Generic.List[string]]::new()
 $emptyTranslations = [System.Collections.Generic.List[string]]::new()
 $entryPattern = '\["(?<key>[^"]+)"\]\s*='
+$simpleTranslationPattern = '\["(?<key>[^"]+)"\]\s*=\s*\(\s*"(?<de>(?:\\.|[^"])*)"\s*,\s*"(?<en>(?:\\.|[^"])*)"\s*\)'
 
 foreach ($match in [regex]::Matches($source, $entryPattern)) {
     $key = $match.Groups['key'].Value
     if (-not $definedKeys.Add($key)) {
         $duplicateKeys.Add($key)
+    }
+}
+foreach ($match in [regex]::Matches($source, $simpleTranslationPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
+    $key = $match.Groups['key'].Value
+    if ([string]::IsNullOrWhiteSpace($match.Groups['de'].Value) -or
+        [string]::IsNullOrWhiteSpace($match.Groups['en'].Value)) {
+        $emptyTranslations.Add($key)
     }
 }
 
@@ -43,7 +51,7 @@ foreach ($file in $codeFiles) {
 # Direkte deutsche Zuweisungen in C# umgehen die Sprachumschaltung. Bilinguale
 # Erststarttexte sind erlaubt; neue Ausnahmen sollen bewusst hier dokumentiert werden.
 $hardcodedGerman = [System.Collections.Generic.List[string]]::new()
-$germanWords = 'Abbrechen|Ausgewählte|Bereinigung|Deinstallieren|Einstellungen|Fehler|Keine|Löschen|Programme|Prüfung|Speicher|Verlauf|Wird geladen'
+$germanWords = 'Abbrechen|Aktion|Ausgewählte|Bereinigung|Deinstallieren|Einstellungen|Fehler|Keine|Löschen|Programme|Prüfung|Speicher|Verlauf|Wird geladen|Zeitüberschreitung'
 foreach ($file in $codeFiles) {
     $lineNumber = 0
     foreach ($line in Get-Content -LiteralPath $file.FullName) {

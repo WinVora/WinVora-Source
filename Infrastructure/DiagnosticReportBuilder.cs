@@ -4,14 +4,18 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.Diagnostics;
+using System.Net;
 
 namespace WinVora
 {
     internal static class DiagnosticReportBuilder
     {
         private static readonly Regex WindowsPath = new(@"[A-Za-z]:\\[^\r\n|]+", RegexOptions.Compiled);
+        private static readonly Regex UncPath = new(@"\\\\[^\\\s\r\n|]+\\[^\r\n|]+", RegexOptions.Compiled);
         private static readonly Regex IpAddress = new(@"\b(?:\d{1,3}\.){3}\d{1,3}\b", RegexOptions.Compiled);
         private static readonly Regex MacAddress = new(@"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", RegexOptions.Compiled);
+        private static readonly Regex EmailAddress = new(@"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex PossibleIpv6Address = new(@"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?:%[A-Z0-9_.-]+)?(?![0-9A-Fa-f:])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public static string Build(SystemInfoSnapshot snapshot, string version, string log)
         {
@@ -35,11 +39,36 @@ namespace WinVora
         public static string Sanitize(string text, SystemInfoSnapshot snapshot)
         {
             foreach (string sensitive in new[] { snapshot.ComputerName, snapshot.UserName, snapshot.SerialNumber, Environment.UserName, Environment.MachineName })
-                if (!string.IsNullOrWhiteSpace(sensitive)) text = text.Replace(sensitive, "[ANONYMISIERT]", StringComparison.OrdinalIgnoreCase);
+                if (IsMeaningfulIdentifier(sensitive)) text = text.Replace(sensitive, "[ANONYMISIERT]", StringComparison.OrdinalIgnoreCase);
+            text = UncPath.Replace(text, "[UNC-PFAD ANONYMISIERT]");
             text = WindowsPath.Replace(text, "[PFAD ANONYMISIERT]");
             text = IpAddress.Replace(text, "[IP ANONYMISIERT]");
+            text = PossibleIpv6Address.Replace(text, match => IsIpv6Address(match.Value)
+                ? "[IPV6 ANONYMISIERT]"
+                : match.Value);
             text = MacAddress.Replace(text, "[MAC ANONYMISIERT]");
+            text = EmailAddress.Replace(text, "[E-MAIL ANONYMISIERT]");
             return text;
+        }
+
+        private static bool IsMeaningfulIdentifier(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            string normalized = value.Trim();
+            return normalized.Length >= 3 &&
+                   !normalized.Equals("Nicht verfügbar", StringComparison.OrdinalIgnoreCase) &&
+                   !normalized.Equals("Not available", StringComparison.OrdinalIgnoreCase) &&
+                   !normalized.Equals("Unbekannt", StringComparison.OrdinalIgnoreCase) &&
+                   !normalized.Equals("Unknown", StringComparison.OrdinalIgnoreCase) &&
+                   !normalized.Equals("Default string", StringComparison.OrdinalIgnoreCase) &&
+                   !normalized.Equals("To be filled by O.E.M.", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsIpv6Address(string candidate)
+        {
+            string withoutZone = candidate.Split('%', 2)[0];
+            return IPAddress.TryParse(withoutZone, out IPAddress? address) &&
+                   address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6;
         }
 
         public static string SelectRelevantLogLines(string log, int maximumLines = 40)

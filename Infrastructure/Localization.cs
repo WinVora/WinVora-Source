@@ -7,7 +7,7 @@ namespace WinVora
     public static partial class Localization
     {
         // Wird beim Start bzw. bei jedem Sprachwechsel gesetzt.
-        public static string CurrentLanguage = "de";
+        public static string CurrentLanguage { get; set; } = "de";
 
         private static readonly Dictionary<string, (string De, string En)> Strings = new Dictionary<string, (string De, string En)>
         {
@@ -86,6 +86,9 @@ namespace WinVora
             ["Common.Cancel"] = ("Abbrechen", "Cancel"),
             ["Common.Export"] = ("Exportieren", "Export"),
             ["Common.Open"] = ("Öffnen", "Open"),
+            ["Common.Action"] = ("Aktion", "Action"),
+            ["System.LoadError"] = ("Fehler beim Laden der Systeminfos", "Could not load system information"),
+            ["Uninstall.LoadError"] = ("Fehler beim Laden der installierten Programme: {0}", "Could not load installed programs: {0}"),
 
             // ---- Verlauf ----
             ["History.All"] = ("Alle", "All"),
@@ -181,7 +184,7 @@ namespace WinVora
             ["Uninstall.ExportTxt"] = ("Als TXT exportieren", "Export as TXT"),
             ["Uninstall.ExportCsvComma"] = ("Als CSV exportieren (Komma)", "Export as CSV (comma)"),
             ["Uninstall.ExportCsvSemicolon"] = ("Als CSV für deutsches Excel (Semikolon)", "Export as CSV for German Excel (semicolon)"),
-        }.Concat(GetDashboardStrings()).Concat(GetAutostartStrings()).Concat(GetDialogStrings())
+        }.Concat(GetDashboardStrings()).Concat(GetAutostartStrings()).Concat(GetDialogStrings()).Concat(GetPerformanceStrings())
          .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
 
         private static readonly HashSet<string> MissingKeys = new(StringComparer.Ordinal);

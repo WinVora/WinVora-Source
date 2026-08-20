@@ -11,6 +11,7 @@ namespace WinVora
 {
     internal sealed class WingetUpdateService
     {
+        private static readonly TimeSpan UpgradeTimeout = TimeSpan.FromMinutes(45);
         private readonly Stopwatch _downloadWatch = new();
         private static readonly Regex ProgressWithPercentRegex = new(
             @"(\d{1,3})\s*%.*?([\d.,]+\s?[KMGT]?B)\s*/\s*([\d.,]+\s?[KMGT]?B)",
@@ -25,6 +26,9 @@ namespace WinVora
             IProgress<WingetUpdateProgress> progress,
             CancellationToken cancellationToken)
         {
+            using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCancellation.CancelAfter(UpgradeTimeout);
+            CancellationToken operationToken = timeoutCancellation.Token;
             try
             {
                 DateTime startedUtc = DateTime.UtcNow;
@@ -33,7 +37,7 @@ namespace WinVora
                 using var process = new Process { StartInfo = startInfo };
                 process.Start();
 
-                using var cancellationRegistration = cancellationToken.Register(() =>
+                using var cancellationRegistration = operationToken.Register(() =>
                 {
                     try
                     {
@@ -49,11 +53,11 @@ namespace WinVora
                 var standardOutput = new StringBuilder();
                 var errorOutput = new StringBuilder();
 
-                Task outputTask = ReadOutputAsync(process.StandardOutput, standardOutput, progress, cancellationToken);
-                Task errorTask = ReadOutputAsync(process.StandardError, errorOutput, null, cancellationToken);
+                Task outputTask = ReadOutputAsync(process.StandardOutput, standardOutput, progress, operationToken);
+                Task errorTask = ReadOutputAsync(process.StandardError, errorOutput, null, operationToken);
 
                 progress.Report(new WingetUpdateProgress(WingetUpdatePhase.Waiting, "", null));
-                await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(cancellationToken));
+                await Task.WhenAll(outputTask, errorTask, process.WaitForExitAsync(operationToken));
 
                 string combinedOutput = $"{standardOutput}\n{errorOutput}";
                 var diagnostic = WingetFailureDiagnostics.Analyze(packageId, startedUtc);
@@ -87,6 +91,17 @@ namespace WinVora
                     diagnostic.RequiresApplicationShutdown,
                     diagnostic.Details);
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutCancellation.IsCancellationRequested)
+            {
+                Logger.Log($"Winget-Update '{packageId}' nach {UpgradeTimeout.TotalMinutes:0} Minuten wegen Zeitüberschreitung beendet.");
+                return new WingetUpdateResult(
+                    WingetUpdateStatus.Failed,
+                    -1,
+                    Localization.CurrentLanguage == "en"
+                        ? $"The installer did not finish within {UpgradeTimeout.TotalMinutes:0} minutes and was stopped."
+                        : $"Der Installer wurde nicht innerhalb von {UpgradeTimeout.TotalMinutes:0} Minuten fertig und wurde beendet.",
+                    false);
+            }
             catch (OperationCanceledException)
             {
                 return new WingetUpdateResult(
@@ -115,6 +130,9 @@ namespace WinVora
             CancellationToken cancellationToken,
             bool forceApplicationShutdown)
         {
+            using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCancellation.CancelAfter(UpgradeTimeout);
+            CancellationToken operationToken = timeoutCancellation.Token;
             try
             {
                 progress.Report(new WingetUpdateProgress(
@@ -136,7 +154,7 @@ namespace WinVora
 
                 using var process = new Process { StartInfo = startInfo };
                 process.Start();
-                using var cancellationRegistration = cancellationToken.Register(() =>
+                using var cancellationRegistration = operationToken.Register(() =>
                 {
                     try
                     {
@@ -155,7 +173,7 @@ namespace WinVora
                         ? "Installer is running as administrator"
                         : "Installer läuft als Administrator",
                     null));
-                await process.WaitForExitAsync(cancellationToken);
+                await process.WaitForExitAsync(operationToken);
 
                 WingetUpdateStatus status = process.ExitCode == 0
                     ? WingetUpdateStatus.Successful
@@ -174,6 +192,17 @@ namespace WinVora
                     Localization.CurrentLanguage == "en"
                         ? "Administrator approval was cancelled."
                         : "Die Administratorbestätigung wurde abgebrochen.",
+                    false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutCancellation.IsCancellationRequested)
+            {
+                Logger.Log($"Erhöhtes Winget-Update '{packageId}' nach {UpgradeTimeout.TotalMinutes:0} Minuten wegen Zeitüberschreitung beendet.");
+                return new WingetUpdateResult(
+                    WingetUpdateStatus.Failed,
+                    -1,
+                    Localization.CurrentLanguage == "en"
+                        ? $"The administrator installer did not finish within {UpgradeTimeout.TotalMinutes:0} minutes and was stopped."
+                        : $"Der Administrator-Installer wurde nicht innerhalb von {UpgradeTimeout.TotalMinutes:0} Minuten fertig und wurde beendet.",
                     false);
             }
             catch (OperationCanceledException)
@@ -233,9 +262,10 @@ namespace WinVora
             IProgress<WingetUpdateProgress>? progress,
             CancellationToken cancellationToken)
         {
-            while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested)
             {
                 string? line = await reader.ReadLineAsync(cancellationToken);
+                if (line == null) break;
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
                 output.AppendLine(line);

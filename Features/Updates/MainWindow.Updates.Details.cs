@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using ToolkitControls = CommunityToolkit.WinUI.Controls;
 
@@ -17,19 +18,40 @@ namespace WinVora
         {
             try
             {
-                var installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+                var installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms(resolveIcons: false));
 
                 foreach (var row in rows)
                 {
-                    var iconPath = InstalledProgramsService.FindIconPathForName(installedPrograms, row.Package.Name);
-                    if (string.IsNullOrWhiteSpace(iconPath)) continue;
-
-                    await LoadCardIconAsync(row.Card, iconPath);
+                    if (!_wingetRows.Any(current => ReferenceEquals(current.Card, row.Card))) return;
+                    var program = InstalledProgramsService.FindProgramForName(installedPrograms, row.Package.Name);
+                    if (program != null) _wingetIconCards[row.Card] = program;
                 }
+                LoadVisibleWingetIcons();
             }
             catch (Exception ex)
             {
                 Logger.LogError("LoadWingetIconsInBackground", ex);
+            }
+        }
+
+        private void LoadVisibleWingetIcons()
+        {
+            double viewportTop = MainContentScrollViewer.VerticalOffset;
+            double viewportBottom = viewportTop + MainContentScrollViewer.ViewportHeight + 240;
+            foreach (var pair in _wingetIconCards)
+            {
+                if (pair.Key.Visibility != Visibility.Visible || _loadedWingetIcons.Contains(pair.Key)) continue;
+                try
+                {
+                    double y = pair.Key.TransformToVisual(ContentArea).TransformPoint(new Windows.Foundation.Point()).Y;
+                    if (y + pair.Key.ActualHeight < viewportTop || y > viewportBottom) continue;
+                    _loadedWingetIcons.Add(pair.Key);
+                    _ = ResolveAndLoadCardIconAsync(pair.Key, pair.Value);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogErrorOnce("Sichtbares Update-Symbol bestimmen", ex);
+                }
             }
         }
 
@@ -45,7 +67,7 @@ namespace WinVora
             List<(WingetPackage Package, CheckBox Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> rows)
         {
             using var semaphore = new SemaphoreSlim(2);
-            var installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+            var installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms(resolveIcons: false));
             var publisherLabel = Localization.T("Winget.Publisher");
             var sizeLabel = Localization.T("Winget.Size");
 
@@ -105,6 +127,9 @@ namespace WinVora
         {
             string publisher = "N/A";
             string size = "N/A";
+            using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(_startupCancellation.Token);
+            timeoutCancellation.CancelAfter(TimeSpan.FromSeconds(30));
+            CancellationToken token = timeoutCancellation.Token;
 
             try
             {
@@ -130,14 +155,26 @@ namespace WinVora
 
                 using var p = new Process { StartInfo = psi };
                 p.Start();
+                using var cancellationRegistration = token.Register(() =>
+                {
+                    try
+                    {
+                        if (!p.HasExited) p.Kill(entireProcessTree: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogErrorOnce($"winget show '{packageId}' abbrechen", ex);
+                    }
+                });
 
                 var foundDownloadSize = false;
 
-                var outputTask = Task.Run(async () =>
+                async Task ReadOutputAsync()
                 {
-                    while (!p.StandardOutput.EndOfStream)
+                    while (true)
                     {
-                        var line = await p.StandardOutput.ReadLineAsync();
+                        var line = await p.StandardOutput.ReadLineAsync(token);
+                        if (line == null) break;
                         if (string.IsNullOrWhiteSpace(line)) continue;
 
                         var colonIndex = line.IndexOf(':');
@@ -172,22 +209,23 @@ namespace WinVora
                             size = value;
                         }
                     }
-                });
+                }
 
                 // Fehlerausgabe jetzt mitschreiben statt zu verwerfen, damit man bei
                 // durchgängigem "N/A" im Log nachvollziehen kann, woran es lag.
                 var errorOutput = new StringBuilder();
-                var errorTask = Task.Run(async () =>
+                async Task ReadErrorAsync()
                 {
-                    while (!p.StandardError.EndOfStream)
+                    while (true)
                     {
-                        var line = await p.StandardError.ReadLineAsync();
+                        var line = await p.StandardError.ReadLineAsync(token);
+                        if (line == null) break;
                         if (!string.IsNullOrWhiteSpace(line))
                             errorOutput.AppendLine(line);
                     }
-                });
+                }
 
-                await Task.WhenAll(outputTask, errorTask, p.WaitForExitAsync());
+                await Task.WhenAll(ReadOutputAsync(), ReadErrorAsync(), p.WaitForExitAsync(token));
 
                 if (publisher == "N/A" && size == "N/A")
                 {
@@ -196,19 +234,31 @@ namespace WinVora
                                $"(ExitCode {p.ExitCode}){(string.IsNullOrEmpty(errText) ? "" : $": {errText}")}");
                 }
 
-                var registryDetails = InstalledProgramsService.FindDetailsForPackage(
-                    installedPrograms, packageName, packageId);
-
-                if (publisher == "N/A" && !string.IsNullOrWhiteSpace(registryDetails.Publisher))
-                    publisher = registryDetails.Publisher;
-
-                if (size == "N/A" && !string.IsNullOrWhiteSpace(registryDetails.Size))
-                    size = registryDetails.Size;
+            }
+            catch (OperationCanceledException) when (!_startupCancellation.IsCancellationRequested && timeoutCancellation.IsCancellationRequested)
+            {
+                Logger.Log($"winget show '{packageId}' nach 30 Sekunden abgebrochen.");
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Log($"winget show '{packageId}' beim Beenden von WinVora abgebrochen.");
             }
             catch (Exception ex)
             {
                 Logger.LogError($"GetWingetDetailsAsync({packageId})", ex);
             }
+
+            // Auch nach einem WinGet-Fehler oder Timeout noch die lokale Registry
+            // als Fallback verwenden. Diese Daten sind sofort verfügbar und
+            // verhindern unnötige „Unbekannt“-Angaben.
+            var registryDetails = InstalledProgramsService.FindDetailsForPackage(
+                installedPrograms, packageName, packageId);
+
+            if (publisher == "N/A" && !string.IsNullOrWhiteSpace(registryDetails.Publisher))
+                publisher = registryDetails.Publisher;
+
+            if (size == "N/A" && !string.IsNullOrWhiteSpace(registryDetails.Size))
+                size = registryDetails.Size;
 
             bool en = Localization.CurrentLanguage == "en";
             return (publisher == "N/A" ? (en ? "Unknown" : "Unbekannt") : publisher,

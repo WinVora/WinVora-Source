@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,40 +12,51 @@ namespace WinVora
 
     internal static class WingetDiscoveryService
     {
-        public static Task<WingetDiscoveryResult> GetUpgradesAsync(CancellationToken cancellationToken) =>
-            Task.Run(() => GetUpgrades(cancellationToken), cancellationToken);
+        private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromSeconds(75);
 
-        private static WingetDiscoveryResult GetUpgrades(CancellationToken cancellationToken)
+        public static async Task<WingetDiscoveryResult> GetUpgradesAsync(CancellationToken cancellationToken)
+        {
+            var result = await SystemAccess.ProcessRunner.RunAsync(
+                new ProcessStartInfo
+                {
+                    FileName = "winget",
+                    Arguments = "upgrade --disable-interactivity",
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                },
+                DiscoveryTimeout,
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.TimedOut)
+                throw new TimeoutException($"WinGet hat innerhalb von {DiscoveryTimeout.TotalSeconds:0} Sekunden nicht geantwortet.");
+
+            // Ein Nicht-Null-Exitcode ist immer ein fehlgeschlagener Aufruf.
+            // Bereits geparste Zeilen dürfen einen Source-, Netzwerk- oder
+            // Clientfehler nicht als erfolgreiche Teilliste maskieren.
+            if (result.ExitCode != 0)
+            {
+                string details = string.IsNullOrWhiteSpace(result.StandardError)
+                    ? result.StandardOutput.Trim()
+                    : result.StandardError.Trim();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(details)
+                    ? $"WinGet wurde mit Code {result.ExitCode} beendet."
+                    : $"WinGet wurde mit Code {result.ExitCode} beendet: {details}");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return ParseOutput(result.StandardOutput, cancellationToken);
+        }
+
+        internal static WingetDiscoveryResult ParseOutput(
+            string output,
+            CancellationToken cancellationToken = default)
         {
             var packages = new List<WingetPackage>();
             string? headerLine = null;
             int[]? columns = null;
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "winget",
-                    Arguments = "upgrade --disable-interactivity",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                }
-            };
-
-            process.Start();
-            var errorReadTask = process.StandardError.ReadToEndAsync();
-            using var cancellationRegistration = cancellationToken.Register(() =>
-            {
-                try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-                catch (Exception ex) { Logger.LogErrorOnce("WinGet-Abfrage abbrechen", ex); }
-            });
 
             bool hasRows = false;
-            string? line;
-            while ((line = process.StandardOutput.ReadLine()) != null)
+            foreach (string line in output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (string.IsNullOrWhiteSpace(line))
@@ -68,12 +79,6 @@ namespace WinVora
                     hasRows = true;
                 }
             }
-
-            process.WaitForExit();
-            cancellationToken.ThrowIfCancellationRequested();
-            string error = errorReadTask.GetAwaiter().GetResult().Trim();
-            if (process.ExitCode != 0 && packages.Count == 0 && !string.IsNullOrWhiteSpace(error))
-                throw new InvalidOperationException($"WinGet wurde mit Code {process.ExitCode} beendet: {error}");
 
             return new WingetDiscoveryResult(packages, columns);
         }

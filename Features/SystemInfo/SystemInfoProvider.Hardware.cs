@@ -121,11 +121,15 @@ namespace WinVora
         {
             Safe(() =>
             {
-                using var board = CreateWmiSearcher("SELECT Manufacturer, Product FROM Win32_BaseBoard");
+                string? boardSerial = null;
+                string? biosSerial = null;
+                string? productSerial = null;
+                using var board = CreateWmiSearcher("SELECT Manufacturer, Product, SerialNumber FROM Win32_BaseBoard");
 
                 foreach (ManagementObject mo in board.Get())
                 {
                     s.Mainboard = $"{mo["Manufacturer"]} {mo["Product"]}";
+                    boardSerial = mo["SerialNumber"]?.ToString();
                     break;
                 }
 
@@ -133,16 +137,36 @@ namespace WinVora
 
                 foreach (ManagementObject mo in bios.Get())
                 {
-                    var serial = mo["SerialNumber"]?.ToString();
-
-                    s.SerialNumber = string.IsNullOrWhiteSpace(serial) || serial.Contains("System")
-                        ? (Localization.CurrentLanguage == "en" ? "Not available" : "Nicht verfügbar")
-                        : serial;
-
+                    biosSerial = mo["SerialNumber"]?.ToString();
                     s.BiosVersion = mo["SMBIOSBIOSVersion"]?.ToString() ?? "N/A";
                     break;
                 }
+
+                using var product = CreateWmiSearcher("SELECT IdentifyingNumber FROM Win32_ComputerSystemProduct");
+                foreach (ManagementObject mo in product.Get())
+                {
+                    productSerial = mo["IdentifyingNumber"]?.ToString();
+                    break;
+                }
+
+                s.SerialNumber = new[] { biosSerial, productSerial, boardSerial }
+                    .Select(value => value?.Trim())
+                    .FirstOrDefault(IsUsableSerialNumber)
+                    ?? (Localization.CurrentLanguage == "en" ? "Not available" : "Nicht verfügbar");
             });
+        }
+
+        private static bool IsUsableSerialNumber(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            string normalized = value.Trim();
+            string[] placeholders =
+            {
+                "System Serial Number", "To Be Filled By O.E.M.", "To be filled by O.E.M.",
+                "Default string", "Default", "None", "Unknown", "N/A", "Not Applicable",
+                "0", "00000000", "FFFFFFFF"
+            };
+            return !placeholders.Any(item => normalized.Equals(item, StringComparison.OrdinalIgnoreCase));
         }
 
         // ================= BATTERY =================
@@ -191,7 +215,7 @@ namespace WinVora
 
             public MEMORYSTATUSEX()
             {
-                dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+                dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>();
             }
         }
 

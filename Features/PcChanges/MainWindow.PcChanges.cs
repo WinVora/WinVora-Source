@@ -167,7 +167,7 @@ namespace WinVora
 
         private void Changes_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("Changes");
+            if (!TrySetPage("Changes")) return;
             RenderPcChanges();
         }
 

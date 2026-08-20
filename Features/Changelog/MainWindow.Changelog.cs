@@ -72,6 +72,30 @@ namespace WinVora
 
             panel.Children.Add(MakeChangelogCard(
     $"Version {CurrentVersion}",
+    "• Sicherheit: Systembefehle und geschützte Bereinigungen prüfen jetzt zuverlässig Timeout, Abbruch und Rückgabecode\n" +
+    "• Sicherheit: Firewall, Defender und Windows-Aktivierung werden genauer und unabhängig voneinander bewertet\n" +
+    "• Zuverlässigkeit: WinGet-Fehler werden auch dann erkannt, wenn keine technische Fehlermeldung ausgegeben wird\n" +
+    "• Zuverlässigkeit: Updates, Speicherbereinigung und Eigenupdates lassen sich kontrolliert abbrechen\n" +
+    "• Zuverlässigkeit: Eine zweite gestartete WinVora-Instanz führt zurück zum bereits geöffneten Fenster\n" +
+    "• Leistung: Hardwarewerte werden vollständig im Hintergrund gemessen und blockieren die Oberfläche nicht mehr\n" +
+    "• Leistung: PC-Check und Systemabfragen lesen nur noch die tatsächlich benötigten Daten\n" +
+    "• Verbesserungen: Startanzeige und Fortschritt entsprechen jetzt den wirklich ausgeführten Startphasen\n" +
+    "• Bugfixes: Desktop-PCs ohne Akku erzeugen keine falsche Akku-Fehlermeldung mehr\n" +
+    "• Qualität: Automatische Tests prüfen Versionsvergleich, Sicherheit, WinGet, Speicherpfade und Diagnose-Anonymisierung",
+    "• Security: System commands and protected cleanup now reliably verify timeouts, cancellation and exit codes\n" +
+    "• Security: Firewall, Defender and Windows activation are evaluated more accurately and independently\n" +
+    "• Reliability: WinGet errors are detected even when no technical error message is returned\n" +
+    "• Reliability: Updates, storage cleanup and WinVora self-updates can be cancelled cleanly\n" +
+    "• Reliability: Starting WinVora twice now returns to the already open window\n" +
+    "• Performance: Hardware values are measured fully in the background without blocking the interface\n" +
+    "• Performance: PC Check and system queries now read only the data they actually need\n" +
+    "• Improvements: Startup status and progress now match the phases that are actually performed\n" +
+    "• Bug fixes: Desktop PCs without a battery no longer show a false battery error\n" +
+    "• Quality: Automated tests cover version comparison, security, WinGet, storage paths and diagnostic anonymization"
+));
+
+            panel.Children.Add(MakeChangelogCard(
+    "Version 0.8.5-beta.2",
     "• Beta: In den Einstellungen kann zwischen stabilen und Beta-Updates gewechselt werden\n" +
     "• Beta: Sichtbare Kennzeichnung, Updatekanal-Anzeige und vorbereitete Problemmeldung\n" +
     "• Übersetzung: Dashboard, Verlauf, Autostart, Dialoge und Benachrichtigungen sind vollständig auf Deutsch und Englisch verfügbar\n" +

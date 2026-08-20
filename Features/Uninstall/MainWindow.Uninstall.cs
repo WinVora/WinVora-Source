@@ -24,7 +24,7 @@ namespace WinVora
 
         private async void Uninstaller_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("Uninstall");
+            if (!TrySetPage("Uninstall")) return;
             await LoadInstalledPrograms();
         }
 
@@ -35,7 +35,7 @@ namespace WinVora
 
         private async Task<List<InstalledProgram>> GetProgramsForExportAsync() => _installedPrograms.Count > 0
             ? _installedPrograms
-            : await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+            : await Task.Run(() => InstalledProgramsService.GetInstalledPrograms(resolveIcons: false));
 
         private async void UninstallExportTxt_Click(object sender, RoutedEventArgs e)
         {
@@ -83,7 +83,7 @@ namespace WinVora
                 .Where(row => row.Selection.IsChecked == true)
                 .Select(row => row.Program.DisplayName)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            _isLoadingPrograms = true;
+            if (!_uninstallOperations.TryBeginLoad()) return;
             UninstallPanel.Children.Clear();
             _uninstallRows.Clear();
             _uninstallIconCards.Clear();
@@ -98,21 +98,23 @@ namespace WinVora
 
             try
             {
-                _installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+                _installedPrograms = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms(resolveIcons: false));
+                _viewState.RetainPrograms(_installedPrograms.Select(InstalledProgramsService.BuildProgramIdentity)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase));
             }
             catch (Exception ex)
             {
                 Logger.LogError("LoadInstalledPrograms", ex);
                 UninstallPanel.Children.Add(new TextBlock
                 {
-                    Text = $"Fehler beim Laden der installierten Programme: {ex.Message}",
+                    Text = Localization.F("Uninstall.LoadError", ex.Message),
                     Foreground = (SolidColorBrush)RootGrid.Resources["AppErrorBrush"]
                 });
                 return;
             }
             finally
             {
-                _isLoadingPrograms = false;
+                _uninstallOperations.CompleteLoad();
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
                 UninstallRefreshButton.IsEnabled = true;
@@ -162,7 +164,12 @@ namespace WinVora
 
         private void MainContentScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
         {
-            if (_currentPageKey != "Uninstall") return;
+            if (_currentPageKey == "Uninstall") LoadVisibleUninstallIcons();
+            else if (_currentPageKey == "Updates") LoadVisibleWingetIcons();
+        }
+
+        private void LoadVisibleUninstallIcons()
+        {
             double viewportTop = MainContentScrollViewer.VerticalOffset;
             double viewportBottom = viewportTop + MainContentScrollViewer.ViewportHeight + 240;
             foreach (var pair in _uninstallIconCards)
@@ -183,8 +190,15 @@ namespace WinVora
 
         private void LoadUninstallIconOnDemand(ToolkitControls.SettingsCard card, InstalledProgram program)
         {
-            if (!_loadedUninstallIcons.Add(card) || string.IsNullOrWhiteSpace(program.IconPath)) return;
-            _ = LoadCardIconAsync(card, program.IconPath);
+            if (!_loadedUninstallIcons.Add(card)) return;
+            _ = ResolveAndLoadCardIconAsync(card, program);
+        }
+
+        private async Task ResolveAndLoadCardIconAsync(ToolkitControls.SettingsCard card, InstalledProgram program)
+        {
+            string iconPath = await Task.Run(() => InstalledProgramsService.ResolveIconPathForProgram(program));
+            if (!string.IsNullOrWhiteSpace(iconPath) && card.XamlRoot != null)
+                await LoadCardIconAsync(card, iconPath);
         }
 
         private ToolkitControls.SettingsCard MakeUninstallCard(InstalledProgram program)
@@ -200,7 +214,7 @@ namespace WinVora
             var selection = new CheckBox
             {
                 VerticalAlignment = VerticalAlignment.Center,
-                IsChecked = _uninstallSelectionRestore.Contains(program.DisplayName)
+                IsChecked = _viewState.IsProgramSelected(InstalledProgramsService.BuildProgramIdentity(program))
             };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(selection,
                 en ? $"Select {program.DisplayName}" : $"{program.DisplayName} auswählen");
@@ -224,6 +238,7 @@ namespace WinVora
 
             selection.Checked += (_, __) =>
             {
+                _viewState.SetProgramSelected(InstalledProgramsService.BuildProgramIdentity(program), true);
                 uninstallButton.IsEnabled = true;
                 uninstallButton.Foreground = (SolidColorBrush)RootGrid.Resources["AppErrorBrush"];
                 uninstallButton.Background = dangerBackground;
@@ -231,6 +246,7 @@ namespace WinVora
             };
             selection.Unchecked += (_, __) =>
             {
+                _viewState.SetProgramSelected(InstalledProgramsService.BuildProgramIdentity(program), false);
                 uninstallButton.IsEnabled = false;
                 uninstallButton.ClearValue(Button.ForegroundProperty);
                 uninstallButton.Background = normalBackground;
@@ -243,6 +259,19 @@ namespace WinVora
                 Spacing = 10,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            if (!string.IsNullOrWhiteSpace(program.InstallLocation) && !Directory.Exists(program.InstallLocation))
+            {
+                actions.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(8), Padding = new Thickness(9, 5, 9, 5),
+                    Background = (SolidColorBrush)RootGrid.Resources["AppOverlay28"],
+                    Child = new TextBlock
+                    {
+                        Text = en ? "Install path missing" : "Installationspfad fehlt", FontSize = 11,
+                        Foreground = (SolidColorBrush)RootGrid.Resources["AppWarningBrush"]
+                    }
+                });
+            }
             actions.Children.Add(selection);
             actions.Children.Add(uninstallButton);
 
@@ -282,7 +311,7 @@ namespace WinVora
         {
             if (_isUninstalling) return;
             var selected = _uninstallRows
-                .Where(row => row.Selection.IsChecked == true)
+                .Where(row => _viewState.IsProgramSelected(InstalledProgramsService.BuildProgramIdentity(row.Program)))
                 .Select(row => row.Program)
                 .ToList();
             if (selected.Count == 0) return;
@@ -298,7 +327,9 @@ namespace WinVora
                 en ? "Cancel" : "Abbrechen");
             if (await confirmation.ShowAsync() != ContentDialogResult.Primary) return;
 
-            _isUninstalling = true;
+            if (!_uninstallOperations.TryBeginUninstall()) return;
+            try
+            {
             UpdateUninstallSelectionAction();
             UninstallRefreshButton.IsEnabled = false;
             int started = 0;
@@ -389,7 +420,6 @@ namespace WinVora
                     confirmedRemoved++;
             }
 
-            _isUninstalling = false;
             UninstallRefreshButton.IsEnabled = true;
             UninstallStatusRing.IsActive = false;
             UninstallStatusRing.Visibility = Visibility.Collapsed;
@@ -401,7 +431,15 @@ namespace WinVora
             UninstallStatusDetailText.Text = en
                 ? "The program list is being refreshed."
                 : "Die Programmliste wird aktualisiert.";
+            _uninstallOperations.CompleteUninstall();
             await LoadInstalledPrograms();
+            }
+            finally
+            {
+                _uninstallOperations.CompleteUninstall();
+                UninstallRefreshButton.IsEnabled = true;
+                UpdateUninstallSelectionAction();
+            }
         }
 
         private static async Task<bool> IsProgramRemovedAsync(InstalledProgram program, IProgress<int>? countdown = null)
@@ -410,7 +448,7 @@ namespace WinVora
             {
                 countdown?.Report(6 - attempt);
                 await Task.Delay(1000);
-                var programs = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms());
+                var programs = await Task.Run(() => InstalledProgramsService.GetInstalledPrograms(resolveIcons: false));
                 if (!programs.Any(item =>
                     item.DisplayName.Equals(program.DisplayName, StringComparison.OrdinalIgnoreCase) &&
                     item.UninstallString.Equals(program.UninstallString, StringComparison.OrdinalIgnoreCase)))
@@ -519,7 +557,9 @@ namespace WinVora
 
             if (!confirmed) return;
 
-            _isUninstalling = true;
+            if (!_uninstallOperations.TryBeginUninstall()) return;
+            try
+            {
             sourceButton.IsEnabled = false;
             UninstallRefreshButton.IsEnabled = false;
 
@@ -538,7 +578,7 @@ namespace WinVora
             {
                 var launch = await InstalledProgramsService.UninstallAndWaitAsync(
                     program,
-                    _startupCancellation.Token);
+                    _uninstallOperations.Token);
                 success = launch.Success;
                 message = launch.Message;
                 waitedForExit = launch.WaitedForExit;
@@ -600,6 +640,7 @@ namespace WinVora
                             : $"Programmliste wird geprüft · noch {seconds} s";
                     });
                     removed = await IsProgramRemovedAsync(program, countdown);
+                    _uninstallOperations.CompleteUninstall();
                     await LoadInstalledPrograms();
                     if (removed)
                     {
@@ -617,7 +658,10 @@ namespace WinVora
                     }
                 }
                 else if (_currentPageKey == "Uninstall")
+                {
+                    _uninstallOperations.CompleteUninstall();
                     await LoadInstalledPrograms();
+                }
             }
             else
             {
@@ -630,12 +674,20 @@ namespace WinVora
             if (sourceButton.XamlRoot != null)
                 sourceButton.IsEnabled = true;
             UninstallRefreshButton.IsEnabled = true;
-            _isUninstalling = false;
             if (success)
             {
                 await Task.Delay(4000);
                 if (_currentPageKey == "Uninstall")
                     UninstallStatusPanel.Visibility = Visibility.Collapsed;
+            }
+            }
+            finally
+            {
+                _uninstallOperations.CompleteUninstall();
+                if (sourceButton.XamlRoot != null)
+                    sourceButton.IsEnabled = true;
+                UninstallRefreshButton.IsEnabled = true;
+                UpdateUninstallSelectionAction();
             }
         }
 

@@ -19,9 +19,11 @@ namespace WinVora
     public static partial class SystemInfoProvider
     {
         private static PerformanceCounter? _cpuCounter;
+        private static readonly object CpuCounterLock = new();
         private static readonly SystemInfoSnapshot CachedSnapshot = new();
         private static readonly ConcurrentDictionary<SystemInfoSection, DateTime> SectionCacheUtc = new();
         private static readonly ConcurrentDictionary<SystemInfoSection, SemaphoreSlim> SectionGates = new();
+        private static readonly object SnapshotLock = new();
         private static readonly TimeSpan SectionCacheLifetime = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan SectionTimeout = TimeSpan.FromSeconds(8);
 
@@ -36,19 +38,20 @@ namespace WinVora
 
                 try
                 {
-                    antivirus = ReadAntivirusStatus(en);
+                    antivirus = SecurityStatusEvaluator.Format(ReadAntivirusState(), en);
                 }
                 catch (Exception ex) { Logger.LogErrorOnce("Schnellprüfung Antivirus", ex); }
 
                 try
                 {
                     string[] profiles = { "DomainProfile", "PublicProfile", "StandardProfile" };
-                    bool enabled = profiles.Any(profile =>
+                    var states = profiles.Select(profile =>
                     {
                         using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\{profile}");
-                        return Convert.ToInt32(key?.GetValue("EnableFirewall", 0)) == 1;
-                    });
-                    firewall = enabled ? (en ? "Active" : "Aktiv") : (en ? "Disabled" : "Deaktiviert");
+                        object? value = key?.GetValue("EnableFirewall");
+                        return value == null ? (bool?)null : Convert.ToInt32(value) == 1;
+                    }).ToArray();
+                    firewall = SecurityStatusEvaluator.Format(EvaluateFirewallProfileState(states), en);
                 }
                 catch (Exception ex) { Logger.LogErrorOnce("Schnellprüfung Firewall", ex); }
 
@@ -56,10 +59,22 @@ namespace WinVora
             }, cancellationToken), cancellationToken);
         }
 
+        private static SecurityComponentState EvaluateFirewallProfileState(IEnumerable<bool?> states)
+        {
+            bool?[] values = states.ToArray();
+            if (values.Length == 0 || values.Any(value => value is null))
+                return SecurityComponentState.Unknown;
+            if (values.All(value => value == true))
+                return SecurityComponentState.Active;
+            if (values.All(value => value == false))
+                return SecurityComponentState.Disabled;
+            return SecurityComponentState.Partial;
+        }
+
         // ================= FULL SNAPSHOT =================
         public static async Task<SystemInfoSnapshot> GetFullSnapshotAsync(CancellationToken cancellationToken = default)
         {
-            FillBasic(CachedSnapshot);
+            lock (SnapshotLock) FillBasic(CachedSnapshot);
             // Die erweiterte Sicherheitsabfrage kann auf manchen PCs wegen
             // TPM/BitLocker-WMI rund fünf Sekunden dauern. Für das Dashboard
             // läuft bereits die schnelle, unabhängige Sicherheitsprüfung.
@@ -68,14 +83,14 @@ namespace WinVora
                 .Where(section => section != SystemInfoSection.Security);
             await Task.WhenAll(sections.Select(section => RefreshSectionCoreAsync(
                 CachedSnapshot, section, force: false, cancellationToken)));
-            return CachedSnapshot.Clone();
+            lock (SnapshotLock) return CachedSnapshot.Clone();
         }
 
         public static async Task RefreshSectionAsync(SystemInfoSnapshot snapshot, SystemInfoSection section,
             CancellationToken cancellationToken = default)
         {
             await RefreshSectionCoreAsync(CachedSnapshot, section, force: true, cancellationToken);
-            snapshot.CopySectionFrom(CachedSnapshot, section);
+            lock (SnapshotLock) snapshot.CopySectionFrom(CachedSnapshot, section);
         }
 
         private static async Task RefreshSectionCoreAsync(SystemInfoSnapshot snapshot, SystemInfoSection section,
@@ -86,40 +101,95 @@ namespace WinVora
                 return;
 
             var sectionGate = SectionGates.GetOrAdd(section, _ => new SemaphoreSlim(1, 1));
-            await sectionGate.WaitAsync(cancellationToken);
+            if (!await sectionGate.WaitAsync(SectionTimeout, cancellationToken))
+            {
+                Logger.Log($"Systeminfo {section}: vorherige Abfrage läuft weiterhin; paralleler Start wurde verhindert.");
+                return;
+            }
+            bool releaseGate = true;
             try
             {
                 if (!force && SectionCacheUtc.TryGetValue(section, out cachedAt) &&
                     DateTime.UtcNow - cachedAt < SectionCacheLifetime) return;
 
+                SystemInfoSnapshot sectionSnapshot;
+                lock (SnapshotLock) sectionSnapshot = snapshot.Clone();
+                Task sectionOperation = Task.Run(() =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    switch (section)
+                    {
+                        case SystemInfoSection.Device: FillBasic(sectionSnapshot); FillSystemInfo(sectionSnapshot); break;
+                        case SystemInfoSection.OperatingSystem: FillOS(sectionSnapshot); FillLastUpdate(sectionSnapshot); FillDirectX(sectionSnapshot); break;
+                        case SystemInfoSection.Cpu: FillCpu(sectionSnapshot); break;
+                        case SystemInfoSection.Ram: FillRam(sectionSnapshot); break;
+                        case SystemInfoSection.Board: FillBoardAndBios(sectionSnapshot); break;
+                        case SystemInfoSection.Security: FillSecurity(sectionSnapshot); break;
+                        case SystemInfoSection.Gpu: FillGpu(sectionSnapshot); break;
+                        case SystemInfoSection.Drives: FillDrives(sectionSnapshot); break;
+                        case SystemInfoSection.Network: FillNetwork(sectionSnapshot); break;
+                        case SystemInfoSection.Battery: FillBattery(sectionSnapshot); break;
+                    }
+                }, cancellationToken);
                 try
                 {
-                    await RunMeasuredAsync($"Systeminfo {section}", () => Task.Run(() =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        switch (section)
-                        {
-                            case SystemInfoSection.Device: FillBasic(snapshot); FillSystemInfo(snapshot); break;
-                            case SystemInfoSection.OperatingSystem: FillOS(snapshot); FillLastUpdate(snapshot); FillDirectX(snapshot); break;
-                            case SystemInfoSection.Cpu: FillCpu(snapshot); break;
-                            case SystemInfoSection.Ram: FillRam(snapshot); break;
-                            case SystemInfoSection.Board: FillBoardAndBios(snapshot); break;
-                            case SystemInfoSection.Security: FillSecurity(snapshot); break;
-                            case SystemInfoSection.Gpu: FillGpu(snapshot); break;
-                            case SystemInfoSection.Drives: FillDrives(snapshot); break;
-                            case SystemInfoSection.Network: FillNetwork(snapshot); break;
-                            case SystemInfoSection.Battery: FillBattery(snapshot); break;
-                        }
-                    }, cancellationToken), cancellationToken);
-                    SectionCacheUtc[section] = DateTime.UtcNow;
+                    await RunMeasuredAsync($"Systeminfo {section}", () => sectionOperation, cancellationToken);
                 }
                 catch (TimeoutException)
                 {
-                    // Ein langsamer WMI-Bereich darf die übrigen, bereits
-                    // verfügbaren Systeminformationen nicht verwerfen.
+                    // Die native WMI-Arbeit kann nach einem .NET-Timeout noch
+                    // laufen. Das Gate bleibt deshalb bis zu ihrem wirklichen
+                    // Ende belegt, damit keine zweite Abfrage derselben Sektion
+                    // parallel startet oder den Cache überschreibt.
+                    releaseGate = false;
+                    _ = CompleteSectionAfterCallerStoppedAsync(
+                        sectionOperation, sectionSnapshot, snapshot, section, sectionGate);
+                    return;
                 }
+                catch (OperationCanceledException)
+                {
+                    releaseGate = false;
+                    _ = CompleteSectionAfterCallerStoppedAsync(
+                        sectionOperation, sectionSnapshot, snapshot, section, sectionGate);
+                    throw;
+                }
+
+                lock (SnapshotLock) snapshot.CopySectionFrom(sectionSnapshot, section);
+                SectionCacheUtc[section] = DateTime.UtcNow;
             }
-            finally { sectionGate.Release(); }
+            finally
+            {
+                if (releaseGate) sectionGate.Release();
+            }
+        }
+
+        private static async Task CompleteSectionAfterCallerStoppedAsync(
+            Task operation,
+            SystemInfoSnapshot completedSnapshot,
+            SystemInfoSnapshot targetSnapshot,
+            SystemInfoSection section,
+            SemaphoreSlim sectionGate)
+        {
+            try
+            {
+                await operation.ConfigureAwait(false);
+                lock (SnapshotLock) targetSnapshot.CopySectionFrom(completedSnapshot, section);
+                SectionCacheUtc[section] = DateTime.UtcNow;
+                Logger.Log($"Verspätete Systeminfo-Abfrage '{section}' wurde kontrolliert abgeschlossen.");
+            }
+            catch (OperationCanceledException)
+            {
+                // Ein noch nicht gestarteter Task kann durch das Abbruchtoken
+                // regulär beendet worden sein.
+            }
+            catch (Exception ex)
+            {
+                Logger.LogErrorOnce($"Verspätete Systeminfo-Abfrage {section}", ex);
+            }
+            finally
+            {
+                sectionGate.Release();
+            }
         }
 
         private static async Task<T> RunMeasuredAsync<T>(string name, Func<Task<T>> operation, CancellationToken token)
@@ -162,10 +232,9 @@ namespace WinVora
         {
             try
             {
-                if (_cpuCounter == null)
+                lock (CpuCounterLock)
                 {
-                    _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
-                    _cpuCounter.NextValue();
+                    EnsureCpuCounter().NextValue();
                 }
             }
             catch (Exception ex) { Logger.LogErrorOnce("CPU-Leistungszähler initialisieren", ex); }
@@ -181,13 +250,10 @@ namespace WinVora
 
             try
             {
-                if (_cpuCounter == null)
+                lock (CpuCounterLock)
                 {
-                    _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
-                    _cpuCounter.NextValue();
+                    cpu = Math.Round(EnsureCpuCounter().NextValue(), 1);
                 }
-
-                cpu = Math.Round(_cpuCounter.NextValue(), 1);
             }
             catch (Exception ex) { Logger.LogErrorOnce("CPU-Liveauslastung lesen", ex); }
 
@@ -204,6 +270,11 @@ namespace WinVora
             catch (Exception ex) { Logger.LogErrorOnce("RAM-Liveauslastung lesen", ex); }
 
             return (cpu, ram, 0, ramUsedGb, ramTotalGb);
+        }
+
+        private static PerformanceCounter EnsureCpuCounter()
+        {
+            return _cpuCounter ??= new PerformanceCounter("Processor", "% Processor Time", "_Total");
         }
 
         // ================= BASIC =================

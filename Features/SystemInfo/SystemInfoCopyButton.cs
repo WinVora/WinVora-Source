@@ -10,43 +10,17 @@ namespace WinVora
     {
         public static void Attach(ToolkitControls.SettingsCard card, Func<string> getText)
         {
-            // Schutz gegen versehentliches mehrfaches Initialisieren: Eine
-            // bereits umgebaute große Karte erhält keinen zweiten Button.
             if (card.Tag as string == "SystemInfoCopyAttached") return;
-            if (card.Content is not FrameworkElement originalContent) return;
 
-            var button = Create(getText);
-            button.HorizontalAlignment = HorizontalAlignment.Right;
-            button.VerticalAlignment = VerticalAlignment.Top;
-            button.Margin = new Thickness(0, 0, 0, 0);
-
-            // Direkt in den Content der SettingsCard einsetzen. Eine äußere
-            // Überlagerung wurde vom Control-Template verdeckt und war deshalb
-            // nicht sichtbar.
-            var wrapper = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
-            originalContent.Margin = new Thickness(0, 0, 116, 0);
-            wrapper.Children.Add(originalContent);
-            wrapper.Children.Add(button);
-            card.Content = wrapper;
-            card.Tag = "SystemInfoCopyAttached";
-        }
-
-        public static Button Create(Func<string> getText)
-        {
             bool en = Localization.CurrentLanguage == "en";
-            var button = new Button
-            {
-                Content = CreateContent(en ? "Copy" : "Kopieren", "\uE8C8"),
-                Width = 104,
-                Height = 32,
-                Padding = new Thickness(10, 0, 10, 0),
-                CornerRadius = new CornerRadius(8)
-            };
-            ToolTipService.SetToolTip(button, en ? "Copy information" : "Informationen kopieren");
+            card.ActionIcon = new FontIcon { Glyph = "\uE8C8", FontSize = 15 };
+            card.ActionIconToolTip = en ? "Copy information" : "Informationen kopieren";
+            card.IsActionIconVisible = true;
+            card.IsClickEnabled = true;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
-                button, en ? "Copy information" : "Informationen kopieren");
+                card, en ? "Copy system information" : "Systeminformationen kopieren");
 
-            button.Click += (_, __) =>
+            card.Click += (_, __) =>
             {
                 string text = getText();
                 if (string.IsNullOrWhiteSpace(text)) return;
@@ -55,33 +29,22 @@ namespace WinVora
                 package.SetText(text);
                 Clipboard.SetContent(package);
                 Clipboard.Flush();
-                ToolTipService.SetToolTip(button, en ? "Copied" : "Kopiert");
 
-                // Sichtbares Feedback, auch wenn kein Tooltip geöffnet ist.
-                button.Content = CreateContent(en ? "Copied" : "Kopiert", "\uE73E");
-                var resetTimer = button.DispatcherQueue.CreateTimer();
+                card.ActionIcon = new FontIcon { Glyph = "\uE73E", FontSize = 15 };
+                card.ActionIconToolTip = en ? "Copied" : "Kopiert";
+                var resetTimer = card.DispatcherQueue.CreateTimer();
                 resetTimer.Interval = TimeSpan.FromSeconds(1.4);
                 resetTimer.Tick += (_, __) =>
                 {
                     resetTimer.Stop();
-                    button.Content = CreateContent(en ? "Copy" : "Kopieren", "\uE8C8");
-                    ToolTipService.SetToolTip(button, en ? "Copy information" : "Informationen kopieren");
+                    card.ActionIcon = new FontIcon { Glyph = "\uE8C8", FontSize = 15 };
+                    card.ActionIconToolTip = en ? "Copy information" : "Informationen kopieren";
                 };
                 resetTimer.Start();
             };
-            return button;
-        }
 
-        private static StackPanel CreateContent(string label, string glyph) => new()
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            Children =
-            {
-                new FontIcon { Glyph = glyph, FontSize = 13 },
-                new TextBlock { Text = label, FontSize = 12 }
-            }
-        };
+            card.Tag = "SystemInfoCopyAttached";
+        }
 
     }
 }

@@ -16,15 +16,61 @@ namespace WinVora
         private async void StartUpdate_Click(object sender, RoutedEventArgs e)
         {
             if (_isUpdatingWinget || _isLoadingWinget) return;
-            _isUpdatingWinget = true;
-            var selected = _wingetRows.Where(r => r.Toggle.IsChecked == true).Select(r => r.Package).ToList();
+
+            bool completedNormally = false;
+            try
+            {
+                await StartUpdateCoreAsync();
+                completedNormally = true;
+            }
+            catch (OperationCanceledException)
+            {
+                ShowInfo(Localization.CurrentLanguage == "en"
+                        ? "The update process was cancelled."
+                        : "Der Updatevorgang wurde abgebrochen.",
+                    InfoBarSeverity.Warning);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Updatevorgang", ex);
+                ShowInfo(Localization.CurrentLanguage == "en"
+                        ? "The update process ended unexpectedly. WinVora has reset the update controls."
+                        : "Der Updatevorgang wurde unerwartet beendet. WinVora hat die Update-Steuerung zurückgesetzt.",
+                    InfoBarSeverity.Error);
+            }
+            finally
+            {
+                _updateOperations.CompleteInstall();
+                try
+                {
+                    RefreshButton.IsEnabled = true;
+                    CancelUpdateButton.IsEnabled = false;
+                    CancelUpdateButton.Visibility = Visibility.Collapsed;
+                    SetGlobalStatus(null);
+                    UpdateWingetSelectionButton();
+                    if (!completedNormally)
+                    {
+                        UpdateProgressPanel.Visibility = Visibility.Collapsed;
+                        CurrentPackageProgressBar.IsIndeterminate = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogErrorOnce("Update-Oberfläche zurücksetzen", ex);
+                }
+            }
+        }
+
+        private async Task StartUpdateCoreAsync()
+        {
+            if (!_updateOperations.TryBeginInstall()) return;
+            var selected = _wingetRows.Where(r => _viewState.IsUpdateSelected(r.Package.Id)).Select(r => r.Package).ToList();
 
             if (selected.Count == 0)
             {
                 UpdateProgressPanel.Visibility = Visibility.Visible;
                 UpdateProgressText.Text = Localization.CurrentLanguage == "en" ? "No packages selected." : "Keine Pakete ausgewählt.";
                 UpdateProgressBar.Value = 0;
-                _isUpdatingWinget = false;
                 UpdateWingetSelectionButton();
                 return;
             }
@@ -43,7 +89,6 @@ namespace WinVora
                     en ? "Cancel" : "Abbrechen");
                 if (await batteryWarning.ShowAsync() != ContentDialogResult.Primary)
                 {
-                    _isUpdatingWinget = false;
                     UpdateWingetSelectionButton();
                     return;
                 }
@@ -68,7 +113,6 @@ namespace WinVora
             confirmationFocus?.Focus(FocusState.Programmatic);
             if (confirmationResult != ContentDialogResult.Primary)
             {
-                _isUpdatingWinget = false;
                 UpdateWingetSelectionButton();
                 return;
             }
@@ -80,8 +124,6 @@ namespace WinVora
             StartUpdateButton.IsEnabled = false;
             CancelUpdateButton.Visibility = Visibility.Visible;
             CancelUpdateButton.IsEnabled = true;
-            _wingetUpdateCancellation = new CancellationTokenSource();
-
             UpdateProgressPanel.Visibility = Visibility.Visible;
             UpdateProgressBar.Maximum = selected.Count;
             UpdateProgressBar.Value = 0;
@@ -138,7 +180,7 @@ namespace WinVora
                 CurrentPackageProgressBar.IsIndeterminate = true;
                 CurrentPackageProgressBar.Value = 0;
 
-                if (_wingetUpdateCancellation.IsCancellationRequested)
+                if (_updateOperations.Token.IsCancellationRequested)
                     break;
 
                 Logger.Log($"Programm-Update gestartet: {pkg.Name} [{pkg.Id}] {pkg.Version} -> {pkg.Available}");
@@ -147,7 +189,7 @@ namespace WinVora
                     pkg.Id,
                     pkg.Name,
                     progress,
-                    _wingetUpdateCancellation.Token,
+                    _updateOperations.Token,
                     en);
                 bool pendingRestartAfter = RestartDetectionService.IsRestartPending();
                 if (!pendingRestartBefore && pendingRestartAfter && result.Status == WingetUpdateStatus.Successful)
@@ -193,7 +235,7 @@ namespace WinVora
             }
             activePackageId = null;
 
-            bool cancelled = _wingetUpdateCancellation.IsCancellationRequested;
+            bool cancelled = _updateOperations.Token.IsCancellationRequested;
             if (!cancelled)
             {
                 CurrentPackageStatusText.Text = en
@@ -206,7 +248,7 @@ namespace WinVora
                     SetWingetCardProgress(item.Package.Id, null, visible: true);
                     SetWingetCardProgressColor(item.Package.Id, "AppAccentBrush");
                 }
-                results = await VerifyUpdateResultsAsync(results, en, _wingetUpdateCancellation.Token);
+                results = await VerifyUpdateResultsAsync(results, en, _updateOperations.Token);
             }
 
             foreach (var item in results)
@@ -272,13 +314,11 @@ namespace WinVora
             await Task.Delay(2000);
             UpdateProgressPanel.Visibility = Visibility.Collapsed;
             CancelUpdateButton.Visibility = Visibility.Collapsed;
-            _wingetUpdateCancellation.Dispose();
-            _wingetUpdateCancellation = null;
             SetGlobalStatus(null);
 
             // Nach einer Installation ist der Cache veraltet - erzwungener Reload.
             _cachedPackages = null;
-            _isUpdatingWinget = false;
+            _updateOperations.CompleteInstall();
             await LoadWinget(forceRefresh: true);
         }
 
@@ -397,7 +437,7 @@ namespace WinVora
             CurrentPackageStatusText.Text = Localization.CurrentLanguage == "en"
                 ? "Cancelling current installer..."
                 : "Aktueller Installer wird abgebrochen...";
-            _wingetUpdateCancellation?.Cancel();
+            _updateOperations.Cancel();
             Logger.Log("Programm-Update wurde vom Benutzer abgebrochen.");
         }
 

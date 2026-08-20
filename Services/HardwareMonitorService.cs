@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using LibreHardwareMonitor.Hardware;
 
 namespace WinVora
@@ -9,7 +10,31 @@ namespace WinVora
         public double? GpuLoadPercent { get; set; }
         public double? CpuTemperature { get; set; }
         public double? GpuTemperature { get; set; }
+        public double? CpuClockMhz { get; set; }
+        public double? CpuPowerWatts { get; set; }
+        public double? GpuPowerWatts { get; set; }
+        public List<HardwareStorageReading> Storage { get; } = new();
+        public List<HardwareFanReading> Fans { get; } = new();
+
+        internal HardwareReadings Clone()
+        {
+            var copy = new HardwareReadings
+            {
+                GpuLoadPercent = GpuLoadPercent,
+                CpuTemperature = CpuTemperature,
+                GpuTemperature = GpuTemperature,
+                CpuClockMhz = CpuClockMhz,
+                CpuPowerWatts = CpuPowerWatts,
+                GpuPowerWatts = GpuPowerWatts
+            };
+            copy.Storage.AddRange(Storage);
+            copy.Fans.AddRange(Fans);
+            return copy;
+        }
     }
+
+    public sealed record HardwareStorageReading(string Name, double? Temperature, double? RemainingLife);
+    public sealed record HardwareFanReading(string Name, double Rpm);
 
     public static class HardwareMonitorService
     {
@@ -25,7 +50,13 @@ namespace WinVora
                     _computer ??= new Computer
                     {
                         IsCpuEnabled = true,
-                        IsGpuEnabled = true
+                        IsGpuEnabled = true,
+                        IsMemoryEnabled = true,
+                        IsMotherboardEnabled = true,
+                        IsControllerEnabled = true,
+                        IsNetworkEnabled = true,
+                        IsStorageEnabled = true,
+                        IsPowerMonitorEnabled = true
                     };
 
                     if (!_computer.Hardware.Any())
@@ -43,7 +74,7 @@ namespace WinVora
         public static void WarmUp()
         {
             try { GetComputer(); }
-            catch { /* Sensoren evtl. nicht zugänglich - kein Problem hier */ }
+            catch (Exception ex) { Logger.LogErrorOnce("Hardwaremonitor initialisieren", ex); }
         }
 
         // Liest GPU-Auslastung sowie CPU-/GPU-Temperatur aus. Läuft am besten
@@ -58,13 +89,15 @@ namespace WinVora
 
             try
             {
-                var computer = GetComputer();
-
-                foreach (var hardware in computer.Hardware)
+                lock (Lock)
                 {
-                    hardware.Update();
-                    foreach (var sub in hardware.SubHardware)
-                        sub.Update();
+                    var computer = GetComputer();
+
+                    foreach (var hardware in computer.Hardware)
+                    {
+                        hardware.Update();
+                        foreach (var sub in hardware.SubHardware)
+                            sub.Update();
 
                     if (hardware.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
                     {
@@ -79,6 +112,9 @@ namespace WinVora
                         var gpuTemp = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature);
                         if (gpuTemp?.Value != null)
                             result.GpuTemperature = Math.Round(gpuTemp.Value.Value, 1);
+
+                        var gpuPower = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Power);
+                        if (gpuPower?.Value > 0.5f) result.GpuPowerWatts = Math.Round(gpuPower.Value.Value, 1);
                     }
 
                     if (hardware.HardwareType == HardwareType.Cpu)
@@ -91,13 +127,35 @@ namespace WinVora
 
                         if (cpuTemp?.Value != null)
                             result.CpuTemperature = Math.Round(cpuTemp.Value.Value, 1);
+
+                        var cpuClock = hardware.Sensors.Where(s => s.SensorType == SensorType.Clock && s.Value != null)
+                            .Select(s => (double)s.Value!.Value).DefaultIfEmpty().Average();
+                        if (cpuClock > 0) result.CpuClockMhz = Math.Round(cpuClock, 0);
+                        var cpuPower = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Power && s.Value != null);
+                        if (cpuPower?.Value > 0.5f) result.CpuPowerWatts = Math.Round(cpuPower.Value.Value, 1);
+                    }
+
+
+                    if (hardware.HardwareType == HardwareType.Storage)
+                    {
+                        double? temperature = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature)?.Value;
+                        double? life = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Level &&
+                            s.Name.Contains("life", StringComparison.OrdinalIgnoreCase))?.Value;
+                        result.Storage.Add(new HardwareStorageReading(hardware.Name, temperature, life));
+                    }
+
+                        foreach (var sensor in hardware.Sensors.Concat(hardware.SubHardware.SelectMany(s => s.Sensors)))
+                            if ((hardware.HardwareType is HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.Cpu) &&
+                                sensor.SensorType == SensorType.Fan && sensor.Value is float rpm)
+                                result.Fans.Add(new HardwareFanReading($"{hardware.Name} – {sensor.Name}", Math.Round(rpm, 0)));
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // Sensoren nicht zugänglich (z.B. fehlende Admin-Rechte oder
                 // nicht unterstützte Hardware) - Werte bleiben einfach null.
+                Logger.LogErrorOnce("Hardwaremonitor auslesen", ex);
             }
 
             return result;
@@ -105,7 +163,14 @@ namespace WinVora
 
         public static void Shutdown()
         {
-            try { _computer?.Close(); }
+            try
+            {
+                lock (Lock)
+                {
+                    _computer?.Close();
+                    _computer = null;
+                }
+            }
             catch (Exception ex) { Logger.LogErrorOnce("Hardwaremonitor schließen", ex); }
         }
     }

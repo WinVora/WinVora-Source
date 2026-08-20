@@ -3,8 +3,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System;
 using System.Diagnostics;
-using System.Management;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace WinVora
@@ -14,13 +14,12 @@ namespace WinVora
         private async Task ShowInternalDiagnosticsAsync()
         {
             bool en = Localization.CurrentLanguage == "en";
-            var checks = await Task.Run(() => new[]
-            {
-                CheckWinget(en),
-                CheckWmi(en),
-                CheckDefender(en),
-                CheckNotifications(en)
-            });
+            CancellationToken token = _startupCancellation.Token;
+            var checks = await Task.WhenAll(
+                CheckWingetAsync(en, token),
+                CheckWmiAsync(en, token),
+                Task.FromResult(CheckDefender(en)),
+                Task.FromResult(CheckNotifications(en)));
             var panel = new StackPanel { Spacing = 8, Width = 480 };
             foreach (var check in checks)
             {
@@ -78,30 +77,50 @@ namespace WinVora
             await dialog.ShowAsync();
         }
 
-        private static (string Name, bool Ok, string Message) CheckWinget(bool en)
+        private static async Task<(string Name, bool Ok, string Message)> CheckWingetAsync(
+            bool en,
+            CancellationToken cancellationToken)
         {
             try
             {
-                using var process = Process.Start(new ProcessStartInfo("winget", "--version")
-                {
-                    RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true
-                });
-                string version = process?.StandardOutput.ReadToEnd().Trim() ?? "";
-                process?.WaitForExit(3000);
-                return ("WinGet", process?.ExitCode == 0, string.IsNullOrWhiteSpace(version) ? (en ? "Not available" : "Nicht verfügbar") : version);
+                ProcessRunResult result = await SystemAccess.ProcessRunner.RunAsync(
+                    new ProcessStartInfo("winget", "--version"),
+                    TimeSpan.FromSeconds(5),
+                    cancellationToken).ConfigureAwait(false);
+                string version = result.StandardOutput.Trim();
+                bool ok = !result.TimedOut && result.ExitCode == 0 && !string.IsNullOrWhiteSpace(version);
+                return ("WinGet", ok, result.TimedOut
+                    ? (en ? "Timed out" : "Zeitüberschreitung")
+                    : string.IsNullOrWhiteSpace(version) ? (en ? "Not available" : "Nicht verfügbar") : version);
             }
-            catch { return ("WinGet", false, en ? "Not available" : "Nicht verfügbar"); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Logger.LogErrorOnce("Interne Diagnose: WinGet", ex);
+                return ("WinGet", false, en ? "Not available" : "Nicht verfügbar");
+            }
         }
 
-        private static (string Name, bool Ok, string Message) CheckWmi(bool en)
+        private static async Task<(string Name, bool Ok, string Message)> CheckWmiAsync(
+            bool en,
+            CancellationToken cancellationToken)
         {
             try
             {
-                using var searcher = new ManagementObjectSearcher("SELECT Caption FROM Win32_OperatingSystem");
-                using var result = searcher.Get();
+                var result = await Task.Run(
+                    () => SystemAccess.Wmi.Query(
+                        @"root\CIMV2",
+                        "SELECT Caption FROM Win32_OperatingSystem",
+                        "Caption"),
+                    cancellationToken).WaitAsync(TimeSpan.FromSeconds(6), cancellationToken).ConfigureAwait(false);
                 return ("WMI", result.Count > 0, result.Count > 0 ? "OK" : (en ? "No response" : "Keine Antwort"));
             }
-            catch { return ("WMI", false, en ? "Not available" : "Nicht verfügbar"); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Logger.LogErrorOnce("Interne Diagnose: WMI", ex);
+                return ("WMI", false, en ? "Not available" : "Nicht verfügbar");
+            }
         }
 
         private (string Name, bool Ok, string Message) CheckDefender(bool en)

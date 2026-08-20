@@ -18,7 +18,7 @@ namespace WinVora
 
         private async void Updates_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("Updates");
+            if (!TrySetPage("Updates")) return;
             // Auf der Winget-Seite selbst soll immer der echte, aktuelle Stand
             // geholt werden - hier macht Caching keinen Sinn.
             await LoadWinget(forceRefresh: true);
@@ -131,7 +131,7 @@ namespace WinVora
                 return;
             }
 
-            _isLoadingWinget = true;
+            if (!_updateOperations.TryBeginDiscovery()) return;
             SetGlobalStatus(Localization.CurrentLanguage == "en" ? "Checking program updates..." : "Programm-Updates werden geprüft...");
             ContentArea.Children.Clear();
             ContentArea.Children.Add(new TextBlock
@@ -168,6 +168,14 @@ namespace WinVora
                 wingetNotFound = true;
                 Logger.Log("winget wurde nicht gefunden (ERROR_FILE_NOT_FOUND).");
             }
+            catch (TimeoutException ex)
+            {
+                hadError = true;
+                errorMessage = Localization.CurrentLanguage == "en"
+                    ? "WinGet did not respond within 75 seconds. The process was stopped; check the configured package sources and try again."
+                    : "WinGet hat innerhalb von 75 Sekunden nicht geantwortet. Der Prozess wurde beendet; prüfe die eingerichteten Paketquellen und versuche es erneut.";
+                Logger.LogError("WinGet-Abfrage (Timeout)", ex);
+            }
             catch (Exception ex)
             {
                 hadError = true;
@@ -176,7 +184,7 @@ namespace WinVora
             }
             finally
             {
-                _isLoadingWinget = false;
+                _updateOperations.CompleteDiscovery();
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
                 RefreshButton.IsEnabled = true;
@@ -263,6 +271,8 @@ namespace WinVora
         private async Task LoadWingetAtStartupInBackgroundAsync()
         {
             if (_cachedPackages != null || _isLoadingWinget || _isUpdatingWinget) return;
+            if (!_updateOperations.TryBeginDiscovery()) return;
+            bool retryOnPage = false;
             try
             {
                 var discovery = await StartupPerformanceTracker.MeasureAsync(
@@ -284,9 +294,12 @@ namespace WinVora
             catch (Exception ex)
             {
                 Logger.LogError("Programm-Updates im Hintergrund prüfen", ex);
-                if (_currentPageKey == "Updates")
-                    await LoadWinget(forceRefresh: true);
+                retryOnPage = _currentPageKey == "Updates";
             }
+            finally { _updateOperations.CompleteDiscovery(); }
+
+            if (retryOnPage)
+                await LoadWinget(forceRefresh: true);
         }
 
     }

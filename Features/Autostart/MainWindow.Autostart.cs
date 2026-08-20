@@ -14,7 +14,7 @@ namespace WinVora
     {
         private async void Autostart_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("Autostart");
+            if (!TrySetPage("Autostart")) return;
             await RenderAutostartPageAsync();
         }
 
@@ -73,6 +73,32 @@ namespace WinVora
                     }
                 });
                 statusPanel.Children.Add(toggle);
+                if (!targetExists)
+                {
+                    var removeMissing = new Button
+                    {
+                        Content = Localization.T("Autostart.RemoveMissing"),
+                        Padding = new Thickness(10, 5, 10, 5)
+                    };
+                    removeMissing.Click += async (_, __) =>
+                    {
+                        bool confirmed = await ConfirmAsync(
+                            Localization.T("Autostart.RemoveTitle"),
+                            Localization.F("Autostart.RemoveMessage", entry.Name),
+                            Localization.T("Autostart.RemoveMissing"),
+                            respectDeleteConfirmationSetting: false);
+                        if (!confirmed) return;
+                        if (!AutostartService.RemoveEntry(entry))
+                        {
+                            ShowInfo(Localization.T("Autostart.RemoveFailed"), InfoBarSeverity.Error);
+                            return;
+                        }
+                        ShowInfo(Localization.T("Autostart.Removed"), InfoBarSeverity.Success);
+                        ScheduleDashboardRefresh();
+                        await RenderAutostartPageAsync();
+                    };
+                    statusPanel.Children.Add(removeMissing);
+                }
                 if (AutostartService.TryGetCommandTargetPath(entry.Command, out string startupPath) && File.Exists(startupPath))
                 {
                     var openLocation = new Button

@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 installer_output/
+artifacts/
 *.zip
 
 # Visual Studio

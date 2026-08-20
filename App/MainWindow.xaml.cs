@@ -30,16 +30,19 @@ namespace WinVora
         private Window? _changelogWindow;
         private SystemInfoSnapshot? _cachedSnapshot;
         private bool _isLoadingSnapshot;
-        private bool _isLoadingWinget;
-        private bool _isUpdatingWinget;
-        private bool _isLoadingStorage;
-        private bool _isDeletingStorage;
-        private bool _isLoadingPrograms;
-        private bool _isUninstalling;
+        private readonly UpdateOperationController _updateOperations = new();
+        private readonly StorageOperationController _storageOperations = new();
+        private readonly UninstallOperationController _uninstallOperations = new();
+        private readonly MainWindowViewState _viewState = new();
+        private bool _isLoadingWinget => _updateOperations.IsDiscovering;
+        private bool _isUpdatingWinget => _updateOperations.IsInstalling;
+        private bool _isLoadingStorage => _storageOperations.IsScanning;
+        private bool _isDeletingStorage => _storageOperations.IsDeleting;
+        private bool _isLoadingPrograms => _uninstallOperations.IsLoading;
+        private bool _isUninstalling => _uninstallOperations.IsUninstalling;
         private SecurityHealthState _securityHealthState = SecurityHealthState.Unknown;
         private string _lastAntivirusStatus = "Unbekannt";
         private string _lastFirewallStatus = "Unbekannt";
-        private CancellationTokenSource? _wingetUpdateCancellation;
         private readonly CancellationTokenSource _startupCancellation = new();
         private readonly Stopwatch _startupOverlayLifetime = Stopwatch.StartNew();
         private readonly WingetUpdateService _wingetUpdateService = new();
@@ -51,6 +54,8 @@ namespace WinVora
         private readonly List<(WingetPackage Package, CheckBox Toggle, ToolkitControls.SettingsCard Card, string BaseDescription)> _wingetRows = new();
         private readonly Dictionary<string, TextBlock> _wingetStatusBadges = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ProgressBar> _wingetCardProgressBars = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<ToolkitControls.SettingsCard, InstalledProgram> _wingetIconCards = new();
+        private readonly HashSet<ToolkitControls.SettingsCard> _loadedWingetIcons = new();
         private readonly List<(StorageCategory Category, CheckBox Toggle)> _storageRows = new();
         private TextBlock? _wingetNoResultsText;
         private TextBlock? _uninstallNoResultsText;
@@ -143,8 +148,13 @@ namespace WinVora
                 _infoBarDismissCancellation?.Dispose();
                 _storageAnalysisCancellation?.Cancel();
                 _storageAnalysisCancellation?.Dispose();
+                _performanceAnalysisCancellation?.Cancel();
+                _performanceAnalysisCancellation?.Dispose();
+                _updateOperations.Dispose();
+                _storageOperations.Dispose();
+                _uninstallOperations.Dispose();
                 SaveWindowPlacement();
-                HardwareMonitorService.Shutdown();
+                HardwareTelemetryService.Shutdown();
             };
 
             // Eigene, dunkle Titelleiste statt der weißen Standard-Leiste von Windows.
@@ -162,7 +172,7 @@ namespace WinVora
             {
                 this.AppWindow.SetIcon("app.ico");
             }
-            catch { /* Icon nicht kritisch - App startet auch ohne */ }
+            catch (Exception ex) { Logger.LogErrorOnce("App-Icon setzen", ex); }
 
             // Echtes Mica-Backdrop fürs Fenster (fällt automatisch auf die
             // Acrylic-Hintergründe im XAML zurück, falls Mica nicht unterstützt wird).
@@ -206,7 +216,7 @@ namespace WinVora
 
         private async void MainWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
-            bool hasCancellableWork = _isUpdatingWinget || _storageAnalysisCancellation != null;
+            bool hasCancellableWork = _isUpdatingWinget || _isLoadingStorage || _storageAnalysisCancellation != null;
             bool hasExternalWork = _isUninstalling || _isDeletingStorage;
             if (!hasCancellableWork && !hasExternalWork)
             {
@@ -237,9 +247,9 @@ namespace WinVora
                     _storageAnalysisCancellation = null;
                     _startupCancellation.Cancel();
                     Logger.Log("Laufende Vorgänge wurden beim Schließen von WinVora abgebrochen.");
-                    _isUpdatingWinget = false;
-                    _isUninstalling = false;
-                    _isDeletingStorage = false;
+                    _updateOperations.Reset();
+                    _uninstallOperations.Reset();
+                    _storageOperations.Reset();
                     Close();
                 }
             }
@@ -357,10 +367,13 @@ namespace WinVora
             LblNavHistory.Text = Localization.T("Nav.History");
             LblNavAutostart.Text = "Autostart";
             LblNavChanges.Text = Localization.T("Nav.Changes");
+            LblNavPerformance.Text = Localization.T("Nav.Performance");
             LblNavSettings.Text = Localization.T("Nav.Settings");
             LblNavContact.Text = Localization.T("Nav.Contact");
             LblNavChangelogHint.Text = Localization.T("Nav.ChangelogHint");
             StartupStatusText.Text = Localization.T("Common.Loading");
+            PerformanceIntroText.Text = Localization.T("Performance.Intro");
+            PerformanceRefreshButton.Content = Localization.T("Performance.Analyze");
 
             // Statuskarten
             LblStatCpu.Text = Localization.T("Stat.Cpu");
@@ -431,6 +444,19 @@ namespace WinVora
             SysCardDrives.Header = Localization.T("System.Card.Drives");
             SysCardNetwork.Header = Localization.T("System.Card.Network");
             SysCardBattery.Header = Localization.T("System.Card.Battery");
+
+            // Die Expander tragen bereits die sichtbare Überschrift. Ohne
+            // redundanten SettingsCard-Header nutzt der Inhalt die volle Breite.
+            foreach (var systemCard in new[]
+            {
+                SysCardDevice, SysCardOs, SysCardCpu, SysCardRam, SysCardBoard,
+                SysCardSecurity, SysCardGpu, SysCardDrives, SysCardNetwork, SysCardBattery
+            })
+            {
+                systemCard.ClearValue(ToolkitControls.SettingsCard.HeaderProperty);
+                systemCard.ClearValue(ToolkitControls.SettingsCard.DescriptionProperty);
+                systemCard.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            }
 
             // Alle 26 Feldbezeichnungen auf der Systeminfo-Seite in einem
             // Rutsch übersetzen. Direkter Feldzugriff statt FindName() - so
@@ -584,6 +610,11 @@ namespace WinVora
             if (_installedPrograms.Count > 0)
             {
                 _ = LoadInstalledPrograms();
+            }
+
+            if (_currentPageKey == "Performance")
+            {
+                _ = AnalyzePerformanceAsync();
             }
         }
 
@@ -1318,7 +1349,8 @@ namespace WinVora
             {
                 var update = await UpdateService.CheckForUpdateAsync(
                     CurrentVersion,
-                    _settings.UpdateChannel == "Beta");
+                    _settings.UpdateChannel == "Beta",
+                    _startupCancellation.Token);
                 if (update != null)
                 {
                     _pendingUpdateInfo = update;
@@ -1341,18 +1373,13 @@ namespace WinVora
         // Winget-Status wirklich fertig geladen sind.
         private async Task LoadInitialDataAsync()
         {
-            // Ganz früh im Hintergrund anstoßen (parallel zum restlichen
-            // Laden), damit der CPU-Performance-Counter genug Vorlaufzeit hat
-            // und die erste echte Live-Anzeige nicht falsch/niedrig ist.
-            _ = Task.Run(() => SystemInfoProvider.WarmUpCpuCounter());
-
-            // LibreHardwareMonitor ebenfalls früh öffnen - das erste Öffnen
-            // (Treiber laden, Hardware erkennen) kann spürbar dauern.
-            _ = Task.Run(() => HardwareMonitorService.WarmUp());
+            // PerformanceCounter und LibreHardwareMonitor gemeinsam früh
+            // öffnen. So existiert nur ein synchronisierter Warm-up-Pfad.
+            _ = Task.Run(HardwareTelemetryService.WarmUp);
 
             StartupStatusText.Text = Localization.CurrentLanguage == "en" ? "Preparing interface..." : "Oberfläche wird vorbereitet...";
             StartupProgressBar.Value = 1;
-            StartupProgressText.Text = Localization.CurrentLanguage == "en" ? "Step 1 of 4" : "Schritt 1 von 4";
+            StartupProgressText.Text = Localization.CurrentLanguage == "en" ? "Step 1 of 2" : "Schritt 1 von 2";
             StartLiveUsageTimer();
 
             // Letzte bekannte Werte sofort einsetzen. Die frische Abfrage
@@ -1369,45 +1396,35 @@ namespace WinVora
             switch (_settings.StartupPage)
             {
                 case "System":
-                    SetPage("System");
+                    TrySetPage("System");
                     break;
 
                 case "Updates":
-                    SetPage("Updates");
+                    TrySetPage("Updates");
                     break;
 
                 case "Storage":
-                    SetPage("Storage");
+                    TrySetPage("Storage");
                     break;
 
                 default:
-                    SetPage("Übersicht");
+                    TrySetPage("Übersicht");
                     break;
             }
-            // Cache und Grundlayout reichen zum Anzeigen des Hauptfensters.
-            // Frische Systemwerte dürfen den sichtbaren Start nicht blockieren.
+            StartupStatusText.Text = Localization.CurrentLanguage == "en" ? "Interface ready" : "Oberfläche bereit";
+            StartupProgressBar.Value = 2;
+            StartupProgressText.Text = Localization.CurrentLanguage == "en" ? "Step 2 of 2" : "Schritt 2 von 2";
+
+            // Ab hier ist der sichtbare Start wirklich abgeschlossen. Frische
+            // Systemwerte werden bewusst als getrennte Hintergrundarbeit geladen.
             _initialBackgroundRefresh = LoadDeferredStartupDataAsync();
+            _ = ObserveBackgroundTaskAsync(_initialBackgroundRefresh, "Startdaten im Hintergrund laden");
         }
 
         private async Task LoadDeferredStartupDataAsync()
         {
-            // Alle benötigten Startdaten parallel hinter dem Ladebildschirm
-            // abrufen. Erst wenn diese Aufgaben fertig sind, blendet der
-            // Aufrufer das vollständige Hauptfenster ein.
             var timer = Stopwatch.StartNew();
             var cancellationToken = _startupCancellation.Token;
-            void SetPhase(string german, string english, int step)
-            {
-                if (cancellationToken.IsCancellationRequested) return;
-                StartupStatusText.Text = Localization.CurrentLanguage == "en"
-                    ? $"Step {step} of 4 · {english}"
-                    : $"Schritt {step} von 4 · {german}";
-                StartupProgressBar.Value = step;
-                StartupProgressText.Text = Localization.CurrentLanguage == "en"
-                    ? $"Step {step} of 4"
-                    : $"Schritt {step} von 4";
-            }
-            SetPhase("Systeminformationen und Sicherheit werden geladen", "Loading system information and security", 2);
 
             async Task LoadSystemAsync()
             {
@@ -1462,20 +1479,18 @@ namespace WinVora
             await FinishSystemStageAsync();
             if (cancellationToken.IsCancellationRequested) return;
 
-            SetPhase("Dashboard wird vorbereitet", "Preparing dashboard", 3);
-
-            if (_currentPageKey == "Storage")
-            {
-                StartupStatusText.Text = Localization.CurrentLanguage == "en"
-                    ? "Step 4 of 4 · Analyzing files"
-                    : "Schritt 4 von 4 · Dateien werden analysiert";
-            }
             await storageTask;
             if (cancellationToken.IsCancellationRequested) return;
 
             await StartupPerformanceTracker.MeasureAsync("Dashboard", PopulateDashboardWidgetsAsync);
-            SetPhase("Start abgeschlossen", "Startup complete", 4);
             Logger.Log($"Alle Startdaten geladen: {timer.ElapsedMilliseconds} ms.");
+        }
+
+        private static async Task ObserveBackgroundTaskAsync(Task task, string context)
+        {
+            try { await task.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Logger.LogError(context, ex); }
         }
 
         private void HideStartupOverlay()
@@ -1536,6 +1551,7 @@ namespace WinVora
                 (NavCleanerButton, "Storage"),
                 (NavUninstallButton, "Uninstall"),
                 (NavChangesButton, "Changes"),
+                (NavPerformanceButton, "Performance"),
                 (NavHistoryButton, "History"),
                 (NavAutostartButton, "Autostart"),
             };
@@ -1564,19 +1580,22 @@ namespace WinVora
             "History" => Localization.CurrentLanguage == "en" ? "History" : "Verlauf",
             "Autostart" => "Autostart",
             "Changes" => Localization.CurrentLanguage == "en" ? "Changes" : "Veränderungen",
+            "Performance" => Localization.T("PageTitle.Performance"),
             _ => internalKey
         };
 
-        private void SetPage(string title)
+        private bool TrySetPage(string title)
         {
             if (_isUpdatingWinget && title != "Updates")
             {
                 ShowInfo(Localization.T("Notification.UpdateBlocksNavigation"), InfoBarSeverity.Warning);
-                return;
+                return false;
             }
             if (!string.IsNullOrWhiteSpace(_currentPageKey))
                 _pageScrollOffsets[_currentPageKey] = MainContentScrollViewer.VerticalOffset;
             _currentPageKey = title;
+            if (title != "Performance")
+                _performanceAnalysisCancellation?.Cancel();
             PageTitle.Text = GetPageDisplayTitle(title);
             PageSubtitle.Text = "";
 
@@ -1588,6 +1607,7 @@ namespace WinVora
             HistoryPanel.Visibility = title == "History" ? Visibility.Visible : Visibility.Collapsed;
             AutostartPanel.Visibility = title == "Autostart" ? Visibility.Visible : Visibility.Collapsed;
             ChangesPanel.Visibility = title == "Changes" ? Visibility.Visible : Visibility.Collapsed;
+            PerformancePanel.Visibility = title == "Performance" ? Visibility.Visible : Visibility.Collapsed;
 
             UpdateActiveNavHighlight(title);
 
@@ -1622,6 +1642,7 @@ namespace WinVora
                 "History" => HistoryPanel,
                 "Autostart" => AutostartPanel,
                 "Changes" => ChangesPanel,
+                "Performance" => PerformancePanel,
                 _ => null
             });
 
@@ -1638,6 +1659,7 @@ namespace WinVora
                     case "History": HistoryAllButton.Focus(FocusState.Programmatic); break;
                 }
             });
+            return true;
         }
 
         // Sanftes Einblenden der jeweils aktiven Seite beim Wechsel.
@@ -1728,7 +1750,7 @@ namespace WinVora
 
         private void History_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("History");
+            if (!TrySetPage("History")) return;
             RenderHistoryPage();
         }
 
@@ -1850,7 +1872,8 @@ namespace WinVora
             bool compact = _compactHeightState == true;
             foreach (var button in new[]
             {
-                NavOverviewButton, NavSystemButton, NavUpdatesButton, NavCleanerButton, NavUninstallButton, NavChangesButton
+                NavOverviewButton, NavSystemButton, NavUpdatesButton, NavCleanerButton, NavUninstallButton,
+                NavChangesButton, NavPerformanceButton
             })
             {
                 button.MinHeight = compact ? 44 : 56;
@@ -1931,7 +1954,7 @@ namespace WinVora
             foreach (var label in new[]
             {
                 LblNavDashboard, LblNavSystem, LblNavUpdates, LblNavFiles, LblNavUninstall,
-                LblNavChanges, LblNavAutostart, LblNavHistory, LblNavSettings
+                LblNavChanges, LblNavPerformance, LblNavAutostart, LblNavHistory, LblNavSettings
             })
                 label.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
 
@@ -1944,7 +1967,7 @@ namespace WinVora
             foreach (var button in new[]
             {
                 NavOverviewButton, NavSystemButton, NavUpdatesButton, NavCleanerButton, NavUninstallButton,
-                NavChangesButton, NavAutostartButton, NavHistoryButton, NavSettingsButton, NavChangelogButton
+                NavChangesButton, NavPerformanceButton, NavAutostartButton, NavHistoryButton, NavSettingsButton, NavChangelogButton
             })
             {
                 button.HorizontalContentAlignment = iconOnly
@@ -2040,6 +2063,7 @@ namespace WinVora
             ToolTipService.SetToolTip(NavCleanerButton, iconOnly ? LblNavFiles.Text : null);
             ToolTipService.SetToolTip(NavUninstallButton, iconOnly ? LblNavUninstall.Text : null);
             ToolTipService.SetToolTip(NavChangesButton, iconOnly ? LblNavChanges.Text : null);
+            ToolTipService.SetToolTip(NavPerformanceButton, iconOnly ? LblNavPerformance.Text : null);
             ToolTipService.SetToolTip(NavAutostartButton, iconOnly ? LblNavAutostart.Text : null);
             ToolTipService.SetToolTip(NavHistoryButton, iconOnly ? LblNavHistory.Text : null);
             ApplyDashboardCustomizationLayout();
@@ -2253,7 +2277,7 @@ namespace WinVora
 
         private async void Overview_Click(object sender, RoutedEventArgs e)
         {
-            SetPage("Übersicht");
+            if (!TrySetPage("Übersicht")) return;
             await LoadSystemSnapshotIfNeededAsync(
                 "Systemstatus wird geladen...",
                 "Fehler beim Laden der Übersicht");
