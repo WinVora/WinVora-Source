@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,6 +14,9 @@ namespace WinVora
     internal static class WingetDiscoveryService
     {
         private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromSeconds(75);
+        private static readonly Regex AnsiSequence = new(
+            "\\x1B(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         public static async Task<WingetDiscoveryResult> GetUpgradesAsync(CancellationToken cancellationToken)
         {
@@ -56,9 +60,10 @@ namespace WinVora
             int[]? columns = null;
 
             bool hasRows = false;
-            foreach (string line in output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+            foreach (string rawLine in output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                string line = AnsiSequence.Replace(rawLine.Replace("\b", "", StringComparison.Ordinal), "");
                 if (string.IsNullOrWhiteSpace(line))
                 {
                     if (hasRows) break;
@@ -66,7 +71,7 @@ namespace WinVora
                 }
                 if (line.TrimStart().StartsWith('-') && headerLine != null && columns == null)
                 {
-                    columns = GetColumnStarts(headerLine);
+                    columns = GetColumnStarts(line, headerLine);
                     continue;
                 }
                 if (columns == null) { headerLine = line; continue; }
@@ -83,8 +88,18 @@ namespace WinVora
             return new WingetDiscoveryResult(packages, columns);
         }
 
-        private static int[] GetColumnStarts(string header)
+        private static int[] GetColumnStarts(string separator, string header)
         {
+            // Die Gruppen der Trennlinie sind sprachunabhängig und deshalb
+            // stabiler als die Länge von "Name/Id/Version/Verfügbar/Quelle".
+            // Ältere WinGet-Versionen liefern gelegentlich nur eine durchgehende
+            // Linie; dann bleibt die bisherige Header-Erkennung als Fallback.
+            int[] separatorStarts = Regex.Matches(separator, "-+")
+                .Select(match => match.Index)
+                .ToArray();
+            if (separatorStarts.Length >= 4)
+                return separatorStarts;
+
             var starts = new List<int> { 0 };
             for (int i = 2; i < header.Length; i++)
             {

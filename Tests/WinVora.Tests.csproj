@@ -10,6 +10,8 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <GenerateProjectPriFile>false</GenerateProjectPriFile>
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <EnableDefaultPriItems>false</EnableDefaultPriItems>
     <WindowsPackageType>None</WindowsPackageType>
     <DefaultLanguage>en-US</DefaultLanguage>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

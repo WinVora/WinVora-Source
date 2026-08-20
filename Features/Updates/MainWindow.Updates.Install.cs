@@ -902,16 +902,21 @@ namespace WinVora
                         false);
                 }
 
-                if (knownShutdown &&
-                    !UpdateApplicationShutdownService.TryCloseForUpdate(packageId, packageName))
+                if (knownShutdown)
                 {
-                    return new WingetUpdateResult(
-                        WingetUpdateStatus.Failed,
-                        unchecked((int)0x80073D02),
-                        english
-                            ? $"{packageName} could not be closed. Close the app manually and try again."
-                            : $"{packageName} konnte nicht geschlossen werden. Schließe die App manuell und versuche es erneut.",
-                        false);
+                    ApplicationCloseDecision closeDecision = await EnsureApplicationClosedForUpdateAsync(
+                        packageId, packageName, cancellationToken);
+                    if (closeDecision != ApplicationCloseDecision.Closed)
+                    {
+                        bool cancelled = closeDecision == ApplicationCloseDecision.Cancelled;
+                        return new WingetUpdateResult(
+                            cancelled ? WingetUpdateStatus.Cancelled : WingetUpdateStatus.Failed,
+                            cancelled ? 1223 : unchecked((int)0x80073D02),
+                            cancelled
+                                ? Localization.T("Update.CloseCancelled")
+                                : Localization.F("Update.CloseFailed", packageName),
+                            false);
+                    }
                 }
 
                 return knownElevation
@@ -943,14 +948,23 @@ namespace WinVora
                 };
             }
 
-            if (result.RequiresApplicationShutdown &&
-                !UpdateApplicationShutdownService.TryCloseForUpdate(packageId, packageName))
-                return result with
+            if (result.RequiresApplicationShutdown)
+            {
+                ApplicationCloseDecision closeDecision = await EnsureApplicationClosedForUpdateAsync(
+                    packageId, packageName, cancellationToken);
+                if (closeDecision != ApplicationCloseDecision.Closed)
                 {
-                    Message = english
-                        ? $"{packageName} could not be closed. Close the app manually and try again."
-                        : $"{packageName} konnte nicht geschlossen werden. Schließe die App manuell und versuche es erneut."
-                };
+                    bool cancelled = closeDecision == ApplicationCloseDecision.Cancelled;
+                    return result with
+                    {
+                        Status = cancelled ? WingetUpdateStatus.Cancelled : WingetUpdateStatus.Failed,
+                        ExitCode = cancelled ? 1223 : result.ExitCode,
+                        Message = cancelled
+                            ? Localization.T("Update.CloseCancelled")
+                            : Localization.F("Update.CloseFailed", packageName)
+                    };
+                }
+            }
 
             return result.RequiresElevation
                 ? await RunElevatedUpdateAsync(packageId, packageName, progress, cancellationToken, english, result.RequiresApplicationShutdown)

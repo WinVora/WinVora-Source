@@ -5,4 +5,7 @@
   <Project Path="WinVora.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="Tests/WinVora.Tests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>

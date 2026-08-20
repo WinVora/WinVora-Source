@@ -280,9 +280,7 @@ namespace WinVora
                 {
                     var watch = Stopwatch.StartNew();
                     var progress = new Progress<int>(count =>
-                        analysisStatus.Text = Localization.CurrentLanguage == "en"
-                            ? count + " folders checked"
-                            : count + " Ordner geprüft");
+                        analysisStatus.Text = Localization.F("Storage.FoldersChecked", count));
                     var incrementalResults = new List<LargeFolderResult>();
                     var resultProgress = new Progress<LargeFolderResult>(result =>
                     {
@@ -300,21 +298,20 @@ namespace WinVora
                     _cachedLargeFolders = analyzedFolders;
                     _largeFolderAnalysisUtc = DateTime.UtcNow;
                     watch.Stop();
-                    analysisStatus.Text = Localization.CurrentLanguage == "en"
-                        ? analyzedFolders.Count + " results · " + watch.Elapsed.TotalSeconds.ToString("0.0") + " seconds"
-                        : analyzedFolders.Count + " Ergebnisse · " + watch.Elapsed.TotalSeconds.ToString("0.0") + " Sekunden";
+                    analysisStatus.Text = Localization.F(
+                        "Storage.AnalysisResults", analyzedFolders.Count, watch.Elapsed.TotalSeconds);
                     RenderAnalyzedFolders();
                 }
                 catch (OperationCanceledException)
                 {
-                    largeFolderResults.Children.Add(new TextBlock { Text = Localization.CurrentLanguage == "en" ? "Analysis cancelled." : "Analyse abgebrochen." });
+                    largeFolderResults.Children.Add(new TextBlock { Text = Localization.T("Storage.AnalysisCancelled") });
                 }
                 catch (Exception ex)
                 {
                     Logger.LogError("Große Ordner analysieren", ex);
                     largeFolderResults.Children.Add(new TextBlock
                     {
-                        Text = Localization.CurrentLanguage == "en" ? "The analysis could not be completed." : "Die Analyse konnte nicht abgeschlossen werden."
+                        Text = Localization.T("Storage.AnalysisFailed")
                     });
                 }
                 finally
@@ -322,7 +319,7 @@ namespace WinVora
                     _storageAnalysisCancellation?.Dispose();
                     _storageAnalysisCancellation = null;
                     analyzeLargeFoldersButton.IsEnabled = true;
-                    analyzeLargeFoldersButton.Content = Localization.CurrentLanguage == "en" ? "Analyze again" : "Erneut analysieren";
+                    analyzeLargeFoldersButton.Content = Localization.T("Storage.AnalyzeAgain");
                     analysisProgress.Visibility = Visibility.Collapsed;
                     cancelAnalysisButton.Visibility = Visibility.Collapsed;
                 }
@@ -330,23 +327,17 @@ namespace WinVora
             var analyzerContent = new StackPanel { Spacing = 10 };
             analyzerContent.Children.Add(new TextBlock
             {
-                Text = Localization.CurrentLanguage == "en"
-                    ? "Scans your personal folders on demand. Nothing is deleted."
-                    : "Durchsucht persönliche Ordner nur auf Knopfdruck. Es wird nichts gelöscht.",
+                Text = Localization.T("Storage.AnalysisIntro"),
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
             });
             var riskLegend = new TextBlock
             {
-                Text = Localization.CurrentLanguage == "en"
-                    ? "Risk: Normal = personal folder · Caution = application data · System = Windows or program files"
-                    : "Risiko: Normal = persönlicher Ordner · Prüfen = Anwendungsdaten · System = Windows- oder Programmdateien",
+                Text = Localization.T("Storage.RiskLegend"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
             };
-            ToolTipService.SetToolTip(riskLegend, Localization.CurrentLanguage == "en"
-                ? "Risk is informational only. WinVora does not delete these folders automatically."
-                : "Die Risikoeinstufung ist nur ein Hinweis. WinVora löscht diese Ordner niemals automatisch.");
+            ToolTipService.SetToolTip(riskLegend, Localization.T("Storage.RiskTooltip"));
             analyzerContent.Children.Add(riskLegend);
             var analyzerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             analyzerActions.Children.Add(analyzeLargeFoldersButton);
@@ -359,14 +350,13 @@ namespace WinVora
             analyzerContent.Children.Add(largeFolderResults);
             if (analyzedFolders.Count > 0)
             {
-                analysisStatus.Text = Localization.CurrentLanguage == "en"
-                    ? "Cached result from " + _largeFolderAnalysisUtc?.ToLocalTime().ToString("g")
-                    : "Zwischengespeichert vom " + _largeFolderAnalysisUtc?.ToLocalTime().ToString("g");
+                analysisStatus.Text = Localization.F(
+                    "Storage.CachedResult", _largeFolderAnalysisUtc?.ToLocalTime().ToString("g"));
                 RenderAnalyzedFolders();
             }
             StoragePanel.Children.Add(new Expander
             {
-                Header = Localization.CurrentLanguage == "en" ? "Storage analysis" : "Speicheranalyse",
+                Header = Localization.T("Storage.AnalysisHeader"),
                 Content = analyzerContent,
                 Padding = new Thickness(4),
                 HorizontalAlignment = HorizontalAlignment.Stretch,

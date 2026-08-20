@@ -36,11 +36,15 @@ namespace WinVora
 
         private static void LogResult(string stage, Stopwatch timer, long memoryBefore)
         {
-            long memoryAfter = Process.GetCurrentProcess().WorkingSet64;
+            using var process = Process.GetCurrentProcess();
+            long memoryAfter = process.WorkingSet64;
+            long privateMemory = process.PrivateMemorySize64;
+            long managedMemory = GC.GetTotalMemory(forceFullCollection: false);
             double deltaMb = (memoryAfter - memoryBefore) / 1024d / 1024d;
             string level = timer.ElapsedMilliseconds >= 5000 ? "LANGSAM · " : string.Empty;
             Logger.Log($"{level}Startphase '{stage}': {timer.ElapsedMilliseconds} ms; " +
-                $"Arbeitsspeicher {memoryAfter / 1024d / 1024d:0.0} MB ({deltaMb:+0.0;-0.0;0.0} MB).");
+                $"Working Set {memoryAfter / 1024d / 1024d:0.0} MB ({deltaMb:+0.0;-0.0;0.0} MB); " +
+                $"privat {privateMemory / 1024d / 1024d:0.0} MB; verwaltet {managedMemory / 1024d / 1024d:0.0} MB.");
         }
     }
 }

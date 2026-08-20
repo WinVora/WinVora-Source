@@ -32,8 +32,7 @@ namespace WinVora
             SystemInfoSnapshot snapshot;
             try
             {
-                snapshot = _cachedSnapshot ??
-                    await SystemInfoProvider.GetFullSnapshotAsync(_startupCancellation.Token);
+                snapshot = await EnsureFullSystemSnapshotAsync(_startupCancellation.Token);
             }
             catch (Exception ex)
             {

@@ -16,7 +16,8 @@ namespace WinVora
         PerformanceFindingSeverity Severity,
         string ActionText,
         string TargetPage,
-        string Glyph);
+        string Glyph,
+        AutostartEntry? StartupEntry = null);
 
     internal sealed record PerformanceAnalysisResult(
         IReadOnlyList<PerformanceFinding> Findings,
@@ -56,7 +57,8 @@ namespace WinVora
             var passed = new List<string>();
             int checks = 0;
             cancellationToken.ThrowIfCancellationRequested();
-            var telemetry = HardwareTelemetryService.GetSnapshot(refreshSensors: true, cancellationToken);
+            var telemetry = HardwareTelemetryService.GetSnapshot(
+                refreshSensors: true, cancellationToken, extendedSensors: true);
 
             checks++;
             if (RestartDetectionService.IsExplicitWindowsRestartPending())
@@ -132,17 +134,30 @@ namespace WinVora
             var entries = AutostartService.GetEntries();
             cancellationToken.ThrowIfCancellationRequested();
             int enabled = entries.Count(entry => entry.Enabled);
-            int missing = entries.Count(entry => !AutostartService.CommandTargetExists(entry.Command));
+            var missingEntries = entries
+                .Where(entry => !AutostartService.CommandTargetExists(entry.Command))
+                .ToList();
             checks += 2;
             if (enabled > 8)
                 findings.Add(new PerformanceFinding(Localization.T("Performance.StartupTitle"),
                     Localization.F("Performance.StartupDetail", enabled), PerformanceFindingSeverity.Warning,
                     Localization.T("Performance.OpenStartup"), "Autostart", "\uE768"));
             else passed.Add(Localization.T("Performance.PassStartupCount"));
-            if (missing > 0)
-                findings.Add(new PerformanceFinding(Localization.T("Performance.MissingStartupTitle"),
-                    Localization.F("Performance.MissingStartupDetail", missing), PerformanceFindingSeverity.Warning,
-                    Localization.T("Performance.OpenStartup"), "Autostart", "\uE7BA"));
+            if (missingEntries.Count > 0)
+            {
+                foreach (var entry in missingEntries)
+                {
+                    string target = AutostartService.TryGetCommandTargetPath(entry.Command, out string path)
+                        ? path
+                        : entry.Command;
+                    findings.Add(new PerformanceFinding(
+                        Localization.F("Performance.MissingStartupEntryTitle", entry.Name),
+                        Localization.F("Performance.MissingStartupEntryDetail", target),
+                        PerformanceFindingSeverity.Warning,
+                        Localization.T("Performance.RemoveStartupEntry"),
+                        "RemoveMissingStartup", "\uE7BA", entry));
+                }
+            }
             else passed.Add(Localization.T("Performance.PassStartupFiles"));
         }
 

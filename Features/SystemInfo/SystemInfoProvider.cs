@@ -27,6 +27,8 @@ namespace WinVora
         private static readonly TimeSpan SectionCacheLifetime = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan SectionTimeout = TimeSpan.FromSeconds(8);
 
+        public static void InvalidateLocalizedCache() => SectionCacheUtc.Clear();
+
         public static Task<(string Antivirus, string Firewall)> GetFastSecurityStatusAsync(CancellationToken cancellationToken = default)
         {
             return RunMeasuredAsync("Sicherheit (Schnellprüfung)", () => Task.Run(() =>
@@ -38,7 +40,11 @@ namespace WinVora
 
                 try
                 {
-                    antivirus = SecurityStatusEvaluator.Format(ReadAntivirusState(), en);
+                    // Der Dashboard-Status darf nicht den kompletten WMI-Stack
+                    // samt Defender- und SecurityCenter-Providern in den
+                    // Hauptprozess laden. Die ausführliche Prüfung folgt erst
+                    // in den Sicherheitsdetails.
+                    antivirus = SecurityStatusEvaluator.Format(ReadFastAntivirusState(), en);
                 }
                 catch (Exception ex) { Logger.LogErrorOnce("Schnellprüfung Antivirus", ex); }
 
@@ -72,6 +78,15 @@ namespace WinVora
         }
 
         // ================= FULL SNAPSHOT =================
+        public static async Task<SystemInfoSnapshot> GetDashboardSnapshotAsync(
+            CancellationToken cancellationToken = default)
+        {
+            lock (SnapshotLock) FillBasic(CachedSnapshot);
+            await RefreshSectionCoreAsync(
+                CachedSnapshot, SystemInfoSection.Drives, force: false, cancellationToken);
+            lock (SnapshotLock) return CachedSnapshot.Clone();
+        }
+
         public static async Task<SystemInfoSnapshot> GetFullSnapshotAsync(CancellationToken cancellationToken = default)
         {
             lock (SnapshotLock) FillBasic(CachedSnapshot);

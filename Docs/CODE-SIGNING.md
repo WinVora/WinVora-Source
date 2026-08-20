@@ -19,6 +19,22 @@ published release asset; it does not establish the publisher identity by itself.
    release job unless its status is `Valid`.
 6. Generate `SHA256SUMS.txt` from the signed installer and publish both files.
 
+## Prepared GitHub Actions integration
+
+The release workflow is ready to sign both `publish/WinVora.exe` and the final
+installer as soon as a trusted PFX is available. Configure these encrypted
+repository or protected-environment secrets:
+
+- `WINVORA_SIGNING_PFX_BASE64`: Base64-encoded PFX file
+- `WINVORA_SIGNING_PFX_PASSWORD`: PFX password
+
+`scripts/Sign-Artifact.ps1` imports the certificate only into the ephemeral
+runner's current-user certificate store, signs with SHA-256 and an RFC 3161
+timestamp, verifies the result, and removes both the certificate and temporary
+PFX. When the secrets are absent, beta builds remain unsigned and the workflow
+states this explicitly. Secret values and certificate files must never be added
+to source control or workflow artifacts.
+
 ## Current user guidance
 
 Until signing is available, users should download WinVora only from the official

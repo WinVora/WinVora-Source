@@ -134,6 +134,18 @@ namespace WinVora
             return SecurityComponentState.Unknown;
         }
 
+        private static SecurityComponentState ReadFastAntivirusState()
+        {
+            // Für den schnellen Dashboard-Status wird absichtlich nur der
+            // native Dienststatus gelesen. Ist Defender aktiv, ist das Ergebnis
+            // eindeutig. Ist er nicht aktiv, kann ein Drittanbieter-Virenschutz
+            // übernommen haben; deshalb hier konservativ "nicht prüfbar" statt
+            // fälschlich ein Sicherheitsproblem zu melden.
+            if (!TryGetServiceRunning("WinDefend", out bool defenderRunning))
+                return SecurityComponentState.Unknown;
+            return defenderRunning ? SecurityComponentState.Active : SecurityComponentState.Unknown;
+        }
+
         private static bool TryGetServiceRunning(string serviceName, out bool running)
         {
             running = false;

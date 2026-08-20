@@ -47,8 +47,15 @@ namespace WinVora
 
             try
             {
-                var snapshot = (_cachedSnapshot ?? await SystemInfoProvider.GetFullSnapshotAsync(token)).Clone();
-                await SystemInfoProvider.RefreshSectionAsync(snapshot, SystemInfoSection.Security, token);
+                // Für den PC-Check werden nur Windows-, Sicherheits- und
+                // Akkudaten benötigt. Das vollständige Systeminfo-Paket würde
+                // unnötig GPU, Netzwerk, Mainboard und Laufwerke laden und den
+                // Nutzer länger im Ladezustand halten.
+                var snapshot = (_cachedSnapshot ?? new SystemInfoSnapshot()).Clone();
+                await Task.WhenAll(
+                    SystemInfoProvider.RefreshSectionAsync(snapshot, SystemInfoSection.OperatingSystem, token),
+                    SystemInfoProvider.RefreshSectionAsync(snapshot, SystemInfoSection.Security, token),
+                    SystemInfoProvider.RefreshSectionAsync(snapshot, SystemInfoSection.Battery, token));
                 var result = await PerformanceAnalysisService.AnalyzeAsync(
                     _wingetRows.Count, _securityHealthState, snapshot, token);
                 if (token.IsCancellationRequested || _currentPageKey != "Performance") return;
@@ -155,6 +162,8 @@ namespace WinVora
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var iconHost = new Border
             {
@@ -198,16 +207,51 @@ namespace WinVora
                 Padding = new Thickness(12, 7, 12, 7),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            action.Click += async (_, __) => await OpenPerformanceTargetAsync(finding.TargetPage);
+            action.Click += async (_, __) => await OpenPerformanceTargetAsync(finding);
             Grid.SetColumn(action, 2);
             grid.Children.Add(action);
+
+            card.SizeChanged += (_, args) =>
+            {
+                bool compact = args.NewSize.Width < 720;
+                Grid.SetRow(action, compact ? 1 : 0);
+                Grid.SetColumn(action, compact ? 1 : 2);
+                action.HorizontalAlignment = compact
+                    ? HorizontalAlignment.Left
+                    : HorizontalAlignment.Stretch;
+                action.Margin = compact
+                    ? new Thickness(0, 10, 0, 0)
+                    : new Thickness(0);
+            };
 
             card.Child = grid;
             return card;
         }
 
-        private async Task OpenPerformanceTargetAsync(string targetPage)
+        private async Task OpenPerformanceTargetAsync(PerformanceFinding finding)
         {
+            string targetPage = finding.TargetPage;
+            if (targetPage == "RemoveMissingStartup" && finding.StartupEntry is { } startupEntry)
+            {
+                bool confirmed = await ConfirmAsync(
+                    Localization.T("Performance.RemoveStartupConfirmTitle"),
+                    Localization.F("Performance.RemoveStartupConfirmMessage", startupEntry.Name),
+                    Localization.T("Performance.RemoveStartupEntry"),
+                    respectDeleteConfirmationSetting: false);
+                if (!confirmed) return;
+
+                if (AutostartService.RemoveEntry(startupEntry))
+                {
+                    ShowInfo(Localization.F("Performance.RemoveStartupSuccess", startupEntry.Name));
+                    await AnalyzePerformanceAsync();
+                }
+                else
+                {
+                    ShowInfo(Localization.F("Performance.RemoveStartupFailed", startupEntry.Name), InfoBarSeverity.Error);
+                }
+                return;
+            }
+
             if (targetPage == "WindowsUpdate")
             {
                 OpenPerformanceTool("ms-settings:windowsupdate");

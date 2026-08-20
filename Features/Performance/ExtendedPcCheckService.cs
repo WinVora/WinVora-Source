@@ -164,13 +164,16 @@ namespace WinVora
             token.ThrowIfCancellationRequested();
             string since = ManagementDateTimeConverter.ToDmtfDateTime(DateTime.Now.AddDays(-7));
             using var searcher = Search(@"root\CIMV2",
-                $"SELECT SourceName FROM Win32_ReliabilityRecords WHERE TimeGenerated >= '{since}' " +
+                $"SELECT SourceName, ProductName, Message FROM Win32_ReliabilityRecords WHERE TimeGenerated >= '{since}' " +
                 "AND (SourceName='Application Error' OR SourceName='Windows Error Reporting')");
-            int crashes = searcher.Get().Cast<ManagementObject>().Take(100).Count();
+            var records = searcher.Get().Cast<ManagementObject>().Take(100).ToList();
+            int crashes = records.Count;
+            string applications = FormatFrequentNames(records.Select(ReadCrashedApplication), 5);
             checks++;
             if (crashes >= 5)
-                findings.Add(Finding("Performance.ReliabilityTitle", "Performance.ReliabilityDetail",
-                    PerformanceFindingSeverity.Warning, "Performance.OpenReliability", "ReliabilityMonitor", "\uE9D9", crashes));
+                findings.Add(Finding("Performance.ReliabilityTitle", "Performance.ReliabilityAppsDetail",
+                    PerformanceFindingSeverity.Warning, "Performance.OpenReliability", "ReliabilityMonitor", "\uE9D9",
+                    crashes, string.IsNullOrWhiteSpace(applications) ? Localization.T("Performance.UnknownApplications") : applications));
             else passed.Add(Localization.T("Performance.PassReliability"));
         }
 
@@ -215,15 +218,71 @@ namespace WinVora
             token.ThrowIfCancellationRequested();
             string since = ManagementDateTimeConverter.ToDmtfDateTime(DateTime.Now.AddDays(-7));
             using var searcher = Search(@"root\CIMV2",
-                $"SELECT EventCode FROM Win32_NTLogEvent WHERE Logfile='System' " +
+                $"SELECT EventCode, Message, InsertionStrings FROM Win32_NTLogEvent WHERE Logfile='System' " +
                 $"AND SourceName='Service Control Manager' AND TimeGenerated >= '{since}' " +
                 "AND (EventCode=7000 OR EventCode=7001 OR EventCode=7009 OR EventCode=7011 OR EventCode=7023 OR EventCode=7031)");
-            int failures = searcher.Get().Cast<ManagementObject>().Take(100).Count();
+            var events = searcher.Get().Cast<ManagementObject>().Take(100).ToList();
+            int failures = events.Count;
+            string services = FormatFrequentNames(events.Select(ReadServiceName), 5);
             checks++;
             if (failures >= 3)
-                findings.Add(Finding("Performance.ServiceFailuresTitle", "Performance.ServiceFailuresDetail",
-                    PerformanceFindingSeverity.Warning, "Performance.OpenEventViewer", "EventViewerSystem", "\uE7BA", failures));
+                findings.Add(Finding("Performance.ServiceFailuresTitle", "Performance.ServiceFailuresNamesDetail",
+                    PerformanceFindingSeverity.Warning, "Performance.OpenServices", "Services", "\uE7BA",
+                    failures, string.IsNullOrWhiteSpace(services) ? Localization.T("Performance.UnknownServices") : services));
             else passed.Add(Localization.T("Performance.PassServices"));
+        }
+
+        private static string? ReadCrashedApplication(ManagementObject item)
+        {
+            string? product = item["ProductName"]?.ToString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(product) &&
+                !product.Equals("Windows", StringComparison.OrdinalIgnoreCase))
+                return product;
+
+            string message = item["Message"]?.ToString() ?? string.Empty;
+            foreach (string line in message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int separator = line.IndexOf(':');
+                if (separator < 0) continue;
+                string label = line[..separator];
+                if (!label.Contains("application", StringComparison.OrdinalIgnoreCase) &&
+                    !label.Contains("anwendung", StringComparison.OrdinalIgnoreCase)) continue;
+                string value = line[(separator + 1)..].Trim();
+                if (!string.IsNullOrWhiteSpace(value)) return value;
+            }
+            return null;
+        }
+
+        private static string? ReadServiceName(ManagementObject item)
+        {
+            if (item["InsertionStrings"] is string[] values)
+            {
+                string? first = values.FirstOrDefault(value =>
+                    !string.IsNullOrWhiteSpace(value) &&
+                    value.Length <= 160 &&
+                    value.Any(char.IsLetter));
+                if (!string.IsNullOrWhiteSpace(first))
+                {
+                    string name = first.Trim();
+                    int suffix = name.LastIndexOf('_');
+                    if (suffix > 0 && name.Length - suffix is >= 6 and <= 13 &&
+                        name[(suffix + 1)..].All(Uri.IsHexDigit))
+                        name = name[..suffix];
+                    return name;
+                }
+            }
+            return null;
+        }
+
+        private static string FormatFrequentNames(IEnumerable<string?> names, int maximum)
+        {
+            return string.Join(", ", names
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .GroupBy(name => name!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .Take(maximum)
+                .Select(group => group.Count() > 1 ? $"{group.Key} ({group.Count()}×)" : group.Key));
         }
 
         private static void AnalyzeVirtualMemory(List<PerformanceFinding> findings, List<string> passed,

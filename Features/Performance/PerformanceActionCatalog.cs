@@ -14,6 +14,7 @@ namespace WinVora
                 ["DeviceManager"] = new("devmgmt.msc"),
                 ["ReliabilityMonitor"] = new("perfmon.exe", "/rel"),
                 ["EventViewerSystem"] = new("eventvwr.msc", "/c:System"),
+                ["Services"] = new("services.msc"),
                 ["NetworkSettings"] = new("ms-settings:network-status"),
                 ["PowerOptions"] = new("control.exe", "/name Microsoft.PowerOptions"),
                 ["AdvancedSystemSettings"] = new("SystemPropertiesAdvanced.exe"),

@@ -189,16 +189,25 @@
         BorderThickness="1"
         Click="ChangelogButton_Click">
 
-                        <StackPanel>
-                            <Grid ColumnSpacing="8">
+                        <StackPanel x:Name="NavChangelogContent">
+                            <Grid x:Name="NavChangelogHeader" ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE789;"
+                                <!-- Das Megafon-Glyph besitzt auf der rechten Seite optisch
+                                     mehr Leerraum als links. Die kleine Verschiebung zentriert
+                                     die sichtbare Form im kompakten Sidebar-Button, ohne das
+                                     Raster der ausgeschriebenen Version zu verändern. -->
+                                <FontIcon x:Name="NavChangelogIcon"
+                                          Grid.Column="0" Glyph="&#xE789;"
                                           Foreground="{StaticResource AppForegroundBrush}"
-                                          FontSize="18"/>
+                                          FontSize="18">
+                                    <FontIcon.RenderTransform>
+                                        <TranslateTransform X="0"/>
+                                    </FontIcon.RenderTransform>
+                                </FontIcon>
                                 <TextBlock Grid.Column="1" x:Name="NavVersionText"
                                            Foreground="{StaticResource AppForegroundBrush}"
                                            FontWeight="SemiBold"

@@ -29,6 +29,7 @@ namespace WinVora
         private DispatcherTimer? _liveUsageTimer;
         private Window? _changelogWindow;
         private SystemInfoSnapshot? _cachedSnapshot;
+        private bool _fullSystemSnapshotLoaded;
         private bool _isLoadingSnapshot;
         private readonly UpdateOperationController _updateOperations = new();
         private readonly StorageOperationController _storageOperations = new();
@@ -592,10 +593,8 @@ namespace WinVora
         // stehen, bis man die Seite manuell neu geladen hat.
         private void RefreshLoadedPagesForLanguageChange()
         {
-            if (_cachedSnapshot != null)
-            {
-                ApplySnapshot(_cachedSnapshot);
-            }
+            if (_cachedSnapshot != null || _isLoadingSnapshot)
+                RequestSystemInfoLanguageRefresh();
 
             if (_cachedPackages != null)
             {
@@ -747,7 +746,9 @@ namespace WinVora
             };
             primary = primary.OrderBy(item => _settings.DashboardCardOrder.FindIndex(key => key.Equals(item.Key, StringComparison.OrdinalIgnoreCase))).ToArray();
             performance = performance.OrderBy(item => _settings.DashboardCardOrder.FindIndex(key => key.Equals(item.Key, StringComparison.OrdinalIgnoreCase))).ToArray();
-            int maxColumns = _narrowLayoutState == true ? 2 : 3;
+            int maxColumns = RootGrid.ActualWidth < 820
+                ? 1
+                : _narrowLayoutState == true ? 2 : 3;
 
             void Layout(Grid grid, (string Key, FrameworkElement Card)[] cards, int firstRow)
             {
@@ -763,7 +764,14 @@ namespace WinVora
                 {
                     Grid.SetRow(visible[index].Card, firstRow + index / columns);
                     Grid.SetColumn(visible[index].Card, index % columns);
-                    Grid.SetColumnSpan(visible[index].Card, 1);
+                    // Bei drei Karten in einem zweispaltigen Layout wirkte die
+                    // letzte Karte wie ein versehentlich halbierter Rest. Eine
+                    // einzelne Karte in der letzten Zeile nutzt deshalb die
+                    // gesamte verfügbare Breite.
+                    bool onlyCardInLastRow = index == visible.Count - 1 &&
+                                             visible.Count % columns == 1;
+                    Grid.SetColumnSpan(visible[index].Card,
+                        onlyCardInLastRow ? columns : 1);
                 }
             }
 
@@ -1373,8 +1381,8 @@ namespace WinVora
         // Winget-Status wirklich fertig geladen sind.
         private async Task LoadInitialDataAsync()
         {
-            // PerformanceCounter und LibreHardwareMonitor gemeinsam früh
-            // öffnen. So existiert nur ein synchronisierter Warm-up-Pfad.
+            // Nur den leichten CPU-Zähler vorbereiten. Die native Sensorbibliothek
+            // wird erst einige Sekunden später beziehungsweise bei Bedarf geladen.
             _ = Task.Run(HardwareTelemetryService.WarmUp);
 
             StartupStatusText.Text = Localization.CurrentLanguage == "en" ? "Preparing interface..." : "Oberfläche wird vorbereitet...";
@@ -1430,10 +1438,18 @@ namespace WinVora
             {
                 try
                 {
-                    _cachedSnapshot = await StartupPerformanceTracker.MeasureAsync(
-                        "Systeminformationen",
-                        () => SystemInfoProvider.GetFullSnapshotAsync(cancellationToken));
-                    ApplySnapshot(_cachedSnapshot);
+                    var dashboardSnapshot = await StartupPerformanceTracker.MeasureAsync(
+                        "Dashboard-Systeminformationen",
+                        () => SystemInfoProvider.GetDashboardSnapshotAsync(cancellationToken));
+                    // Falls der Nutzer während dieser kurzen Hintergrundphase
+                    // bereits die Systeminfo geöffnet hat, darf der kleine
+                    // Dashboard-Snapshot den inzwischen vollständigen Stand
+                    // nicht wieder überschreiben.
+                    if (!_fullSystemSnapshotLoaded)
+                    {
+                        _cachedSnapshot = dashboardSnapshot;
+                        ApplySnapshot(dashboardSnapshot);
+                    }
                 }
                 catch (Exception ex) { Logger.LogError("Startladen Systeminformationen", ex); }
             }
@@ -1961,6 +1977,23 @@ namespace WinVora
             NavVersionText.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
             NavBetaBadge.Visibility = !iconOnly && IsBetaBuild ? Visibility.Visible : Visibility.Collapsed;
             LblNavChangelogHint.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
+            // Im Symbolmodus erhält der Versionsbutton eine echte quadratische
+            // Geometrie. Das Megafon hat innerhalb der Segoe-Schrift links mehr
+            // sichtbares Gewicht; acht Pixel optischer Ausgleich zentrieren die
+            // Form, ohne die ausgeschriebene Sidebar zu verschieben.
+            NavChangelogButton.Width = iconOnly ? 44 : double.NaN;
+            NavChangelogButton.Height = iconOnly ? 44 : double.NaN;
+            NavChangelogButton.HorizontalAlignment = iconOnly
+                ? HorizontalAlignment.Center
+                : HorizontalAlignment.Stretch;
+            NavChangelogContent.HorizontalAlignment = iconOnly
+                ? HorizontalAlignment.Center
+                : HorizontalAlignment.Stretch;
+            NavChangelogHeader.HorizontalAlignment = iconOnly
+                ? HorizontalAlignment.Center
+                : HorizontalAlignment.Stretch;
+            if (NavChangelogIcon.RenderTransform is TranslateTransform changelogOffset)
+                changelogOffset.X = iconOnly ? 8 : 0;
             LblNavContact.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
             SidebarFooterLinks.Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible;
 
@@ -2168,7 +2201,8 @@ namespace WinVora
 
         private async Task LoadSystemSnapshotIfNeededAsync(string loadingText, string errorPrefix)
         {
-            if (_cachedSnapshot != null)
+            bool needsFullSnapshot = _currentPageKey == "System";
+            if (_cachedSnapshot != null && (!needsFullSnapshot || _fullSystemSnapshotLoaded))
             {
                 ApplySnapshot(_cachedSnapshot);
                 StartLiveUsageTimer();
@@ -2185,7 +2219,10 @@ namespace WinVora
 
             try
             {
-                _cachedSnapshot = await SystemInfoProvider.GetFullSnapshotAsync(_startupCancellation.Token);
+                _cachedSnapshot = needsFullSnapshot
+                    ? await EnsureFullSystemSnapshotAsync(_startupCancellation.Token)
+                    : await SystemInfoProvider.GetDashboardSnapshotAsync(_startupCancellation.Token);
+                _fullSystemSnapshotLoaded = needsFullSnapshot;
                 ApplySnapshot(_cachedSnapshot);
                 PageSubtitle.Text = "";
                 StartLiveUsageTimer();
@@ -2201,6 +2238,16 @@ namespace WinVora
                 UpdatesLoadingRing.IsActive = false;
                 UpdatesLoadingRing.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private async Task<SystemInfoSnapshot> EnsureFullSystemSnapshotAsync(CancellationToken cancellationToken)
+        {
+            if (_cachedSnapshot != null && _fullSystemSnapshotLoaded)
+                return _cachedSnapshot;
+
+            _cachedSnapshot = await SystemInfoProvider.GetFullSnapshotAsync(cancellationToken);
+            _fullSystemSnapshotLoaded = true;
+            return _cachedSnapshot;
         }
 
         private async Task LoadDeferredProgramDataAsync()

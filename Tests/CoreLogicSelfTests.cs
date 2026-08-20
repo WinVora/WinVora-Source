@@ -264,6 +264,8 @@ namespace WinVora
             Debug.Assert(PerformanceActionCatalog.TryGetExternalTool("ReliabilityMonitor", out var reliability) &&
                          reliability.Arguments == "/rel");
             Debug.Assert(PerformanceActionCatalog.TryGetExternalTool("EventViewerSystem", out _));
+            Debug.Assert(PerformanceActionCatalog.TryGetExternalTool("Services", out var services) &&
+                         services.FileName.Equals("services.msc", StringComparison.OrdinalIgnoreCase));
 
             var oldPcState = new PcStateSnapshot
             {

@@ -184,7 +184,8 @@ namespace WinVora
             ["Uninstall.ExportTxt"] = ("Als TXT exportieren", "Export as TXT"),
             ["Uninstall.ExportCsvComma"] = ("Als CSV exportieren (Komma)", "Export as CSV (comma)"),
             ["Uninstall.ExportCsvSemicolon"] = ("Als CSV für deutsches Excel (Semikolon)", "Export as CSV for German Excel (semicolon)"),
-        }.Concat(GetDashboardStrings()).Concat(GetAutostartStrings()).Concat(GetDialogStrings()).Concat(GetPerformanceStrings())
+        }.Concat(GetDashboardStrings()).Concat(GetAutostartStrings()).Concat(GetDialogStrings())
+         .Concat(GetPerformanceStrings()).Concat(GetUpdateStrings())
          .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
 
         private static readonly HashSet<string> MissingKeys = new(StringComparer.Ordinal);

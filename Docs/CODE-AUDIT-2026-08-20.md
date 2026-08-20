@@ -1,6 +1,6 @@
 # WinVora – technischer Code-Audit
 
-Stand: 20. August 2026  
+Stand: 20. August 2026, nach Umsetzung der Fix-Roadmap und erneutem Code-/Build-Abgleich
 Auditbasis: aktueller lokaler Arbeitsstand von `WinVora-Source` einschließlich nicht committeter Änderungen  
 Version: `0.8.5-beta.3`
 
@@ -8,7 +8,7 @@ Version: `0.8.5-beta.3`
 
 WinVora ist eine unverpackte WinUI-3-Anwendung auf .NET 8 für x64. Die Anwendung ist self-contained, läuft grundsätzlich mit normalen Benutzerrechten und erhöht nur eng begrenzte Operationen. Die fachlichen Bereiche sind in partielle `MainWindow`-Dateien, Services, Provider und neue Operation-Controller aufgeteilt. Ein klassisches MVVM- oder DI-Modell wird nicht verwendet; UI-Zustand und Orchestrierung liegen weiterhin überwiegend in `MainWindow`.
 
-Positiv bewertet wurden insbesondere:
+Positiv bewertet werden insbesondere:
 
 - `asInvoker` als Standard und ein begrenzter Admin-Helper für Storage-Aktionen;
 - exakte Allowlist und Reparse-Point-Schutz für `Windows.old` und `$WINDOWS.~BT`;
@@ -18,17 +18,23 @@ Positiv bewertet wurden insbesondere:
 - getrennte Defender-, Firewall-, TPM- und BitLocker-Abfragen mit Fallbacks;
 - begrenzte Logrotation und Anonymisierung des Supportberichts;
 - erfolgreicher Release-Publish ohne Compilerwarnungen;
+- ein echtes MSTest-Projekt mit 20 bestandenen Release-Tests und CI-Test-Gate;
+- auf unveränderliche Commit-SHAs fixierte GitHub Actions;
 - keine aktuell bekannten verwundbaren direkten oder transitiven NuGet-Pakete.
 
-Es wurde keine bestätigte kritische Sicherheitslücke gefunden. Vor einem stabilen Release sollten jedoch vier Findings mit hoher Priorität behoben werden. Besonders relevant sind ein fehlerhafter Timeout bei geschützten Storage-Hilfsprozessen, synchrone Sensorarbeit auf dem UI-Thread, ein zu optimistischer Firewallstatus und eine WinGet-Fehlerbehandlung, die bestimmte fehlgeschlagene Prüfungen als „keine Updates“ darstellen kann.
+Es wurde keine bestätigte kritische Sicherheitslücke gefunden. Die vier ursprünglichen Findings mit hoher Priorität sind im aktuellen Arbeitsstand behoben: Storage-Hilfsprozesse laufen über den gemeinsamen ProcessRunner mit Streamdrain, Timeout und Prozessbaumabbruch; Live-Telemetrie wird im ThreadPool gemessen; Firewallprofile werden konservativ zusammengeführt; jeder von null verschiedene WinGet-Exitcode wird als Fehler behandelt.
+
+Von 25 dokumentierten Findings sind nach dem Re-Audit 21 behoben, eines teilweise behoben und drei weiterhin offen. Die verbleibenden Punkte sind keine bestätigten Release-Blocker hoher Priorität. Sie betreffen die grundsätzlich tabellenbasierte WinGet-Auswertung, verbleibende UI-Kopplung und die noch fehlende Authenticode-Signatur.
 
 ## B. Kritische Probleme
 
 Keine bestätigten kritischen Findings.
 
-## C. Hohe Priorität
+## C. Hohe Priorität – im aktuellen Stand behoben
 
 ### H-01 – Geschützte Storage-Hilfsprozesse können hängen oder parallel zur Löschung weiterlaufen
+
+**Status im Re-Audit:** Behoben. `SystemAccess.ProcessRunner` leert beide Streams, erzwingt Timeout/Abbruch, beendet den Prozessbaum und liefert einen auswertbaren Exitcode. `takeown` und `icacls` werden vor dem Löschpfad geprüft.
 
 **Priorität:** Hoch  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -53,6 +59,8 @@ Keine bestätigten kritischen Findings.
 
 ### H-02 – Live-Sensorabfragen laufen im Normalfall auf dem UI-Thread
 
+**Status im Re-Audit:** Behoben. `HardwareTelemetryService.GetSnapshotAsync` serialisiert Messungen und führt den gesamten Messkörper ausdrücklich im ThreadPool aus.
+
 **Priorität:** Hoch  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Services/HardwareTelemetryService.cs`, `Features/SystemInfo/MainWindow.SystemInfo.cs`  
@@ -74,6 +82,8 @@ Keine bestätigten kritischen Findings.
 
 ### H-03 – Firewallstatus wird bei nur einem aktiven Profil als vollständig aktiv gemeldet
 
+**Status im Re-Audit:** Behoben. Alle gefundenen Firewallprofile werden gemeinsam und konservativ bewertet; deaktivierte oder unbekannte Profile können kein vollständig aktives Ergebnis mehr erzeugen.
+
 **Priorität:** Hoch  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Features/SystemInfo/SystemInfoProvider.cs`, `Features/SystemInfo/SystemInfoProvider.Security.cs`  
@@ -94,6 +104,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Dashboardstatus, Sicherheitskarte und `SecurityStatusEvaluator` müssen dieselben Zustände verstehen.
 
 ### H-04 – Fehlgeschlagene WinGet-Prüfung kann als leere Updateliste erscheinen
+
+**Status im Re-Audit:** Behoben. `WingetDiscoveryService` behandelt jeden von null verschiedenen Exitcode unabhängig vom Inhalt von `stderr` als Fehler. Ein automatisierter Release-Test deckt diesen Fall ab.
 
 **Priorität:** Hoch  
 **Sicherheit der Einschätzung:** Sehr wahrscheinlich  
@@ -118,6 +130,8 @@ Keine bestätigten kritischen Findings.
 
 ### M-01 – CancellationToken fehlt bei der tatsächlich verwendeten normalen Storage-Löschung
 
+**Status im Re-Audit:** Behoben. Der aktive Löschpfad reicht `_storageOperations.Token` bis `StorageService.DeleteCategoryAsync` und die darunterliegenden Operationen weiter.
+
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Features/Storage/MainWindow.Storage.Operations.cs`  
@@ -138,6 +152,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Teilweise gelöschte Kategorien müssen weiterhin korrekt als abgebrochen protokolliert werden.
 
 ### M-02 – Abgelehnte Navigation startet trotzdem unsichtbare Seitenarbeit
+
+**Status im Re-Audit:** Behoben. Navigationshandler und Command-Palette starten Seitenarbeit nur noch nach erfolgreichem `TrySetPage`.
 
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -160,6 +176,8 @@ Keine bestätigten kritischen Findings.
 
 ### M-03 – Interne Diagnose kann trotz angeblichem Timeout unbegrenzt hängen
 
+**Status im Re-Audit:** Behoben. Diagnoseprozesse verwenden den gemeinsamen ProcessRunner; WMI-Diagnosen besitzen zusätzlich ein begrenztes `WaitAsync`.
+
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Features/Diagnostics/MainWindow.InternalDiagnostics.cs`  
@@ -180,6 +198,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Gering; betroffen ist nur die interne Diagnose.
 
 ### M-04 – Windows-Aktivierung kann durch ein anderes lizenziertes Microsoft-Produkt positiv werden
+
+**Status im Re-Audit:** Behoben. Die WMI-Abfrage filtert auf die Windows-Application-ID `55c92734-d682-4d71-983e-d6ec3f16059f`.
 
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Sehr wahrscheinlich  
@@ -202,6 +222,8 @@ Keine bestätigten kritischen Findings.
 
 ### M-05 – Mehrere WinVora-Instanzen sind nicht koordiniert
 
+**Status im Re-Audit:** Behoben. `AppInstance.FindOrRegisterForKey` koordiniert eine Hauptinstanz und leitet weitere Aktivierungen an sie weiter.
+
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Möglich  
 **Datei:** `App/App.xaml.cs`, `Features/Settings/AppSettings.cs`  
@@ -222,6 +244,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Start-, Aktivierungs- und Deep-Link-Verhalten.
 
 ### M-06 – CPU-PerformanceCounter wird beim Start doppelt und unsynchronisiert initialisiert
+
+**Status im Re-Audit:** Behoben. Warm-up und Messung laufen zentral über `HardwareTelemetryService`/`SystemInfoProvider`; parallele Telemetrie wird durch ein `SemaphoreSlim` verhindert.
 
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Sehr wahrscheinlich  
@@ -244,6 +268,8 @@ Keine bestätigten kritischen Findings.
 
 ### M-07 – Sprachwechsel verwendet sprachabhängige Werte aus dem alten Snapshot weiter
 
+**Status im Re-Audit:** Behoben. Ein Sprachwechsel verwirft den sprachabhängigen Systeminfo-Cache und lädt den Snapshot versionsgesichert neu. Schnelle weitere Sprachwechsel können den älteren Refresh überholen, ohne veraltete Werte wieder anzuwenden.
+
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `App/MainWindow.xaml.cs`, `Features/SystemInfo/MainWindow.SystemInfo.cs`  
@@ -264,6 +290,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Systeminfo, Dashboard-Sicherheit und Cacheformat.
 
 ### M-08 – Eigenupdate besitzt keinen durchgängigen CancellationToken
+
+**Status im Re-Audit:** Behoben. Prüfung, Download und Validierung akzeptieren und propagieren Abbruchtoken; Fensterabschluss bricht laufende Start-/Updatearbeit ab.
 
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -286,6 +314,8 @@ Keine bestätigten kritischen Findings.
 
 ### M-09 – Tests sind Debug-Selbsttests und blockieren keinen Release
 
+**Status im Re-Audit:** Behoben. `Tests/WinVora.Tests.csproj` enthält 16 Release-Tests; der GitHub-Workflow führt `dotnet test` vor Publish und Installerbau aus.
+
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Tests/CoreLogicSelfTests.cs`, `.github/workflows/release.yml`  
@@ -306,6 +336,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Gering; Produktionscode muss gegebenenfalls über `InternalsVisibleTo` testbar gemacht werden.
 
 ### M-10 – Startfortschritt und tatsächlicher Startablauf widersprechen sich
+
+**Status im Re-Audit:** Behoben. Der sichtbare Startfortschritt beschreibt zwei tatsächlich ausgeführte UI-Phasen; langsamere Update- und Detailabfragen laufen anschließend im Hintergrund.
 
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -328,6 +360,8 @@ Keine bestätigten kritischen Findings.
 
 ### M-11 – WinGet-Tabellenparser bleibt von Konsolenformatierung abhängig
 
+**Status im Re-Audit:** Offen, aber weiter abgesichert. Der Parser leitet Spalten primär aus der sprachneutralen Trennlinie ab, entfernt ANSI-Steuerzeichen und besitzt Tests für deutsche, englische und französische Varianten. Die Paketextraktion bleibt wegen der verfügbaren WinGet-Schnittstelle grundsätzlich tabellenabhängig.
+
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Möglich  
 **Datei:** `Features/Updates/WingetDiscoveryService.cs`, `Features/Updates/WingetTableParser.cs`  
@@ -348,6 +382,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Updateerkennung und Ergebnisnachprüfung.
 
 ### M-12 – Bekannte Anwendung wird synchron und gewaltsam im UI-Ablauf beendet
+
+**Status im Re-Audit:** Behoben. WinVora fordert Claude zuerst über `CloseMainWindow` zum geordneten Schließen auf und wartet asynchron. Ein Prozessbaumabbruch erfolgt nur nach einer zweiten, verständlichen Nutzerbestätigung; Abbruch und Fehler werden als eigene Updateergebnisse behandelt.
 
 **Priorität:** Mittel  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -372,6 +408,8 @@ Keine bestätigten kritischen Findings.
 
 ### L-01 – Legacy-Cleanup schreibt den Erfolgsmarker auch nach fehlgeschlagenem Löschen
 
+**Status im Re-Audit:** Behoben. Der Marker wird nur geschrieben, wenn jede alte Aufgabe nicht mehr existiert oder erfolgreich gelöscht wurde; Fehler führen zu einem späteren Wiederholungsversuch.
+
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Infrastructure/LegacyFeatureCleanup.cs`  
@@ -392,6 +430,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Bei zu aggressivem Wiederholen könnten bei jedem Start unnötige Aufgabenplanerzugriffe entstehen. Deshalb Wiederholung begrenzen.
 
 ### L-02 – Sensorfehler werden vollständig verschluckt
+
+**Status im Re-Audit:** Behoben. Sensor-/Hardwarefehler werden einmalig protokolliert; fehlerhafte Hardwareobjekte werden für weitere Ticks übersprungen.
 
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -414,6 +454,8 @@ Keine bestätigten kritischen Findings.
 
 ### L-03 – Lokalisierungsvalidator prüft leere Übersetzungen nicht tatsächlich
 
+**Status im Re-Audit:** Behoben. `Test-Localization.ps1` erkennt leere deutsche und englische Werte und lässt den Build bei Fehlern scheitern.
+
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `scripts/Test-Localization.ps1`  
@@ -434,6 +476,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Zu breite Textsuche erzeugt False Positives in Kommentaren, Logs und technischen Bezeichnern. Der Scanner braucht klare Kontexte und Ausnahmen.
 
 ### L-04 – Verbliebene fest eingebaute deutsche UI-Texte
+
+**Status im Re-Audit:** Behoben. Die identifizierten dynamischen Update-, Storage- und Einstellungswerte liegen im Übersetzungskatalog; der Release-Build prüft aktuell 352 vollständige Schlüssel sowie typische C#- und XAML-Kontexte.
 
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -456,6 +500,8 @@ Keine bestätigten kritischen Findings.
 
 ### L-05 – Ungenutzter Storage-Codepfad
 
+**Status im Re-Audit:** Behoben. Der ungenutzte `DeleteCategoriesAsync`-Pfad wurde entfernt; die UI besitzt nur noch den zentralen produktiven Löschablauf.
+
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Features/Storage/MainWindow.Storage.Operations.cs`  
@@ -476,6 +522,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Reflection- oder XAML-Aufrufe wären theoretisch möglich, wurden im Projekt aber nicht gefunden. Vor Entfernung Release-Build und Storage-UI testen.
 
 ### L-06 – Sehr große UI-Orchestrierung bleibt schwer testbar
+
+**Status im Re-Audit:** Offen, aber reduziert. Operation-Controller, Systemzugriffsinterfaces, Provider und Feature-Partialdateien verkleinern die fachliche Kopplung; `MainWindow` bleibt trotzdem der zentrale UI-Orchestrator.
 
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
@@ -498,6 +546,8 @@ Keine bestätigten kritischen Findings.
 
 ### L-07 – Abhängigkeiten sind teilweise nicht auf dem neuesten Stand
 
+**Status im Re-Audit:** Teilweise behoben. Windows App SDK wurde für die Beta kontrolliert auf 2.4.0 und `System.Management` auf 10.0.11 aktualisiert. Release-Build, 20 Tests und self-contained Publish sind sauber; die übrigen `System.*`-Pakete bleiben bewusst auf der zum .NET-8-Ziel passenden Hauptversion, statt blind auf 10.x gehoben zu werden.
+
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `WinVora.csproj`  
@@ -518,6 +568,8 @@ Keine bestätigten kritischen Findings.
 **Risiko der Änderung:** Windows App SDK-Updates können XAML-, Runtime- und Deploymentverhalten verändern; Major-Upgrades können Binärkompatibilität brechen.
 
 ### L-08 – GitHub Actions sind nur auf bewegliche Major-Tags fixiert
+
+**Status im Re-Audit:** Behoben. Checkout, .NET-Setup, Artefakttransfer und Release-Action sind auf konkrete Commit-SHAs fixiert.
 
 **Priorität:** Niedrig  
 **Sicherheit der Einschätzung:** Möglich  
@@ -540,6 +592,8 @@ Keine bestätigten kritischen Findings.
 
 ### L-09 – Installer ist nicht signiert
 
+**Status im Re-Audit:** Offen mit vorbereiteter Pipeline. `scripts/Sign-Artifact.ps1` signiert Anwendung und Installer optional aus geschützten CI-Secrets, verifiziert die Signatur und entfernt Zertifikat sowie temporäre PFX-Datei. Ohne erworbenes vertrauenswürdiges Zertifikat bleiben Artefakte bewusst unsigniert; SHA-256 wird weiterhin veröffentlicht.
+
 **Priorität:** Niedrig aus Codesicht, hoch für Nutzervertrauen  
 **Sicherheit der Einschätzung:** Bestätigt  
 **Datei:** `Packaging/WinVoraSetup.iss` und `.github/workflows/release.yml`  
@@ -561,116 +615,91 @@ Keine bestätigten kritischen Findings.
 
 ## F. Security
 
-Die Sicherheitsbasis ist insgesamt vernünftig: Hauptprozess ohne dauerhafte Erhöhung, begrenzter Storage-Helper, exakte Kategorie- und Pfadprüfung, Reparse-Point-Schutz, sichere Eigenupdate-Prüfung und keine gefundenen Secrets. Die wichtigsten Sicherheitskorrekturen sind der konservative Firewallstatus und das robuste Beenden der elevierten Storage-Systemprozesse. Zusätzlich sollten Systemprogramme über absolute System32-Pfade gestartet werden, um mögliches PATH-Hijacking weiter zu reduzieren.
+Die Sicherheitsbasis ist nach der Roadmap gut: Hauptprozess ohne dauerhafte Erhöhung, begrenzter Admin-Helper, exakte Kategorie- und Pfadprüfung, Reparse-Point-Schutz, absolute Systempfade, robuster Prozessrunner, konservativer Firewallstatus, HTTPS-/Host-/Hash-Prüfung des Eigenupdates, anonymisierte Diagnose und keine gefundenen Secrets. Die frühere Gefahr weiterlaufender Storage-Hilfsprozesse ist behoben. Das verbleibende sicherheitsnahe Release-Thema ist nicht der Anwendungscode, sondern die fehlende Authenticode-Signatur des Installers.
 
 ## G. Performance
 
-Das größte konkrete Performanceproblem ist die Live-Sensormessung auf dem UI-Thread. Danach folgen die doppelte PerformanceCounter-Initialisierung und manuelle PC-Check-WMI-Abfragen, die zwar Zeitlimits besitzen, aber große Ergebnislisten vollständig materialisieren. Positiv sind begrenzte Storage-Parallelität, Reparse-Point-Schutz, verzögertes Laden von Programmsymbolen und Überlappungsschutz des Live-Timers.
+Die Live-Sensormessung wurde vollständig vom UI-Thread gelöst, zentral serialisiert und kurz zwischengespeichert. Storage-Parallelität ist begrenzt, Reparse Points werden übersprungen, Programmsymbole werden verzögert geladen und Timer können nicht überlappen. Der PC-Check lädt nur noch die tatsächlich benötigten Systembereiche. Langsame native Sensorabfragen werden erkannt, protokolliert und anschließend mit einem längeren Cacheintervall ausgeführt. Reales Profiling auf schwächerer Hardware bleibt trotzdem ein externer Praxistest und ist **nicht abschließend verifizierbar**.
 
 ## H. Architektur
 
-Die neuen Operation-Controller und `SystemAccess`-Schnittstellen sind ein sinnvoller Schritt. Die Architektur ist jedoch weiterhin UI-zentriert: `MainWindow` besitzt Navigation, Zustände, Dialoge, Datenrendering und einen Teil der fachlichen Orchestrierung. Für die nächste Stufe sollten keine pauschalen Frameworks eingeführt werden. Sinnvoll sind kleine, testbare Koordinatoren für Navigation, Telemetrie, Updateerkennung und Storage-Prozesse.
+Operation-Controller, `SystemAccess`-Schnittstellen, zentrale Telemetrie, getrennte Provider und ein echtes Testprojekt haben die Architektur deutlich verbessert. Der neue sprachabhängige Systeminfo-Refresh und die Update-Anwendungsbeendigung liegen als kleine, zweckgebundene MainWindow-Teilmodule vor. Die Anwendung bleibt UI-zentriert; ein riskanter Komplettumbau ist weiterhin nicht gerechtfertigt.
 
 ## I. Release-Risiken
 
-- Falsche grüne Firewallanzeige.
-- Storage-Systemprozesse können nach Timeout weiterlaufen.
-- WinGet-Fehler können als „keine Updates“ erscheinen.
-- UI-Stottern durch Sensorzugriffe.
-- Kein echter automatisierter Test-Gate im Releaseworkflow.
+- WinGet-Paketextraktion bleibt trotz sprachneutraler Spaltenerkennung und zusätzlicher Fixtures abhängig von einer tabellarischen Konsolenausgabe.
 - Nicht signierter Installer erzeugt SmartScreen-Vertrauenshürden.
 - ARM64 wird bewusst nicht unterstützt; der Download muss eindeutig als x64 gekennzeichnet bleiben.
 - Ein echter Test auf einem frischen Windows-PC ohne Entwicklungswerkzeuge wurde im statischen Audit nicht durchgeführt und ist **nicht abschließend verifizierbar**.
 
-## Top-10-Probleme
+## Wichtigste verbleibende Punkte
 
 | Reihenfolge | Problem | Priorität | Auswirkung | Aufwand |
 |---:|---|---|---|---|
-| 1 | Storage-Hilfsprozesse/Timeout | Hoch | Hängen und konkurrierende Löschung | Mittel |
-| 2 | Live-Sensoren im UI-Thread | Hoch | Regelmäßiges UI-Stottern | Klein–Mittel |
-| 3 | Firewallstatus zu optimistisch | Hoch | Falsche Sicherheitsanzeige | Klein–Mittel |
-| 4 | WinGet-Fehler als leere Liste | Hoch | Kernfunktion liefert falsches Ergebnis | Mittel |
-| 5 | Storage-Abbruchtoken fehlt | Mittel | Bereinigung nicht sauber abbrechbar | Klein |
-| 6 | Navigation startet versteckte Arbeit | Mittel | Inkonsistenter Zustand und I/O | Mittel |
-| 7 | Interne Diagnose kann hängen | Mittel | Dauerhafter Ladezustand/Prozessrest | Klein |
-| 8 | Aktivierungsstatus ohne Produktfilter | Mittel | Falsche Windows-Aktivierungsanzeige | Klein |
-| 9 | Doppelte Counter-Initialisierung | Mittel | Handle-/Messwert-Race | Klein |
-| 10 | Keine automatischen Release-Tests | Mittel | Regressionen passieren Pipeline | Mittel |
+| 1 | Frischer-PC-Test noch nicht praktisch durchgeführt | Release-Risiko | Runtime-/Installerprobleme könnten unentdeckt bleiben | Mittel |
+| 2 | Installer nicht signiert | Niedrig im Code, hoch fürs Vertrauen | SmartScreen zeigt unbekannten Herausgeber | Extern/Kosten |
+| 3 | WinGet-Tabellenparser | Mittel, möglich | Neue Ausgabeformate können die Erkennung beeinträchtigen | Mittel |
+| 4 | Windows App SDK 2.4 braucht mehrtägigen Beta-Praxistest | Release-Risiko | XAML-/Runtime-Regressionen könnten erst praktisch auffallen | Mittel |
+| 5 | UI-Orchestrierung bleibt groß | Niedrig | Höhere Regressions- und Wartungsfläche | Laufend |
+| 6 | RAM-Verbrauch nur auf einem leistungsfähigen System gemessen | Optimierung | Potenzial auf schwächerer Hardware unbekannt | Mittel |
+| 7 | Signier-Secrets und Zertifikatsbetrieb noch nicht erprobt | Release-Risiko | Erste signierte Pipeline könnte falsch konfiguriert sein | Mittel |
+| 8 | Hersteller-Updateabläufe bleiben extern | Möglich | Installer können sich trotz korrekter WinGet-Steuerung ungewöhnlich verhalten | Laufend |
+| 9 | ARM64 nicht unterstützt | Bewusste Einschränkung | App läuft nur als x64-Anwendung | Hoch |
+| 10 | Visuelle DPI-Matrix benötigt manuelle Kontrolle | Niedrig | Seltene Layoutfehler bei 175–200 % möglich | Klein–Mittel |
 
 ## Fix-Roadmap
 
-### Phase 1 – Sofort beheben
+### Abgeschlossen
 
-1. `RunHiddenCommand` asynchron, mit Streamdrain, Timeout, Kill und Exitcodeprüfung implementieren.
-2. Rückgabewerte von `takeown` und `icacls` vor der geschützten Löschung prüfen.
-3. Live-Telemetrie vollständig vom UI-Thread lösen.
-4. Firewallprofile vollständig und konservativ bewerten.
-5. WinGet-Exitcode unabhängig vom `stderr` als Fehler behandeln.
+1. Alle ursprünglichen Punkte der Phasen 1 und 2.
+2. Hintergrundtelemetrie, begrenzte PC-Check-Abfragen und realer Startfortschritt aus Phase 3.
+3. Testbare Prozessschnittstellen, Operation-Controller, MSTest-Projekt und CI-Test-Gate aus Phase 4.
+4. Erweiterter Lokalisierungsvalidator, Legacy-Marker, Sensorlogging, Storage-Bereinigung, Action-SHAs und dokumentierte Signierungsstrategie aus Phase 5.
 
-### Phase 2 – Vor Release
+### Noch vor einem stabilen Release offen
 
-1. Storage-CancellationToken im aktiven Löschpfad weiterreichen.
-2. Navigation auf `TrySetPage` beziehungsweise zentral deaktivierte Navigation umstellen.
-3. Interne Diagnose mit denselben Timeouts wie Produktionsabfragen absichern.
-4. Windows-Aktivierung auf Windows-Application-ID filtern.
-5. PerformanceCounter-Warm-up vereinheitlichen und synchronisieren.
-6. Eigenupdate durchgängig abbrechbar machen.
-7. Mehrfachinstanzen koordinieren.
+1. Die in `Docs/RELEASE-QA.md` definierte Matrix auf einem frischen Windows-10/11-x64-PC ohne Entwicklungswerkzeuge praktisch durchführen.
+2. Windows App SDK 2.4 und die neuen Updatepfade mehrere Tage in der Beta verwenden.
+3. Eine vertrauenswürdige Authenticode-Signatur aktivieren, sobald Zertifikat, Budget und sichere Schlüsselverwaltung vorhanden sind.
 
-### Phase 3 – Performance
+### Nachgelagert
 
-1. Messkörper der Hardwaretelemetrie im Hintergrund ausführen.
-2. PC-Check-Abfragen auf benötigte Felder und begrenzte Ergebnisse reduzieren.
-3. Startfortschritt an tatsächliche Phasen anpassen.
-4. Live-Telemetrie mit realen schwachen Systemen profilieren.
-
-### Phase 4 – Architektur und Tests
-
-1. WinGet-Discovery hinter eine testbare Prozessschnittstelle legen.
-2. Storage-Systembefehle hinter einen testbaren ProcessRunner legen.
-3. Neutrale Enums/Modelle statt lokalisierter Providerwerte verwenden.
-4. xUnit-/MSTest-Projekt für Parser, Versionslogik, Security-Evaluator, Storage-Allowlist und Diagnose-Anonymisierung anlegen.
-5. `dotnet test` vor Publish in GitHub Actions ausführen.
-
-### Phase 5 – Polish
-
-1. Restliche feste deutsche Texte zentralisieren.
-2. Lokalisierungsvalidator um leere Werte und mehr UI-Kontexte erweitern.
-3. Legacy-Cleanup-Marker korrigieren.
-4. Sensorfehler einmalig protokollieren.
-5. Toten Storage-Code und überflüssige Leerzeilen entfernen.
-6. Actions optional auf Commit-SHAs fixieren.
-7. Signierungsstrategie dokumentieren.
+1. Weitere reale WinGet-Ausgabevarianten als Fixtures aufnehmen, sobald sie beobachtet werden.
+2. RAM und Sensorticks auf schwächerer Hardware mit dem dokumentierten Profilingplan messen.
+3. UI-Orchestrierung nur bei konkretem funktionalem Bedarf weiter aus `MainWindow` herauslösen.
 
 ## Gesamtbewertung
 
 | Kategorie | Bewertung | Begründung |
 |---|---:|---|
-| Stabilität | 7/10 | Controller und Fehlerbehandlung sind gut, einige Prozess- und Abbruchpfade bleiben unsauber. |
-| Sicherheit | 7/10 | Gute Least-Privilege- und Updatebasis; Firewallanzeige und Systemprozessstart müssen nachgebessert werden. |
-| Performance | 6/10 | Start wurde optimiert, Live-Sensoren können den UI-Thread jedoch regelmäßig blockieren. |
-| Architektur | 6/10 | Gute neue Services/Controller, aber weiterhin starke `MainWindow`-Kopplung. |
-| Codequalität | 7/10 | Nullable und Analyzer aktiv, nachvollziehbare Kommentare; tote Pfade und große Klassen bleiben. |
-| Wartbarkeit | 6/10 | Ordnerstruktur ist sinnvoll, fachlicher Zustand bleibt stark UI-gebunden. |
-| Fehlerbehandlung | 7/10 | Zentrales Logging und viele Fallbacks; einzelne Timeouts und leere Catches sind problematisch. |
-| UI-Zuverlässigkeit | 7/10 | Responsive Maßnahmen vorhanden; Telemetrie, Navigation und Startfortschritt können inkonsistent wirken. |
-| Kompatibilität | 7/10 | Windows 10/11 x64 und PerMonitorV2 sind sauber konfiguriert; ARM64 fehlt bewusst. |
-| Release-Reife | 6/10 | Build/Publish funktionieren, aber vier hohe Findings und fehlende CI-Tests verhindern eine uneingeschränkte Freigabe. |
+| Stabilität | 9/10 | Prozess-, Abbruch-, Navigations- und Mehrfachinstanzpfade sind abgesichert; auch Claude wird zuerst geordnet geschlossen. |
+| Sicherheit | 9/10 | Least Privilege, Allowlist, Prozessrunner, konservative Security-Auswertung und Updateprüfung sind robust; Installer ist noch unsigniert. |
+| Performance | 8/10 | Telemetrie läuft im Hintergrund, ist serialisiert und gecacht; reales Low-End-Profiling und RAM-Optimierung bleiben offen. |
+| Architektur | 7/10 | Controller und Schnittstellen verbessern die Testbarkeit deutlich; `MainWindow` bleibt der zentrale Orchestrator. |
+| Codequalität | 8/10 | Nullable, Analyzer, Validatoren, zentrale Logger und entfernte tote Pfade ergeben einen sauberen Build. |
+| Wartbarkeit | 8/10 | Gute Featurestruktur, 20 Release-Tests und zweckgebundene Teilmodule; UI-gebundene Partialklassen bleiben. |
+| Fehlerbehandlung | 9/10 | Timeouts, Exitcodes, Abbruchtoken, Nutzerabbruch und Logging sind vereinheitlicht; externe Ausgabeformate bleiben ein Risiko. |
+| UI-Zuverlässigkeit | 8/10 | Responsive Layouts, Hintergrundarbeit und Navigation wurden praktisch geprüft und korrigiert. |
+| Kompatibilität | 8/10 | Windows 10/11 x64, PerMonitorV2 und self-contained Publish sind sauber konfiguriert; ARM64 fehlt bewusst. |
+| Release-Reife | 9/10 | Release-Build, 20 Tests und Publish-Readiness sind sauber; Frisch-PC-Praxistest und Signatur begrenzen die Bewertung. |
+
+**Gesamtdurchschnitt: 8,4/10** (vor dem Re-Audit: 6,6/10).
 
 ## Release-Entscheidung
 
-**NICHT RELEASE-BEREIT** für einen neuen stabilen Release.
+**RELEASE-BEREIT MIT EINSCHRÄNKUNGEN**.
 
-Eine Beta kann für kontrollierte Tests weiterverwendet werden. Vor einem stabilen Release müssen mindestens H-01 bis H-04 behoben und anschließend die betroffenen Storage-, WinGet-, Security- und Telemetriepfade praktisch getestet werden. Danach ist eine erneute, fokussierte Releaseprüfung erforderlich.
+Der aktuelle Stand ist für eine öffentliche Beta release-bereit. Die früheren hohen Release-Blocker sowie M-07 und M-12 sind behoben und durch Build-, Test- oder Ablaufprüfungen abgesichert. Vor einem stabilen Release bleiben der praktische Test auf einem frischen x64-Windows-System und ein mehrtägiger Beta-Test des Windows App SDK 2.4 erforderlich. Solange kein vertrauenswürdiges Zertifikat konfiguriert ist, muss der Installer transparent als „Unbekannter Herausgeber“ erklärt werden.
 
 ## Nachweis der technischen Prüfung
 
-- Release-Publish erfolgreich.
-- `WinVora.exe` im Publish vorhanden.
-- 501 Publish-Dateien, insgesamt rund 200 MB.
-- Build ohne Compilerwarnungen.
-- Lokalisierungsprüfung meldet 320 Schlüssel.
+- Release-Testlauf erfolgreich: 20 von 20 Tests bestanden, keine übersprungen.
+- Release-Build erfolgreich und ohne Compilerwarnungen.
+- Self-contained Publish-Prüfung erfolgreich: Version `0.8.5-beta.3`, 504 Dateien, 198,4 MB, keine PDB im Endnutzerordner.
+- Lokalisierungsprüfung meldet 352 vollständige Schlüssel.
 - UI-Qualitätsskript erfolgreich.
+- Releaseworkflow führt Tests vor Publish und Installerbau aus.
+- Kritische GitHub Actions sind auf konkrete Commit-SHAs fixiert.
 - `dotnet list package --vulnerable --include-transitive`: keine bekannten anfälligen Pakete.
-- `dotnet list package --outdated --include-transitive`: Updates vorhanden, aber kein akuter Vulnerability-Zwang.
+- Windows App SDK 2.4.0 und `System.Management` 10.0.11 sind in der Beta enthalten; unpassende `System.*`-Major-Upgrades wurden bewusst nicht erzwungen.
 - Keine gefundenen API-Keys, Tokens, Passwörter oder persönlichen Entwicklerpfade im geprüften Quellbestand.

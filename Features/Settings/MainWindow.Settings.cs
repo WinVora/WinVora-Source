@@ -702,7 +702,11 @@ namespace WinVora
             PreventClosedComboBoxWheelChange(intervalCombo);
             var intervalOptions = new[] { 1, 2, 5 };
             foreach (var s in intervalOptions)
-                intervalCombo.Items.Add(new ComboBoxItem { Content = $"{s} Sekunde{(s == 1 ? "" : "n")}", Tag = s });
+                intervalCombo.Items.Add(new ComboBoxItem
+                {
+                    Content = Localization.F(s == 1 ? "Settings.IntervalSecond" : "Settings.IntervalSeconds", s),
+                    Tag = s
+                });
 
             intervalCombo.SelectedIndex = Array.IndexOf(intervalOptions, _settings.LiveUpdateIntervalSeconds);
             if (intervalCombo.SelectedIndex < 0) intervalCombo.SelectedIndex = 1;
@@ -1173,7 +1177,7 @@ namespace WinVora
             SystemInfoSnapshot snapshot;
             try
             {
-                snapshot = _cachedSnapshot ?? await SystemInfoProvider.GetFullSnapshotAsync(_startupCancellation.Token);
+                snapshot = await EnsureFullSystemSnapshotAsync(_startupCancellation.Token);
             }
             catch (Exception ex)
             {

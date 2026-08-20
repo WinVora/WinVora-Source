@@ -89,6 +89,41 @@ public sealed class CoreLogicTests
         Assert.AreEqual("2.0", package.Available);
     }
 
+    [DataTestMethod]
+    [DataRow(
+        "Name                 Id                   Version     Verfügbar   Quelle\n" +
+        "-------------------  -------------------  ----------  ----------  ------\n" +
+        "Google Play Games    Google.PlayGames     1.0         2.0         winget\n",
+        "Google.PlayGames", "2.0")]
+    [DataRow(
+        "Nom                  ID                   Version     Disponible  Source\n" +
+        "-------------------  -------------------  ----------  ----------  ------\n" +
+        "Application Démo     Vendor.Demo          3.1         3.2         winget\n",
+        "Vendor.Demo", "3.2")]
+    [DataRow(
+        "Name                 Id                   Version     Available\n" +
+        "-------------------  -------------------  ----------  ----------\n" +
+        "Example Tool         Vendor.Tool          4.0         4.1\n",
+        "Vendor.Tool", "4.1")]
+    public void WingetDiscoveryParsesLocalizedAndFourColumnTables(
+        string output,
+        string expectedId,
+        string expectedAvailable)
+    {
+        WingetDiscoveryResult result = WingetDiscoveryService.ParseOutput(output);
+        Assert.AreEqual(1, result.Packages.Count);
+        Assert.AreEqual(expectedId, result.Packages[0].Id);
+        Assert.AreEqual(expectedAvailable, result.Packages[0].Available);
+    }
+
+    [TestMethod]
+    public void WingetDiscoveryIgnoresAnsiPreambleAndNoResultText()
+    {
+        string output = "\u001b[32mSearching sources...\u001b[0m\nNo installed package found matching input criteria.\n";
+        WingetDiscoveryResult result = WingetDiscoveryService.ParseOutput(output);
+        Assert.AreEqual(0, result.Packages.Count);
+    }
+
     [TestMethod]
     [DoNotParallelize]
     public async Task WingetDiscoveryRejectsEveryNonZeroExitCode()

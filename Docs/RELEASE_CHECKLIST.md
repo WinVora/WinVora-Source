@@ -8,3 +8,6 @@
 - README, Endnutzer-Changelog und Installerdateiname auf dieselbe Version prüfen
 - Programm-Update, Abbruch, Deinstallation, Dateien und Verlaufsfilter manuell testen
 - SHA-256-Prüfsumme des fertigen Installers für das GitHub-Release erzeugen
+- `scripts\Test-PublishReadiness.ps1` für Publish und Installer erfolgreich ausführen
+- Frisch-PC-/Windows-Sandbox-Matrix aus `Docs\RELEASE-QA.md` dokumentieren
+- Falls Signing-Secrets konfiguriert sind: Signaturstatus von App und Installer muss `Valid` sein
