@@ -102,14 +102,17 @@ namespace WinVora
             if (selected.Count == 0)
             {
                 StorageProgressPanel.Visibility = Visibility.Visible;
-                StorageProgressText.Text = "Keine Bereiche ausgewählt.";
+                StorageProgressText.Text = Localization.CurrentLanguage == "en" ? "No categories selected." : "Keine Bereiche ausgewählt.";
                 StorageProgressBar.Value = 0;
                 return;
             }
 
+            bool en = Localization.CurrentLanguage == "en";
             bool confirmed = await ConfirmAsync(
-                "Ausgewählte Bereiche löschen?",
-                $"{selected.Count} Bereich(e) werden bereinigt: {string.Join(", ", selected.Select(c => c.Name))}. Das kann nicht rückgängig gemacht werden. Fortfahren?" +
+                en ? "Delete selected categories?" : "Ausgewählte Bereiche löschen?",
+                (en
+                    ? $"{selected.Count} category/categories will be cleaned: {string.Join(", ", selected.Select(c => c.Name))}. This cannot be undone. Continue?"
+                    : $"{selected.Count} Bereich(e) werden bereinigt: {string.Join(", ", selected.Select(c => c.Name))}. Das kann nicht rückgängig gemacht werden. Fortfahren?") +
                 GetProtectedCleanupWarning(selected) +
                 GetRunningProcessWarning(selected),
                 respectDeleteConfirmationSetting: !RequiresProtectedCleanupConfirmation(selected));
@@ -135,10 +138,12 @@ namespace WinVora
             foreach (var category in normalCategories)
             {
                 step++;
-                StorageProgressText.Text = $"Lösche {category.Name} ({step}/{StorageProgressBar.Maximum})...";
+                StorageProgressText.Text = en
+                    ? $"Deleting {category.Name} ({step}/{StorageProgressBar.Maximum})..."
+                    : $"Lösche {category.Name} ({step}/{StorageProgressBar.Maximum})...";
 
                 var (success, message) = await StorageService.DeleteCategoryAsync(category);
-                results.Add(success ? $"{category.Name}: OK" : $"{category.Name}: Fehler");
+                results.Add(success ? $"{category.Name}: OK" : $"{category.Name}: {(en ? "Error" : "Fehler")}");
                 Logger.Log($"Storage-Sammel-Löschung '{category.Name}': {(success ? "OK" : "Fehler")} - {message}");
                 if (success) anySuccess = true;
 
@@ -148,14 +153,16 @@ namespace WinVora
             if (adminCategories.Count > 0)
             {
                 step++;
-                StorageProgressText.Text = $"Lösche {adminCategories.Count} Admin-Bereich(e)... (Admin-Bestätigung nötig)";
+                StorageProgressText.Text = en
+                    ? $"Deleting {adminCategories.Count} administrator category/categories... (approval required)"
+                    : $"Lösche {adminCategories.Count} Admin-Bereich(e)... (Admin-Bestätigung nötig)";
 
                 var exitCode = await RunElevatedStorageDeleteAsync(adminCategories);
                 bool adminSuccess = exitCode == 0;
 
                 foreach (var category in adminCategories)
                 {
-                    results.Add(adminSuccess ? $"{category.Name}: OK" : $"{category.Name}: Fehler");
+                    results.Add(adminSuccess ? $"{category.Name}: OK" : $"{category.Name}: {(en ? "Error" : "Fehler")}");
                     Logger.Log($"Storage-Sammel-Löschung (elevated) '{category.Name}': {(adminSuccess ? "OK" : $"Fehler (ExitCode {exitCode})")}");
                 }
 
@@ -163,9 +170,11 @@ namespace WinVora
                 StorageProgressBar.Value = step;
             }
 
-            StorageProgressText.Text = "Bereinigung abgeschlossen: " + string.Join(", ", results);
+            StorageProgressText.Text = (en ? "Cleanup complete: " : "Bereinigung abgeschlossen: ") + string.Join(", ", results);
 
-            bool anyFailure = results.Any(result => result.Contains("Fehler", StringComparison.OrdinalIgnoreCase));
+            bool anyFailure = results.Any(result =>
+                result.Contains("Fehler", StringComparison.OrdinalIgnoreCase) ||
+                result.Contains("Error", StringComparison.OrdinalIgnoreCase));
             if (anySuccess)
             {
                 _settings.LastCleanupUtc = DateTime.UtcNow;

@@ -22,7 +22,7 @@ namespace WinVora
             if (selected.Count == 0)
             {
                 UpdateProgressPanel.Visibility = Visibility.Visible;
-                UpdateProgressText.Text = "Keine Pakete ausgewählt.";
+                UpdateProgressText.Text = Localization.CurrentLanguage == "en" ? "No packages selected." : "Keine Pakete ausgewählt.";
                 UpdateProgressBar.Value = 0;
                 _isUpdatingWinget = false;
                 UpdateWingetSelectionButton();
@@ -971,22 +971,6 @@ namespace WinVora
                 progress,
                 cancellationToken,
                 forceApplicationShutdown);
-        }
-
-        // Ermittelt die Spaltenstart-Positionen sprachunabhängig:
-        // eine neue Spalte beginnt dort, wo nach 2+ Leerzeichen wieder
-        // ein Nicht-Leerzeichen folgt.
-        private int[] GetColumnStarts(string header)
-        {
-            var starts = new List<int> { 0 };
-            for (int i = 2; i < header.Length; i++)
-            {
-                if (header[i] != ' ' && header[i - 1] == ' ' && header[i - 2] == ' ')
-                {
-                    starts.Add(i);
-                }
-            }
-            return starts.ToArray();
         }
 
         private WingetPackage? Parse(string line, int[]? columns = null)

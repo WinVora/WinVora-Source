@@ -105,4 +105,10 @@
 		</ItemGroup>
 	</Target>
 
+	<!-- Verhindert fehlende Übersetzungsschlüssel und neue fest eingebaute
+	     deutsche UI-Texte bereits während des Builds. -->
+	<Target Name="ValidateLocalization" BeforeTargets="BeforeCompile">
+		<Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\Test-Localization.ps1&quot; -ProjectRoot &quot;$(MSBuildProjectDirectory)&quot;" />
+	</Target>
+
 </Project>

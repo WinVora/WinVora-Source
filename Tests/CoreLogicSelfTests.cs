@@ -22,6 +22,21 @@ namespace WinVora
         [Conditional("DEBUG")]
         public static void Run()
         {
+            Debug.Assert(Localization.All.Count > 0);
+            Debug.Assert(Localization.All.All(entry =>
+                !string.IsNullOrWhiteSpace(entry.Key) &&
+                !string.IsNullOrWhiteSpace(entry.Value.De) &&
+                !string.IsNullOrWhiteSpace(entry.Value.En)));
+            string originalLanguage = Localization.CurrentLanguage;
+            Localization.CurrentLanguage = "de";
+            Debug.Assert(Localization.T("Nav.System") == "Systeminfo");
+            Debug.Assert(Localization.F("Autostart.Count", 3).StartsWith("3 ", StringComparison.Ordinal));
+            Localization.CurrentLanguage = "en";
+            Debug.Assert(Localization.T("Nav.System") == "System Info");
+            Debug.Assert(Localization.F("Autostart.Count", 3) == "3 startup programs");
+            string deliberatelyMissingKey = string.Join('.', "Definitely", "Missing", "Key");
+            Debug.Assert(Localization.T(deliberatelyMissingKey) == "Text unavailable");
+            Localization.CurrentLanguage = originalLanguage;
             var package = WingetTableParser.Parse(
                 "Demo App            Vendor.Demo       1.0       2.0       winget",
                 new[] { 0, 20, 38, 48, 58 });

@@ -74,6 +74,11 @@ namespace WinVora
     $"Version {CurrentVersion}",
     "• Beta: In den Einstellungen kann zwischen stabilen und Beta-Updates gewechselt werden\n" +
     "• Beta: Sichtbare Kennzeichnung, Updatekanal-Anzeige und vorbereitete Problemmeldung\n" +
+    "• Übersetzung: Dashboard, Verlauf, Autostart, Dialoge und Benachrichtigungen sind vollständig auf Deutsch und Englisch verfügbar\n" +
+    "• Qualität: Ein automatischer Test erkennt fehlende Übersetzungen, feste XAML-Texte und ungeschützte dynamische Meldungen\n" +
+    "• Autostart: Status, Dateipfade, Signaturen und Rückmeldungen wechseln zuverlässig mit der Sprache\n" +
+    "• Ladebildschirm: Die violette Wabenanimation leuchtet im Dunkelmodus jetzt genauso deutlich wie im Hellmodus\n" +
+    "• Code: Doppelte WinGet-Auswertung und nicht verwendete UI-Reste wurden entfernt\n" +
     "• Sicherheit: Einstellungen werden vor Beta-Updates und der Rückkehr zu Stable automatisch gesichert\n" +
     "• Diagnose: Supportberichte werden anonymisiert als ZIP gespeichert\n" +
     "• Speicher: Eigene Ordner können auf ungewöhnliches Wachstum überwacht werden\n" +
@@ -93,6 +98,11 @@ namespace WinVora
     "• Bugfixes: Titelleisten, Hellmodus-Kontraste, Systemwerte und Programmlisten wurden stabilisiert",
     "• Beta: Settings can switch between stable and beta update channels\n" +
     "• Beta: Visible badges, update-channel status and prepared issue reports\n" +
+    "• Localization: Dashboard, History, Startup, dialogs and notifications are fully available in German and English\n" +
+    "• Quality: An automated test detects missing translations, fixed XAML text and unprotected dynamic messages\n" +
+    "• Startup: Status, file paths, signatures and feedback now switch languages reliably\n" +
+    "• Loading screen: The purple honeycomb animation is now equally visible in dark and light mode\n" +
+    "• Code: Duplicate WinGet parsing and unused UI remnants were removed\n" +
     "• Safety: Settings are backed up automatically before beta updates and returning to Stable\n" +
     "• Diagnostics: Anonymized support reports are saved as ZIP files\n" +
     "• Storage: Custom folders can be monitored for unusual growth\n" +

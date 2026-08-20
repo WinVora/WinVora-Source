@@ -551,9 +551,9 @@
                                 AutomationProperties.Name="Liste aller installierten Programme exportieren">
                             <Button.Flyout>
                                 <MenuFlyout>
-                                    <MenuFlyoutItem Text="Als TXT exportieren" Click="UninstallExportTxt_Click"/>
-                                    <MenuFlyoutItem Text="Als CSV exportieren (Komma)" Tag="," Click="UninstallExportCsv_Click"/>
-                                    <MenuFlyoutItem Text="Als CSV für deutsches Excel (Semikolon)" Tag=";" Click="UninstallExportCsv_Click"/>
+                                    <MenuFlyoutItem x:Name="UninstallExportTxtItem" Text="Als TXT exportieren" Click="UninstallExportTxt_Click"/>
+                                    <MenuFlyoutItem x:Name="UninstallExportCsvCommaItem" Text="Als CSV exportieren (Komma)" Tag="," Click="UninstallExportCsv_Click"/>
+                                    <MenuFlyoutItem x:Name="UninstallExportCsvSemicolonItem" Text="Als CSV für deutsches Excel (Semikolon)" Tag=";" Click="UninstallExportCsv_Click"/>
                                 </MenuFlyout>
                             </Button.Flyout>
                         </Button>
@@ -769,11 +769,11 @@
                                         <FontIcon Glyph="&#xE9D2;" FontSize="19" Foreground="{StaticResource AppAccentBrushLight}"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                                        <TextBlock Text="Seit der letzten Prüfung" FontSize="15" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="DashChangesTitleText" Text="Seit der letzten Prüfung" FontSize="15" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="DashChangesText" Text="Vergleich wird vorbereitet..." FontSize="13" Foreground="{StaticResource AppMutedForegroundBrush}" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                        <TextBlock Text="Details" FontSize="12" Foreground="{StaticResource AppAccentBrushLight}"/>
+                                        <TextBlock x:Name="DashChangesDetailsText" Text="Details" FontSize="12" Foreground="{StaticResource AppAccentBrushLight}"/>
                                         <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource AppAccentBrushLight}"/>
                                     </StackPanel>
                                 </Grid>
@@ -1178,7 +1178,7 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
-                                            <TextBlock Grid.Column="0" Text="Akkustatus" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                                            <TextBlock x:Name="SysBatteryLabel" Grid.Column="0" Text="Akkustatus" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                             <TextBlock Grid.Column="1" x:Name="SysBattery" FontSize="16" Foreground="{StaticResource AppForegroundBrush}" TextAlignment="Right"/>
                                         </Grid>
                                     </controls:SettingsCard>
@@ -1195,13 +1195,13 @@
                                 <Button x:Name="HistoryFailedButton" Content="Fehler" Tag="Failed" Click="HistoryChip_Click"/>
                                 <Button x:Name="HistoryCancelledButton" Content="Abgebrochen" Tag="Cancelled" Click="HistoryChip_Click"/>
                                 <Button x:Name="HistoryRestartButton" Content="Neustart" Tag="RestartRequired" Click="HistoryChip_Click"/>
-                                <Button Content="Filter zurücksetzen" Click="HistoryResetFilters_Click"/>
-                                <Button Content="Verlauf leeren" Click="HistoryClearAll_Click"/>
-                                <Button Content="Exportieren">
+                                <Button x:Name="HistoryResetFiltersButton" Content="Filter zurücksetzen" Click="HistoryResetFilters_Click"/>
+                                <Button x:Name="HistoryClearButton" Content="Verlauf leeren" Click="HistoryClearAll_Click"/>
+                                <Button x:Name="HistoryExportButton" Content="Exportieren">
                                     <Button.Flyout>
                                         <MenuFlyout>
-                                            <MenuFlyoutItem Text="Verlauf als Textdatei" Click="ExportHistory_Click"/>
-                                            <MenuFlyoutItem Text="Systembericht als Textdatei" Click="ExportSystemReport_Click"/>
+                                            <MenuFlyoutItem x:Name="HistoryExportTextItem" Text="Verlauf als Textdatei" Click="ExportHistory_Click"/>
+                                            <MenuFlyoutItem x:Name="HistoryExportSystemItem" Text="Systembericht als Textdatei" Click="ExportSystemReport_Click"/>
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>
@@ -1223,7 +1223,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="AutostartPanel" Spacing="12" Visibility="Collapsed">
-                            <TextBlock Text="Programme, die automatisch mit Windows starten" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
+                            <TextBlock x:Name="AutostartIntroText" Text="Programme, die automatisch mit Windows starten" FontSize="16" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                             <StackPanel x:Name="AutostartListPanel" Spacing="10"/>
                         </StackPanel>
 
@@ -1232,7 +1232,7 @@
                                 <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <StackPanel Spacing="7">
-                                        <TextBlock Text="Was hat sich verändert?" FontSize="22" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="ChangesHeadingText" Text="Was hat sich verändert?" FontSize="22" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="ChangesComparedAtText" Text="Der erste Vergleichspunkt wird erstellt." FontSize="13" Foreground="{StaticResource AppMutedForegroundBrush}"/>
                                     </StackPanel>
                                     <Border Grid.Column="1" CornerRadius="14" Padding="14,8" Background="{StaticResource AppOverlay18}" VerticalAlignment="Center">
@@ -1246,8 +1246,8 @@
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="Speicherfresser" Style="{StaticResource WinVoraSectionTitleStyle}"/>
-                                    <TextBlock Text="Auffälliges Wachstum in Downloads, Desktop und Dokumenten ab 1 GB." FontSize="13" Foreground="{StaticResource AppMutedForegroundBrush}" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="StorageGrowthHeadingText" Text="Speicherfresser" Style="{StaticResource WinVoraSectionTitleStyle}"/>
+                                    <TextBlock x:Name="StorageGrowthDescriptionText" Text="Auffälliges Wachstum in Downloads, Desktop und Dokumenten ab 1 GB." FontSize="13" Foreground="{StaticResource AppMutedForegroundBrush}" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <Border Grid.Column="1" CornerRadius="12" Padding="12,7" Background="{StaticResource AppOverlay10}" VerticalAlignment="Center">
                                     <TextBlock x:Name="StorageGrowthBadge" Text="Prüfung läuft" FontSize="12" Foreground="{StaticResource AppMutedForegroundBrush}"/>

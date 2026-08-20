@@ -22,19 +22,19 @@ namespace WinVora
         {
             AutostartListPanel.Children.Clear();
             AutostartListPanel.Children.Add(new ProgressRing { IsActive = true, Width = 28, Height = 28, HorizontalAlignment = HorizontalAlignment.Center });
-            SetGlobalStatus(Localization.CurrentLanguage == "en" ? "Loading startup programs..." : "Autostart-Programme werden geladen...");
+            SetGlobalStatus(Localization.T("Autostart.Loading"));
             var entries = await Task.Run(AutostartService.GetEntries);
             AutostartListPanel.Children.Clear();
             SetGlobalStatus(null);
-            PageSubtitle.Text = $"{entries.Count} Autostart-Programme";
+            PageSubtitle.Text = Localization.F("Autostart.Count", entries.Count);
             foreach (var entry in entries)
             {
                 bool targetExists = AutostartService.CommandTargetExists(entry.Command);
                 var toggle = new ToggleSwitch
                 {
                     IsOn = entry.Enabled,
-                    OnContent = Localization.CurrentLanguage == "en" ? "Active" : "Aktiv",
-                    OffContent = Localization.CurrentLanguage == "en" ? "Disabled" : "Deaktiviert"
+                    OnContent = Localization.T("Autostart.Active"),
+                    OffContent = Localization.T("Autostart.Disabled")
                 };
                 bool revertingToggle = false;
                 toggle.Toggled += (_, __) =>
@@ -48,15 +48,11 @@ namespace WinVora
                             revertingToggle = true;
                             toggle.IsOn = !requestedState;
                             revertingToggle = false;
-                            ShowInfo(Localization.CurrentLanguage == "en"
-                                ? $"{entry.Name} could not be changed."
-                                : $"{entry.Name} konnte nicht geändert werden.", InfoBarSeverity.Error);
+                            ShowInfo(Localization.F("Autostart.ChangeFailed", entry.Name), InfoBarSeverity.Error);
                             return;
                         }
                         ScheduleDashboardRefresh();
-                        ShowInfo(requestedState
-                            ? $"{entry.Name} wurde aktiviert."
-                            : $"{entry.Name} wurde deaktiviert.", InfoBarSeverity.Success);
+                        ShowInfo(Localization.F(requestedState ? "Autostart.EnabledMessage" : "Autostart.DisabledMessage", entry.Name), InfoBarSeverity.Success);
                     }
                     catch (Exception ex) { Logger.LogError($"Autostart {entry.Name}", ex); }
                 };
@@ -70,7 +66,7 @@ namespace WinVora
                         : Windows.UI.Color.FromArgb(0x28, 0xFF, 0x6B, 0x6B)),
                     Child = new TextBlock
                     {
-                        Text = targetExists ? "OK" : (Localization.CurrentLanguage == "en" ? "File missing" : "Datei fehlt"),
+                        Text = targetExists ? "OK" : Localization.T("Autostart.FileMissing"),
                         Foreground = new SolidColorBrush(targetExists
                             ? Windows.UI.Color.FromArgb(0xFF, 0x4C, 0xD9, 0x73)
                             : Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
@@ -81,25 +77,25 @@ namespace WinVora
                 {
                     var openLocation = new Button
                     {
-                        Content = Localization.CurrentLanguage == "en" ? "Open location" : "Speicherort öffnen",
+                        Content = Localization.T("Autostart.OpenLocation"),
                         Padding = new Thickness(10, 5, 10, 5)
                     };
                     openLocation.Click += (_, __) =>
                     {
                         var result = ExplorerService.SelectFile(startupPath);
                         if (result == ExplorerOpenResult.Missing)
-                            ShowInfo(Localization.CurrentLanguage == "en" ? "The file no longer exists." : "Die Datei ist nicht mehr vorhanden.", InfoBarSeverity.Warning);
+                            ShowInfo(Localization.T("Autostart.FileGone"), InfoBarSeverity.Warning);
                     };
                     statusPanel.Children.Add(openLocation);
                 }
-                string pathLabel = Localization.CurrentLanguage == "en" ? "Path: " : "Pfad: ";
+                string pathLabel = Localization.T("Autostart.Path");
                 string shortCommand = entry.Command.Length > 92 ? entry.Command[..89] + "..." : entry.Command;
                 string baseDescription = pathLabel + shortCommand;
                 var startupCard = new ToolkitControls.SettingsCard
                 {
                     Header = entry.Name,
                     Description = baseDescription + " · " +
-                                  (Localization.CurrentLanguage == "en" ? "Signature is being checked..." : "Signatur wird geprüft..."),
+                                  Localization.T("Autostart.SignatureChecking"),
                     Content = statusPanel,
                     CornerRadius = new CornerRadius(16)
                 };
@@ -110,8 +106,8 @@ namespace WinVora
             if (entries.Count == 0)
                 AutostartListPanel.Children.Add(MakeEmptyState(
                     "\uE768",
-                    Localization.CurrentLanguage == "en" ? "No startup programs" : "Keine Autostart-Programme",
-                    Localization.CurrentLanguage == "en" ? "No programs start automatically for this user." : "Für diesen Benutzer starten keine Programme automatisch."));
+                    Localization.T("Autostart.EmptyTitle"),
+                    Localization.T("Autostart.EmptyDescription")));
         }
 
         private async Task LoadAutostartIdentityAsync(
@@ -121,10 +117,9 @@ namespace WinVora
         {
             var identity = await Task.Run(() => AutostartService.GetFileIdentity(entry.Command));
             if (_currentPageKey != "Autostart") return;
-            bool en = Localization.CurrentLanguage == "en";
             card.Description = baseDescription + " · " +
-                               (en ? "Publisher: " : "Herausgeber: ") + identity.Publisher + " · " +
-                               (identity.Signed ? (en ? "Signed" : "Signiert") : (en ? "Signature unknown" : "Signatur unbekannt"));
+                               Localization.T("Autostart.Publisher") + identity.Publisher + " · " +
+                               Localization.T(identity.Signed ? "Autostart.Signed" : "Autostart.SignatureUnknown");
         }
 
         private void SaveSecondaryWindowPlacement(Window window, bool settingsWindow)

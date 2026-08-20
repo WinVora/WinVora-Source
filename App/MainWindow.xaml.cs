@@ -88,6 +88,8 @@ namespace WinVora
         private readonly Dictionary<string, double> _pageScrollOffsets = new();
         private PcChangeSummary? _pcChangeSummary;
         private Grid? _dashboardPrimaryGrid;
+        private TextBlock? _dashboardPerformanceTitleText;
+        private TextBlock? _dashboardPerformanceDescriptionText;
         private IReadOnlyList<LargeFolderResult> _cachedLargeFolders = Array.Empty<LargeFolderResult>();
         private DateTime? _largeFolderAnalysisUtc;
         private bool? _narrowLayoutState;
@@ -179,6 +181,9 @@ namespace WinVora
 
             Localization.CurrentLanguage = _settings.Language;
             ApplyLanguage();
+#if DEBUG
+            RunUiLanguageSmokeTest();
+#endif
             RestoreWindowPlacement();
             if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter startupPresenter)
             {
@@ -214,16 +219,13 @@ namespace WinVora
             _closePromptOpen = true;
             try
             {
-                bool en = Localization.CurrentLanguage == "en";
                 var dialog = new ContentDialog
                 {
                     XamlRoot = RootGrid.XamlRoot,
-                    Title = en ? "An operation is still running" : "Vorgang läuft noch",
-                    Content = en
-                        ? "WinVora is updating, analyzing, cleaning, or waiting for an uninstaller. Closing cancels WinVora tasks; manufacturer uninstallers may remain open."
-                        : "WinVora aktualisiert, analysiert, bereinigt oder wartet auf einen Deinstaller. Beim Schließen werden WinVora-Aufgaben abgebrochen; Hersteller-Deinstaller können geöffnet bleiben.",
-                    PrimaryButtonText = en ? "Cancel and close" : "Abbrechen und schließen",
-                    CloseButtonText = en ? "Keep running" : "Weiterlaufen lassen",
+                    Title = Localization.T("Dialog.Running.Title"),
+                    Content = Localization.T("Dialog.Running.Message"),
+                    PrimaryButtonText = Localization.T("Dialog.Running.Close"),
+                    CloseButtonText = Localization.T("Dialog.Running.Continue"),
                     DefaultButton = ContentDialogButton.Close
                 };
                 if (await dialog.ShowAsync() == ContentDialogResult.Primary)
@@ -352,9 +354,9 @@ namespace WinVora
             LblNavUpdates.Text = Localization.CurrentLanguage == "en" ? "Updates" : "Updates";
             LblNavFiles.Text = Localization.T("Nav.Files");
             LblNavUninstall.Text = Localization.T("Nav.Uninstall");
-            LblNavHistory.Text = Localization.CurrentLanguage == "en" ? "History" : "Verlauf";
+            LblNavHistory.Text = Localization.T("Nav.History");
             LblNavAutostart.Text = "Autostart";
-            LblNavChanges.Text = Localization.CurrentLanguage == "en" ? "Changes" : "Veränderungen";
+            LblNavChanges.Text = Localization.T("Nav.Changes");
             LblNavSettings.Text = Localization.T("Nav.Settings");
             LblNavContact.Text = Localization.T("Nav.Contact");
             LblNavChangelogHint.Text = Localization.T("Nav.ChangelogHint");
@@ -378,10 +380,25 @@ namespace WinVora
             LblDashUpdatesAvailable.Text = Localization.T("Dash.UpdatesAvailable");
             LblDashRam.Text = Localization.T("Dash.Ram");
             LblDashStatus.Text = Localization.T("Dash.Status");
-            DashOverallBadgeText.Text = Localization.CurrentLanguage == "en" ? "Everything looks good" : "Alles in Ordnung";
+            LblDashTemp.Text = Localization.T("Dash.WindowsVersion");
+            DashTempText.Text = _cachedSnapshot == null ? Localization.T("Dash.Detecting") : DashTempText.Text;
+            if (HealthRamDetailText.Text is "Auslastung" or "Usage")
+                HealthRamDetailText.Text = Localization.T("Stat.CpuLabel");
+            DashOverallBadgeText.Text = Localization.T("Dash.AllGood");
+            DashChangesTitleText.Text = Localization.T("Changes.SinceLastCheck");
+            DashChangesDetailsText.Text = Localization.T("Changes.Details");
+            if (_pcChangeSummary == null)
+                DashChangesText.Text = Localization.T("Dash.PreparingComparison");
+            DashUpdatesStatusText.Text = Localization.T("Dash.CheckingUpdatesStatus");
+            DashSecurityStatusText.Text = Localization.T("Dash.CheckingSecurityStatus");
+            DashSystemStatusText.Text = Localization.T("Dash.SystemMonitoring");
+            if (_dashboardPerformanceTitleText != null)
+                _dashboardPerformanceTitleText.Text = Localization.T("Dash.SystemPerformance");
+            if (_dashboardPerformanceDescriptionText != null)
+                _dashboardPerformanceDescriptionText.Text = Localization.T("Dash.SystemPerformanceDescription");
 
             // Verlaufsdiagramme + Aktivitätsverlauf
-            HistoryCard.Text = Localization.CurrentLanguage == "en" ? "Usage over the last few minutes" : "Auslastung der letzten Minuten";
+            HistoryCard.Text = Localization.T("Dash.UsageHistory");
             LblHistoryCpu.Text = Localization.T("Stat.Cpu");
             LblHistoryRam.Text = Localization.T("Stat.Ram");
             LblHistoryGpu.Text = Localization.T("Stat.Gpu");
@@ -401,6 +418,8 @@ namespace WinVora
             DrivesExpander.Header = Localization.T("System.Drives");
             NetworkExpander.Header = Localization.T("System.Network");
             BatteryExpander.Header = Localization.T("System.Battery");
+            SecurityDetailsLoadingText.Text = Localization.T("System.SecurityLoading");
+            SysBatteryLabel.Text = Localization.T("System.BatteryStatus");
 
             SysCardDevice.Header = Localization.T("System.Card.Device");
             SysCardOs.Header = Localization.T("System.Card.Os");
@@ -434,6 +453,7 @@ namespace WinVora
             WingetSearchBox.PlaceholderText = Localization.T("Winget.SearchPlaceholder");
             ToolTipService.SetToolTip(RefreshButton, Localization.T("Common.Refresh"));
             StartUpdateButton.Content = Localization.T("Winget.StartUpdate");
+            CancelUpdateButton.Content = Localization.T("Common.Cancel");
             UpdateUpdateChannelUi();
             ToolTipService.SetToolTip(UpdateChannelButton,
                 Localization.CurrentLanguage == "en"
@@ -448,8 +468,11 @@ namespace WinVora
             // Deinstaller: Action-Bar
             UninstallSearchBox.PlaceholderText = Localization.T("Uninstall.SearchPlaceholder");
             UninstallRefreshButton.Content = new FontIcon { Glyph = "\uE72C" };
-            UninstallExportButton.Content = Localization.CurrentLanguage == "en" ? "Export list" : "Liste exportieren";
-            UninstallSelectedButton.Content = Localization.CurrentLanguage == "en" ? "Uninstall selected" : "Ausgewählte deinstallieren";
+            UninstallExportButton.Content = Localization.T("Uninstall.ExportList");
+            UninstallSelectedButton.Content = Localization.T("Uninstall.Selected");
+            UninstallExportTxtItem.Text = Localization.T("Uninstall.ExportTxt");
+            UninstallExportCsvCommaItem.Text = Localization.T("Uninstall.ExportCsvComma");
+            UninstallExportCsvSemicolonItem.Text = Localization.T("Uninstall.ExportCsvSemicolon");
             ToolTipService.SetToolTip(UninstallRefreshButton, Localization.T("Common.Refresh"));
             ToolTipService.SetToolTip(WingetSelectAllButton,
                 Localization.CurrentLanguage == "en" ? "Select or deselect all visible updates" : "Alle sichtbaren Updates aus- oder abwählen");
@@ -458,6 +481,34 @@ namespace WinVora
                 Localization.CurrentLanguage == "en" ? "Select all cleanup categories" : "Alle Bereinigungskategorien auswählen");
             ToolTipService.SetToolTip(StorageDeleteSelectedButton,
                 Localization.CurrentLanguage == "en" ? "Delete selected files" : "Ausgewählte Dateien löschen");
+
+            HistoryAllButton.Content = Localization.T("History.All");
+            HistorySuccessButton.Content = Localization.T("History.Successful");
+            HistoryFailedButton.Content = Localization.T("History.Failed");
+            HistoryCancelledButton.Content = Localization.T("History.Cancelled");
+            HistoryRestartButton.Content = Localization.T("History.Restart");
+            HistoryResetFiltersButton.Content = Localization.T("History.ResetFilters");
+            HistoryClearButton.Content = Localization.T("History.Clear");
+            HistoryExportButton.Content = Localization.T("Common.Export");
+            HistoryExportTextItem.Text = Localization.T("History.ExportText");
+            HistoryExportSystemItem.Text = Localization.T("History.ExportSystem");
+            HistorySearchBox.PlaceholderText = Localization.T("History.Search");
+            HistoryFromDatePicker.Header = Localization.T("History.From");
+            HistoryToDatePicker.Header = Localization.T("History.To");
+            AutostartIntroText.Text = Localization.T("Autostart.Intro");
+            ChangesHeadingText.Text = Localization.T("Changes.Title");
+            StorageGrowthHeadingText.Text = Localization.T("Changes.StorageGrowth");
+            StorageGrowthDescriptionText.Text = Localization.T("Changes.StorageGrowthDescription");
+
+            bool english = Localization.CurrentLanguage == "en";
+            ToolTipService.SetToolTip(StatCardCpu, english ? "Current CPU usage in percent" : "Aktuelle CPU-Auslastung in Prozent");
+            ToolTipService.SetToolTip(StatCardRam, english ? "Current RAM usage, used / total" : "Aktuelle RAM-Auslastung, genutzt / gesamt");
+            ToolTipService.SetToolTip(StatCardGpu, english ? "Current GPU usage, if supported by the hardware" : "Aktuelle GPU-Auslastung, falls von der Hardware unterstützt");
+            ToolTipService.SetToolTip(StatCardSecurity, english ? "Status of Windows Defender and Firewall" : "Status von Windows Defender und Firewall");
+            ToolTipService.SetToolTip(StatCardUpdates, english ? "Open program updates" : "Programm-Updates öffnen");
+            ToolTipService.SetToolTip(DashCardDisk, english ? "Open file cleanup" : "Dateibereinigung öffnen");
+            ToolTipService.SetToolTip(DashCardPrograms, english ? "Open installed programs" : "Installierte Programme öffnen");
+            ToolTipService.SetToolTip(DashCardCleanup, english ? "Open file cleanup" : "Dateibereinigung öffnen");
 
             // Große Seiten-Überschrift neu setzen, falls schon eine Seite aktiv ist
             if (!string.IsNullOrEmpty(_currentPageKey))
@@ -478,6 +529,36 @@ namespace WinVora
 
             UpdateDashboardStatusSummary();
         }
+
+#if DEBUG
+        private void RunUiLanguageSmokeTest()
+        {
+            string originalLanguage = Localization.CurrentLanguage;
+            try
+            {
+                Localization.CurrentLanguage = "en";
+                ApplyLanguage();
+                Debug.Assert(LblNavSystem.Text == "System Info");
+                Debug.Assert(LblNavHistory.Text == "History");
+                Debug.Assert(LblDashStatus.Text == "Overall status");
+                Debug.Assert(AutostartIntroText.Text.StartsWith("Programs", StringComparison.Ordinal));
+                Debug.Assert(HistorySearchBox.PlaceholderText == "Search history...");
+
+                Localization.CurrentLanguage = "de";
+                ApplyLanguage();
+                Debug.Assert(LblNavSystem.Text == "Systeminfo");
+                Debug.Assert(LblNavHistory.Text == "Verlauf");
+                Debug.Assert(LblDashStatus.Text == "Gesamtstatus");
+                Debug.Assert(AutostartIntroText.Text.StartsWith("Programme", StringComparison.Ordinal));
+                Debug.Assert(HistorySearchBox.PlaceholderText == "Verlauf durchsuchen...");
+            }
+            finally
+            {
+                Localization.CurrentLanguage = originalLanguage;
+                ApplyLanguage();
+            }
+        }
+#endif
 
         // Baut alle Seiten, die schon Daten geladen haben, mit der neuen
         // Sprache neu auf - vorher blieben z.B. Systeminfo-Werte, Winget-Liste,
@@ -594,21 +675,21 @@ namespace WinVora
 
             var systemSection = new StackPanel { Spacing = 12 };
             var performanceHeading = new StackPanel { Spacing = 2 };
-            performanceHeading.Children.Add(new TextBlock
+            _dashboardPerformanceTitleText = new TextBlock
             {
-                Text = Localization.CurrentLanguage == "en" ? "System performance" : "Systemleistung",
+                Text = Localization.T("Dash.SystemPerformance"),
                 FontSize = 17,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppForegroundBrush"]
-            });
-            performanceHeading.Children.Add(new TextBlock
+            };
+            performanceHeading.Children.Add(_dashboardPerformanceTitleText);
+            _dashboardPerformanceDescriptionText = new TextBlock
             {
-                Text = Localization.CurrentLanguage == "en"
-                    ? "Live values for processor, memory and graphics"
-                    : "Live-Werte für Prozessor, Arbeitsspeicher und Grafik",
+                Text = Localization.T("Dash.SystemPerformanceDescription"),
                 FontSize = 12,
                 Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
-            });
+            };
+            performanceHeading.Children.Add(_dashboardPerformanceDescriptionText);
             systemSection.Children.Add(performanceHeading);
             systemSection.Children.Add(DashboardStatusGrid);
             OverviewPanel.Spacing = 18;
@@ -755,7 +836,6 @@ namespace WinVora
         // beliebiger Regenbogen zu wirken.
         private static readonly Windows.UI.Color AccentColorPrimary = Windows.UI.Color.FromArgb(0xFF, 0x6C, 0x5C, 0xE7);
         private static readonly Windows.UI.Color AccentColorLight = Windows.UI.Color.FromArgb(0xFF, 0x8B, 0x7C, 0xF6);
-        private static readonly Windows.UI.Color AccentColorCool = Windows.UI.Color.FromArgb(0xFF, 0x4F, 0x8C, 0xF0);
 
         // Baut ein Wabenraster aus dünnen Sechseck-Umrissen, das den ganzen
         // Startbildschirm abdeckt. Jede Zelle bekommt ihre eigene, leicht
@@ -821,9 +901,12 @@ namespace WinVora
             double startOffsetX = (overlayWidth - gridWidth) / 2;
             double startOffsetY = (overlayHeight - gridHeight) / 2;
 
-            byte baseStrokeAlpha = _isDarkTheme ? (byte)0x18 : (byte)0x48;
-            byte baseFillAlpha = _isDarkTheme ? (byte)0x08 : (byte)0x12;
-            byte haloAlpha = _isDarkTheme ? (byte)0x36 : (byte)0x48;
+            // Beide Farbschemata verwenden dieselbe sichtbare Leuchtstärke.
+            // Zuvor war der dunkle Modus absichtlich stark gedimmt (0x18/0x36),
+            // wodurch die Animation gegenüber dem Hellmodus fast verschwand.
+            const byte baseStrokeAlpha = 0x48;
+            const byte baseFillAlpha = 0x12;
+            const byte haloAlpha = 0x48;
             var sharedStrokeBrush = new SolidColorBrush(
                 Windows.UI.Color.FromArgb(baseStrokeAlpha, AccentColorPrimary.R, AccentColorPrimary.G, AccentColorPrimary.B));
             var sharedFillBrush = new SolidColorBrush(
@@ -930,13 +1013,13 @@ namespace WinVora
                     EnableDependentAnimation = true
                 };
                 pulseAnimation.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.SplineDoubleKeyFrame
-                    { KeyTime = TimeSpan.Zero, Value = 0.02 });
+                { KeyTime = TimeSpan.Zero, Value = 0.02 });
                 pulseAnimation.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.SplineDoubleKeyFrame
-                    { KeyTime = TimeSpan.FromSeconds(0.65), Value = peak });
+                { KeyTime = TimeSpan.FromSeconds(0.65), Value = peak });
                 pulseAnimation.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.SplineDoubleKeyFrame
-                    { KeyTime = TimeSpan.FromSeconds(1.35), Value = 0.02 });
+                { KeyTime = TimeSpan.FromSeconds(1.35), Value = 0.02 });
                 pulseAnimation.KeyFrames.Add(new Microsoft.UI.Xaml.Media.Animation.DiscreteDoubleKeyFrame
-                    { KeyTime = TimeSpan.FromSeconds(cycleSeconds), Value = 0.02 });
+                { KeyTime = TimeSpan.FromSeconds(cycleSeconds), Value = 0.02 });
 
                 Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(pulseAnimation, glowCanvases[i]);
                 Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(pulseAnimation, "Opacity");
@@ -1488,10 +1571,7 @@ namespace WinVora
         {
             if (_isUpdatingWinget && title != "Updates")
             {
-                ShowInfo(Localization.CurrentLanguage == "en"
-                    ? "Finish or cancel the running update before changing pages."
-                    : "Beende oder brich das laufende Update ab, bevor du die Seite wechselst.",
-                    InfoBarSeverity.Warning);
+                ShowInfo(Localization.T("Notification.UpdateBlocksNavigation"), InfoBarSeverity.Warning);
                 return;
             }
             if (!string.IsNullOrWhiteSpace(_currentPageKey))
@@ -1616,10 +1696,10 @@ namespace WinVora
         {
             var dialog = new ContentDialog
             {
-                Title = "Einstellungen zurücksetzen?",
-                Content = "Alle Einstellungen werden auf die Standardwerte zurückgesetzt. Fortfahren?",
-                PrimaryButtonText = "Zurücksetzen",
-                CloseButtonText = "Abbrechen",
+                Title = Localization.T("Dialog.Reset.Title"),
+                Content = Localization.T("Dialog.Reset.Message"),
+                PrimaryButtonText = Localization.T("Dialog.Reset.Action"),
+                CloseButtonText = Localization.T("Common.Cancel"),
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = this.Content.XamlRoot
             };
@@ -1628,7 +1708,7 @@ namespace WinVora
             return result == ContentDialogResult.Primary;
         }
 
-        private async Task<bool> ConfirmAsync(string title, string message, string primaryButtonText = "Löschen", bool respectDeleteConfirmationSetting = true, XamlRoot? dialogRoot = null)
+        private async Task<bool> ConfirmAsync(string title, string message, string? primaryButtonText = null, bool respectDeleteConfirmationSetting = true, XamlRoot? dialogRoot = null)
         {
             if (respectDeleteConfirmationSetting && !_settings.ShowDeleteConfirmations) return true;
 
@@ -1636,8 +1716,8 @@ namespace WinVora
             {
                 Title = title,
                 Content = message,
-                PrimaryButtonText = primaryButtonText,
-                CloseButtonText = "Abbrechen",
+                PrimaryButtonText = primaryButtonText ?? (Localization.CurrentLanguage == "en" ? "Delete" : "Löschen"),
+                CloseButtonText = Localization.T("Common.Cancel"),
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = dialogRoot ?? this.Content.XamlRoot
             };
@@ -2043,9 +2123,8 @@ namespace WinVora
                 // Platzhalter wurde noch nicht ersetzt - Hinweis statt kaputtem Link.
                 var placeholderDialog = new ContentDialog
                 {
-                    Title = "Ko-fi-Link fehlt noch",
-                    Content = "Trag deinen echten Ko-fi-Link in der Konstante \"KofiUrl\" " +
-                              "in MainWindow.xaml.cs ein (KofiButton_Click).",
+                    Title = Localization.T("Dialog.KofiMissing.Title"),
+                    Content = Localization.T("Dialog.KofiMissing.Message"),
                     CloseButtonText = Localization.T("Settings.Close"),
                     XamlRoot = this.Content.XamlRoot
                 };
@@ -2199,7 +2278,7 @@ namespace WinVora
             }
             catch (Exception ex)
             {
-                PageSubtitle.Text = $"Fehler beim Laden der Übersicht: {ex.Message}";
+                PageSubtitle.Text = $"{Localization.T("Dash.LoadError")}: {ex.Message}";
                 Logger.LogError("Overview_Click/LoadWinget", ex);
                 return;
             }

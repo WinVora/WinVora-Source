@@ -127,7 +127,7 @@ namespace WinVora
             {
                 UninstallPanel.Children.Add(new TextBlock
                 {
-                    Text = "Keine installierten Programme gefunden.",
+                    Text = Localization.CurrentLanguage == "en" ? "No installed programs found." : "Keine installierten Programme gefunden.",
                     Foreground = (SolidColorBrush)RootGrid.Resources["AppMutedForegroundBrush"]
                 });
                 return;
@@ -717,8 +717,10 @@ namespace WinVora
                 Grid.SetColumn(copy, 2); row.Children.Add(copy);
                 panel.Children.Add(new Border
                 {
-                    Padding = new Thickness(10), CornerRadius = new CornerRadius(8),
-                    Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"], Child = row
+                    Padding = new Thickness(10),
+                    CornerRadius = new CornerRadius(8),
+                    Background = (SolidColorBrush)RootGrid.Resources["AppOverlay18"],
+                    Child = row
                 });
             }
             var dialog = new ContentDialog

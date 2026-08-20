@@ -2,18 +2,14 @@ using System.Collections.Generic;
 
 namespace WinVora
 {
-    // Einfache, dictionary-basierte Übersetzung für die am meisten sichtbaren
-    // Teile der App (Sidebar, Seitentitel, Dashboard, Schnellzugriff,
-    // Einstellungen-Fenster). Tiefer liegende Bereiche (Systeminfo-Details,
-    // Storage/Winget/Deinstaller-Interna, Changelog, Log-Meldungen) bleiben
-    // bewusst vorerst Deutsch - das lässt sich bei Bedarf gezielt erweitern,
-    // ohne die Architektur hier ändern zu müssen (einfach neue Keys ergänzen).
-    public static class Localization
+    // Zentrale deutsch/englische Übersetzungen für die sichtbare Oberfläche.
+    // Technische Protokolle bleiben davon unabhängig, weil sie nicht Teil der UI sind.
+    public static partial class Localization
     {
         // Wird beim Start bzw. bei jedem Sprachwechsel gesetzt.
         public static string CurrentLanguage = "de";
 
-        private static readonly Dictionary<string, (string De, string En)> Strings = new()
+        private static readonly Dictionary<string, (string De, string En)> Strings = new Dictionary<string, (string De, string En)>
         {
             // ---- Sidebar-Navigation ----
             ["Nav.Dashboard"] = ("Dashboard", "Dashboard"),
@@ -25,6 +21,8 @@ namespace WinVora
             ["Nav.Contact"] = ("Kontakt", "Contact"),
             ["Nav.Kofi"] = ("Ko-fi", "Ko-fi"),
             ["Nav.ChangelogHint"] = ("Changelog anzeigen", "View changelog"),
+            ["Nav.History"] = ("Verlauf", "History"),
+            ["Nav.Changes"] = ("Veränderungen", "Changes"),
 
             // ---- Große Seiten-Überschrift ----
             ["PageTitle.Dashboard"] = ("Dashboard", "Dashboard"),
@@ -32,34 +30,6 @@ namespace WinVora
             ["PageTitle.Updates"] = ("Programm-Updates", "Program Updates"),
             ["PageTitle.Storage"] = ("Dateien", "Files"),
             ["PageTitle.Uninstall"] = ("Deinstallieren", "Uninstall"),
-
-            // ---- Statuskarten (Dashboard) ----
-            ["Stat.Cpu"] = ("CPU", "CPU"),
-            ["Stat.CpuLabel"] = ("Auslastung", "Usage"),
-            ["Stat.Ram"] = ("RAM", "RAM"),
-            ["Stat.Gpu"] = ("GPU", "GPU"),
-            ["Stat.GpuLabel"] = ("Auslastung", "Usage"),
-            ["Stat.Security"] = ("Sicherheit", "Security"),
-            ["Stat.SecurityLabel"] = ("Defender / Firewall", "Defender / Firewall"),
-            ["Stat.Updates"] = ("Updates", "Updates"),
-            ["Stat.UpdatesLabel"] = ("Update-Pakete", "Update packages"),
-
-            // ---- Live-Dashboard-Kacheln ----
-            ["Dash.Header"] = ("Live-Dashboard", "Live Dashboard"),
-            ["Dash.Disk"] = ("Speicherplatz", "Storage"),
-            ["Dash.Gpu"] = ("GPU-Auslastung", "GPU Usage"),
-            ["Dash.Temp"] = ("Temperatur", "Temperature"),
-            ["Dash.Programs"] = ("Programme", "Programs"),
-            ["Dash.Cleanup"] = ("Zuletzt bereinigt", "Last cleaned"),
-            ["Dash.UpdatesAvailable"] = ("Verfügbare Updates", "Available updates"),
-            ["Dash.Ram"] = ("Arbeitsspeicher", "Memory"),
-            ["Dash.Status"] = ("Gesamtstatus", "Overall status"),
-            ["Dash.HistoryHeader"] = ("Verlauf", "History"),
-            ["Dash.ActivityHeader"] = ("Letzte Aktionen", "Recent Actions"),
-            ["Dash.NotAvailable"] = ("Nicht verfügbar", "Not available"),
-            ["Dash.Checking"] = ("Wird geprüft...", "Checking..."),
-            ["Dash.AllUpToDate"] = ("Alles aktuell", "Everything up to date"),
-            ["Dash.PleaseCheck"] = ("Bitte prüfen", "Please check"),
 
             // ---- Schnellzugriff ----
             ["Quick.Header"] = ("Schnellzugriff", "Quick Access"),
@@ -113,6 +83,30 @@ namespace WinVora
             ["Common.Loading"] = ("Wird geladen...", "Loading..."),
             ["Common.LoadingSystemInfo"] = ("Systeminfos werden geladen...", "Loading system info..."),
             ["Common.CheckingUpdates"] = ("Updates werden geprüft...", "Checking for updates..."),
+            ["Common.Cancel"] = ("Abbrechen", "Cancel"),
+            ["Common.Export"] = ("Exportieren", "Export"),
+            ["Common.Open"] = ("Öffnen", "Open"),
+
+            // ---- Verlauf ----
+            ["History.All"] = ("Alle", "All"),
+            ["History.Successful"] = ("Erfolgreich", "Successful"),
+            ["History.Failed"] = ("Fehler", "Failed"),
+            ["History.Cancelled"] = ("Abgebrochen", "Cancelled"),
+            ["History.Restart"] = ("Neustart", "Restart"),
+            ["History.ResetFilters"] = ("Filter zurücksetzen", "Reset filters"),
+            ["History.Clear"] = ("Verlauf leeren", "Clear history"),
+            ["History.ExportText"] = ("Verlauf als Textdatei", "History as text file"),
+            ["History.ExportSystem"] = ("Systembericht als Textdatei", "System report as text file"),
+            ["History.Search"] = ("Verlauf durchsuchen...", "Search history..."),
+            ["History.From"] = ("Von", "From"),
+            ["History.To"] = ("Bis", "To"),
+
+            // ---- Weitere Seiten ----
+            ["Changes.Title"] = ("Was hat sich verändert?", "What has changed?"),
+            ["Changes.SinceLastCheck"] = ("Seit der letzten Prüfung", "Since the last check"),
+            ["Changes.Details"] = ("Details", "Details"),
+            ["Changes.StorageGrowth"] = ("Speicherfresser", "Storage growth"),
+            ["Changes.StorageGrowthDescription"] = ("Auffälliges Wachstum in Downloads, Desktop und Dokumenten ab 1 GB.", "Unusual growth of 1 GB or more in Downloads, Desktop, and Documents."),
 
             // ---- Winget-Seite ----
             ["Winget.SearchPlaceholder"] = ("Update suchen...", "Search updates..."),
@@ -166,6 +160,8 @@ namespace WinVora
             ["System.Card.Drives"] = ("Speicherlaufwerke", "Storage Drives"),
             ["System.Card.Network"] = ("Aktive Netzwerkadapter", "Active Network Adapters"),
             ["System.Card.Battery"] = ("Energie", "Power"),
+            ["System.SecurityLoading"] = ("Sicherheitsdetails werden geprüft...", "Checking security details..."),
+            ["System.BatteryStatus"] = ("Akkustatus", "Battery status"),
 
             // ---- Winget-Seite: Action-Bar ----
             ["Winget.StartUpdate"] = ("Updates installieren", "Install updates"),
@@ -180,15 +176,36 @@ namespace WinVora
 
             // ---- Deinstaller-Seite ----
             ["Uninstall.SearchPlaceholder"] = ("Programm suchen...", "Search program..."),
-        };
+            ["Uninstall.ExportList"] = ("Liste exportieren", "Export list"),
+            ["Uninstall.Selected"] = ("Ausgewählte deinstallieren", "Uninstall selected"),
+            ["Uninstall.ExportTxt"] = ("Als TXT exportieren", "Export as TXT"),
+            ["Uninstall.ExportCsvComma"] = ("Als CSV exportieren (Komma)", "Export as CSV (comma)"),
+            ["Uninstall.ExportCsvSemicolon"] = ("Als CSV für deutsches Excel (Semikolon)", "Export as CSV for German Excel (semicolon)"),
+        }.Concat(GetDashboardStrings()).Concat(GetAutostartStrings()).Concat(GetDialogStrings())
+         .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+
+        private static readonly HashSet<string> MissingKeys = new(StringComparer.Ordinal);
 
         public static string T(string key)
         {
             if (!Strings.TryGetValue(key, out var value))
-                return key; // Fallback: Key selbst zeigen, falls Übersetzung fehlt
+            {
+                lock (MissingKeys)
+                {
+                    if (MissingKeys.Add(key)) Logger.Log($"Fehlender Übersetzungsschlüssel: {key}");
+                }
+                return Strings.TryGetValue("Notification.MissingTextKey", out var fallback)
+                    ? (CurrentLanguage == "en" ? fallback.En : fallback.De)
+                    : "WinVora";
+            }
 
             return CurrentLanguage == "en" ? value.En : value.De;
         }
+
+        public static string F(string key, params object?[] arguments) =>
+            string.Format(System.Globalization.CultureInfo.CurrentCulture, T(key), arguments);
+
+        internal static IReadOnlyDictionary<string, (string De, string En)> All => Strings;
 
         // Feldbezeichnungen auf der Systeminfo-Seite (SysLbl01-SysLbl26).
         // Index 0 = SysLbl01, Index 1 = SysLbl02, usw.
