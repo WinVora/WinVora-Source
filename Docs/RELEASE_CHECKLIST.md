@@ -1,7 +1,7 @@
-# WinVora 0.8.5-beta.1 – Beta-Release-Checkliste
+# WinVora 0.8.5-beta.2 – Beta-Release-Checkliste
 
-- Projektversion: `0.8.5-beta.1`
-- Installername: `WinVora-Setup-0.8.5-beta.1.exe`
+- Projektversion: `0.8.5-beta.2`
+- Installername: `WinVora-Setup-0.8.5-beta.2.exe`
 - GitHub-Veröffentlichung ausdrücklich als Prerelease markieren
 - Release-Build: `dotnet publish WinVora.csproj -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -o publish`
 - Installer: `Packaging/WinVoraSetup.iss` anschließend mit Inno Setup kompilieren
